@@ -8,6 +8,7 @@
 // The demo database lives in your home folder (~/.gamerxp-demo), outside the
 // project, so cloud-synced folders like OneDrive don't interfere with it.
 // Start over with fresh test customers: npm run demo -- --reset
+// Own admin password: set DEMO_ADMIN_PASSWORD (applies when test customers are added).
 import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -21,7 +22,7 @@ import { addDemoData, DEMO_ADMIN } from './demo-data.js';
 
 const PORT = Number(process.env.PORT ?? 8080);
 const DB_PORT = Number(process.env.DEMO_DB_PORT ?? 54329);
-const ADMIN_PASSWORD = 'demo-wachtwoord-123';
+const ADMIN_PASSWORD = process.env.DEMO_ADMIN_PASSWORD ?? 'demo-wachtwoord-123';
 // As root (some sandboxes), PostgreSQL runs as a separate user that can't open
 // root's home folder, so the data goes to the shared temp folder instead.
 const runningAsRoot = process.getuid?.() === 0;

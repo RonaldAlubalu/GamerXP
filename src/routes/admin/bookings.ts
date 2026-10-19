@@ -1,13 +1,14 @@
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { addDays, today } from '../../lib/dates.js';
-import { formatEuro, reviewRequestMail, statusChangeMail, withSignature } from '../../lib/emails.js';
+import { formatEuro, paymentLinkMail, reviewRequestMail, statusChangeMail, withSignature } from '../../lib/emails.js';
 import { HttpError } from '../../lib/errors.js';
 import { bookingStatus, dateString, TIME_SLOTS, timeString } from '../../lib/schemas.js';
 import { getBookingMailData, recalculatePaid, recalculatePrice } from '../../services/bookings.js';
 import { logCommunication, sendAndLog } from '../../services/communications.js';
 import { addEvent, createDefaultTasks, STAGE_INFO, STATUSES, type Status } from '../../services/pipeline.js';
 import { calculatePrice, type PriceExtra } from '../../services/pricing.js';
+import { amountsDue, loadDue, paymentLink, syncOpenPayments } from '../../services/online-payments.js';
 
 const BOOKING_COLUMNS = `
   b.id, b.reference, b.package_id AS "packageId", p.name AS "packageName",
@@ -63,6 +64,7 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
     publicUrl: app.config.PUBLIC_URL,
     paymentInfo: app.config.PAYMENT_INFO,
     reviewUrl: app.config.GOOGLE_REVIEW_URL,
+    onlinePayments: Boolean(app.mollie),
   });
 
   async function loadBooking(id: string) {
@@ -152,7 +154,7 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
       booking = await loadBooking(id);
     }
 
-    const [tasks, events, communications, agreements, payments] = await Promise.all([
+    const [tasks, events, communications, agreements, payments, mollie] = await Promise.all([
       app.db.query(
         `SELECT id, stage, label, done, done_at AS "doneAt" FROM booking_tasks
           WHERE booking_id = $1 ORDER BY sort_order, id`,
@@ -176,6 +178,11 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
            FROM payments WHERE booking_id = $1 ORDER BY paid_on, id`,
         [id],
       ),
+      app.db.query(
+        `SELECT id, kind, amount_cents AS "amountCents", status, created_at AS "createdAt"
+           FROM mollie_payments WHERE booking_id = $1 ORDER BY created_at DESC`,
+        [id],
+      ),
     ]);
     const { lines } = calculatePrice(
       {
@@ -196,7 +203,45 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
       communications: communications.rows,
       agreements: agreements.rows,
       payments: payments.rows,
+      molliePayments: mollie.rows,
+      onlineDue: app.mollie ? amountsDue(booking) : null,
     };
+  });
+
+  // A payment link for the customer (deposit or remaining amount), optionally emailed.
+  app.post('/bookings/:id/payment-link', async (req) => {
+    const { id } = idParam.parse(req.params);
+    const { kind, send } = z.object({ kind: z.enum(['deposit', 'payment']), send: z.boolean().default(false) }).parse(req.body);
+    if (!app.mollie) throw new HttpError(422, 'Stel eerst MOLLIE_API_KEY in om online betalen te gebruiken.', 'payments_disabled');
+    const booking = await loadDue(app, { id });
+    if (!booking) throw new HttpError(404, 'Boeking niet gevonden.', 'not_found');
+    const amount = amountsDue(booking)[kind];
+    if (!amount) {
+      throw new HttpError(
+        409,
+        kind === 'deposit'
+          ? 'De aanbetaling kan online betaald worden zodra de boeking op "Bevestigd" staat en nog niet betaald is.'
+          : 'Het restbedrag kan online betaald worden zodra de aanbetaling binnen is en er nog iets openstaat.',
+        'nothing_due',
+      );
+    }
+    const url = paymentLink(app.config.PUBLIC_URL, booking.statusToken, kind);
+    if (send) {
+      const mail = paymentLinkMail((await getBookingMailData(app.db, id))!, kind, amount, mailContext());
+      if (!(await sendAndLog(app, { bookingId: id }, mail, actorOf(req)))) {
+        throw new HttpError(502, 'De e-mail kon niet worden verstuurd.', 'send_failed');
+      }
+      await addEvent(app.db, id, { type: 'email', message: `Betaallink verstuurd: ${formatEuro(amount)}`, actor: actorOf(req) });
+    }
+    return { url, amountCents: amount };
+  });
+
+  // Checks open Mollie payments of this booking (e.g. when a webhook was missed).
+  app.post('/bookings/:id/mollie-sync', async (req) => {
+    const { id } = idParam.parse(req.params);
+    await assertExists(id);
+    await syncOpenPayments(app, id);
+    return loadBooking(id);
   });
 
   app.patch('/bookings/:id', async (req) => {

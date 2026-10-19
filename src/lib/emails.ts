@@ -31,6 +31,8 @@ export interface MailContext {
   paymentInfo?: string;
   // Link for leaving a Google review.
   reviewUrl?: string;
+  // Online payment (Mollie) is switched on: add pay links to emails.
+  onlinePayments?: boolean;
 }
 
 const signature =
@@ -114,6 +116,9 @@ export function statusChangeMail(status: Status, b: BookingMailData, ctx: MailCo
           (deposit > 0
             ? `\n\nOm de datum definitief te maken vragen we een aanbetaling van ${formatEuro(deposit)}, ` +
               `te voldoen binnen 5 kalenderdagen. Vermeld bij de betaling je referentie ${b.reference}. ` +
+              (ctx.onlinePayments
+                ? `Je betaalt de aanbetaling eenvoudig online met iDEAL: ${ctx.publicUrl}/betalen/${encodeURIComponent(b.statusToken)}/aanbetaling\n\n`
+                : '') +
               `Ontvangen we de aanbetaling niet op tijd, dan vervalt de reservering. ` +
               `Het restbedrag betaal je vooraf via overboeking of contant op de dag zelf.` +
               (ctx.paymentInfo ? `\n\n${ctx.paymentInfo}` : '')
@@ -170,6 +175,20 @@ export function reviewRequestMail(b: BookingMailData, ctx: MailContext): Mail {
       `Nogmaals bedankt dat we ${b.childName ? `het feest van ${b.childName}` : 'jullie feest'} mochten verzorgen! ` +
       reviewAsk(ctx) +
       signature,
+  };
+}
+
+export function paymentLinkMail(b: BookingMailData, kind: 'deposit' | 'payment', amountCents: number, ctx: MailContext): Mail {
+  const what = kind === 'deposit' ? 'de aanbetaling' : 'het restbedrag';
+  const slug = kind === 'deposit' ? 'aanbetaling' : 'restbedrag';
+  return {
+    to: b.email,
+    subject: `Betaallink voor ${what} (${b.reference})`,
+    text:
+      `Hoi ${b.parentName},\n\n` +
+      `Via onderstaande link betaal je ${what} van ${formatEuro(amountCents)} eenvoudig online met iDEAL:\n\n` +
+      `${ctx.publicUrl}/betalen/${encodeURIComponent(b.statusToken)}/${slug}` +
+      `\n\n${summary(b)}${followLink(b, ctx)}${signature}`,
   };
 }
 

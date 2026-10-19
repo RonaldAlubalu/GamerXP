@@ -359,3 +359,6 @@ dl.summary dd { margin: 0; }
 .cal-day.selected { background: var(--green); color: var(--bg); box-shadow: 0 0 0 3px rgba(82, 204, 24, .35); }
 .legend-dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: var(--green); vertical-align: middle; }
 .slot-date { margin: 18px 0 10px; }
+
+.pay-box { border-color: var(--green); text-align: center; }
+.pay-box h2 { color: var(--green); }

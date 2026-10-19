@@ -8,6 +8,7 @@ import { bookingRequest, contactRequest, dateString } from '../lib/schemas.js';
 import { availableSlots, bookingWindow, getTimeSlots } from '../services/availability.js';
 import { createBooking, recalculatePrice } from '../services/bookings.js';
 import { travelCents } from '../services/pricing.js';
+import { amountsDue, paymentLink } from '../services/online-payments.js';
 import { STAGE_INFO, STAGES, stageIndex, type Status } from '../services/pipeline.js';
 
 export const publicRoutes: FastifyPluginAsync = async (app) => {
@@ -119,17 +120,25 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
       const { rows } = await app.db.query<{
         reference: string; status: Status; partyDate: string; timeSlot: string; startTime: string | null;
         packageName: string; extraStations: number; childName: string; guestCount: number | null;
-        priceCents: number; depositCents: number; paidCents: number;
+        priceCents: number; depositCents: number; paidCents: number; id: string; statusToken: string;
       }>(
         `SELECT b.reference, b.status, b.party_date AS "partyDate", b.time_slot AS "timeSlot",
                 to_char(b.start_time, 'HH24:MI') AS "startTime", p.name AS "packageName", b.extra_stations AS "extraStations", b.child_name AS "childName", b.guest_count AS "guestCount",
-                b.price_cents AS "priceCents", b.deposit_cents AS "depositCents", b.paid_cents AS "paidCents"
+                b.price_cents AS "priceCents", b.deposit_cents AS "depositCents", b.paid_cents AS "paidCents",
+                b.id, b.status_token AS "statusToken"
            FROM bookings b JOIN packages p ON p.id = b.package_id
           WHERE b.status_token = $1`,
         [token],
       );
-      const booking = rows[0];
-      if (!booking) throw new HttpError(404, 'Deze boeking kunnen we niet vinden.', 'not_found');
+      const found = rows[0];
+      if (!found) throw new HttpError(404, 'Deze boeking kunnen we niet vinden.', 'not_found');
+      const { id: _id, statusToken: _token, ...booking } = found;
+      // Online payment buttons for the status page.
+      const due = app.mollie ? amountsDue(found) : { deposit: null, payment: null };
+      const pay = {
+        deposit: due.deposit ? { amountCents: due.deposit, url: paymentLink('', token, 'deposit') } : null,
+        payment: due.payment ? { amountCents: due.payment, url: paymentLink('', token, 'payment') } : null,
+      };
 
       const current = stageIndex(booking.status);
       const { rows: history } = await app.db.query<{ status: string; at: Date }>(
@@ -141,6 +150,7 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
       const reachedAt = new Map(history.map((h) => [h.status, h.at]));
       return {
         ...booking,
+        pay,
         statusLabel: STAGE_INFO[booking.status].customerLabel,
         statusText: STAGE_INFO[booking.status].customerText,
         steps:

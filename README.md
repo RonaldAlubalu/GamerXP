@@ -76,6 +76,31 @@ Server settings live in `.env` (see [`.env.example`](.env.example)). Availabilit
 | `TRAVEL_CENTS_PER_KM` / `TRAVEL_MAX_CENTS` | Travel costs per km of the round trip and the maximum. Defaults: €0.50 and €100. |
 | `EVENING_SURCHARGE_CENTS` | Evening surcharge (party ends after 19:30). Default `5000` (€50). |
 | `BASE_LOCATION` | Where the bus leaves from, for distance calculation. Default `5611AB Eindhoven`; set your own postcode. |
+| `MOLLIE_API_KEY` | Your Mollie API key (`test_…` to try it out, `live_…` for real payments). Empty switches online payment off. |
+
+## Trying it out with test customers
+
+**On your own computer** (needs [Docker Desktop](https://www.docker.com/products/docker-desktop/)):
+
+```sh
+git clone https://github.com/RonaldAlubalu/GamerXP.git && cd GamerXP
+git checkout claude/gamerxp-backend-migration-ew43zk
+docker compose -f docker-compose.demo.yml up --build
+```
+
+Open http://localhost:8080 to see the site as a customer, and http://localhost:8080/admin with **demo@gamerxp.nl / demo-wachtwoord-123** for the admin. It starts with 8 test customers in every phase and 2 contact messages. Emails are not sent, only logged (`docker compose -f docker-compose.demo.yml logs app`). To try Mollie, put your test key in front of the command: `MOLLIE_API_KEY=test_... docker compose -f docker-compose.demo.yml up --build`. Start over with `docker compose -f docker-compose.demo.yml down -v`.
+
+**On the server:** `docker compose exec app npm run seed-demo` adds the same test customers (all with `@example.nl` addresses). `docker compose exec app npm run seed-demo -- --clear` removes them again.
+
+## Online payments (Mollie)
+
+With `MOLLIE_API_KEY` set:
+
+- The confirmation email contains a link to pay the deposit online. The parent's status page shows a "Betaal aanbetaling" button, and after the deposit a "Betaal restbedrag" button.
+- On a booking in the admin you can email or copy a payment link for the deposit or the remaining amount (handy in WhatsApp).
+- A link like `/betalen/<token>/aanbetaling` creates the Mollie payment when it's opened, so links in emails never expire.
+- When the customer pays, Mollie notifies `https://gamerxp.nl/api/mollie/webhook`. The payment is registered automatically (method "Online (Mollie)"). A paid deposit moves the booking to *Aanbetaling ontvangen* and sends the usual email. When the parent returns from Mollie, the payment is also checked, so it works without the webhook (e.g. in the local demo).
+- Start with your `test_` key: Mollie then shows a test payment page where you choose the outcome. Switch to the `live_` key when everything works.
 
 ## How a booking flows
 
@@ -83,7 +108,7 @@ Server settings live in `.env` (see [`.env.example`](.env.example)). Availabilit
 2. The driving distance from `BASE_LOCATION` is looked up automatically. It uses PDOK (the Dutch government address service) and OSRM routing, both free. The travel costs then appear in the price. For Belgian addresses or if the lookup fails, enter the km yourself on the booking.
 3. In the admin the booking starts in **Nieuw** with *Jouw beurt*. Every message you send makes it *Wacht op klant*, and every customer message you log makes it *Jouw beurt*. You can also change this by hand.
 4. Move it through the phases: **Nieuw → Contact opgenomen → Bevestigd → Aanbetaling ontvangen → Ingepland → Feest geweest → Afgerond**. Moving to *Bevestigd*, *Aanbetaling ontvangen*, *Afgerond* or *Geannuleerd* offers to email the parent. The confirmation asks for the €100 deposit within 5 days, as in the terms and conditions.
-5. Register payments (deposit, payments, borg received/returned) on the booking. The admin shows whether the deposit is paid and what is still outstanding.
+5. Payments made online through Mollie are registered automatically. Register other payments (bank transfer, cash, Tikkie, borg received/returned) on the booking yourself. The admin shows whether the deposit is paid and what is still outstanding.
 6. Each phase has a checklist based on the terms and conditions (travel costs, evening surcharge, games updated 48 hours before, borg for Standaard, and so on). You can add your own tasks.
 7. After the party, *Afgerond* sends a thank-you with the Google review link. The *Reviews* page shows who still needs asking.
 
@@ -131,9 +156,10 @@ src/
   config.ts            environment variables (validated)
   routes/public.ts     /api/packages, /availability, /bookings, /quote, /status, /contact
   routes/admin/        /api/admin/* (login, bookings, messages, availability, packages)
-  services/            availability, bookings, pipeline, pricing, distance, communications
+  routes/payments.ts   /betalen links, Mollie webhook
+  services/            availability, bookings, pipeline, pricing, distance, communications, mollie
   lib/                 auth, email templates, dates, validation schemas
-  scripts/             create-admin
+  scripts/             create-admin, seed-demo (test customers)
 migrations/            SQL migrations, applied in filename order
 deploy/                Caddyfile and backup script
 ```

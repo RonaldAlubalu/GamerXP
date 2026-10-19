@@ -1,0 +1,44 @@
+# Try everything on your own computer, with test customers and a demo admin login.
+#
+#   docker compose -f docker-compose.demo.yml up --build
+#
+# Website: http://localhost:8080   Admin: http://localhost:8080/admin
+# Login:   demo@gamerxp.nl / demo-wachtwoord-123
+#
+# Emails are only logged (docker compose -f docker-compose.demo.yml logs app).
+# Stop with Ctrl+C; start over with: docker compose -f docker-compose.demo.yml down -v
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: gamerxp
+      POSTGRES_USER: gamerxp
+      POSTGRES_PASSWORD: demo
+    volumes:
+      - demo-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gamerxp -d gamerxp"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    ports:
+      - "8080:3000"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://gamerxp:demo@db:5432/gamerxp
+      PUBLIC_URL: http://localhost:8080
+      OWNER_EMAIL: demo@gamerxp.nl
+      DEMO_ADMIN_PASSWORD: demo-wachtwoord-123
+      GOOGLE_REVIEW_URL: https://g.page/r/voorbeeld/review
+      # Optional: your Mollie test key (test_...) to try payments.
+      MOLLIE_API_KEY: ${MOLLIE_API_KEY:-}
+    command: ["sh", "-c", "node dist/scripts/seed-demo.js --if-empty && node dist/server.js"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  demo-data:

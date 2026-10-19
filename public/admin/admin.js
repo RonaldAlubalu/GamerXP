@@ -32,7 +32,8 @@ const PAYMENT_KINDS = {
   deposit: 'Aanbetaling', payment: 'Betaling', refund: 'Terugbetaling',
   security_deposit: 'Borg ontvangen', security_deposit_returned: 'Borg terugbetaald',
 };
-const PAYMENT_METHODS = { bank: 'Overboeking', cash: 'Contant', tikkie: 'Tikkie', other: 'Anders' };
+const PAYMENT_METHODS = { bank: 'Overboeking', cash: 'Contant', tikkie: 'Tikkie', mollie: 'Online (Mollie)', other: 'Anders' };
+const MOLLIE_STATUS = { open: ['Open', 'warning'], pending: ['Bezig', 'info'], authorized: ['Geautoriseerd', 'info'], paid: ['Betaald', 'success'], canceled: ['Geannuleerd', ''], expired: ['Verlopen', ''], failed: ['Mislukt', 'danger'] };
 const REVIEW = {
   none: { label: 'Nog niet gevraagd', tone: '' },
   requested: { label: 'Gevraagd', tone: 'info' },
@@ -371,6 +372,43 @@ function composer({ booking, onSubmit, emailConfigured }) {
     submit);
 }
 
+// Mollie: payment links for the customer and the status of online payments.
+function onlinePayments(b, me) {
+  const box = h('div', { class: 'online-pay' }, h('h3', { style: 'margin-top:16px' }, 'Online betalen (Mollie)'));
+  if (!me.onlinePayments) {
+    box.append(h('p', { class: 'muted small' }, 'Zet je Mollie API-key in MOLLIE_API_KEY (.env) om klanten online te laten betalen met iDEAL.'));
+    return box;
+  }
+  const link = (kind, label) => {
+    const amount = b.onlineDue?.[kind];
+    if (!amount) return null;
+    return h('div', { class: 'inline', style: 'margin-bottom:6px' },
+      h('span', {}, `${label}: `, h('strong', {}, fmtEuro(amount))),
+      h('button', { class: 'btn small primary', onclick: action(() => post(`/bookings/${b.id}/payment-link`, { kind, send: true }), 'Betaallink gemaild.') }, 'Betaallink mailen'),
+      h('button', { class: 'btn small', onclick: async () => {
+        try {
+          const { url } = await post(`/bookings/${b.id}/payment-link`, { kind });
+          try { await navigator.clipboard.writeText(url); flash('ok', 'Betaallink gekopieerd, plak hem in WhatsApp.'); }
+          catch { prompt('Betaallink:', url); }
+        } catch (err) { flash('error', err.message); }
+      } }, 'Link kopiëren'));
+  };
+  const links = [link('deposit', 'Aanbetaling'), link('payment', 'Restbedrag')].filter(Boolean);
+  box.append(...(links.length ? links : [h('p', { class: 'muted small' },
+    b.status === 'new' || b.status === 'contacted'
+      ? 'De aanbetaling kan online betaald worden zodra de boeking op "Bevestigd" staat.'
+      : 'Er staat nu niets open om online te betalen.')]));
+  if (b.molliePayments.length) {
+    box.append(h('ul', { class: 'list-plain' }, b.molliePayments.map((m) => h('li', {},
+      h('span', {}, `${m.kind === 'deposit' ? 'Aanbetaling' : 'Restbedrag'} ${fmtEuro(m.amountCents)} · ${fmtDateTime(m.createdAt)} `, h('span', { class: 'muted small' }, m.id)),
+      badge(...(MOLLIE_STATUS[m.status] ?? [m.status, '']))))));
+    if (b.molliePayments.some((m) => ['open', 'pending', 'authorized'].includes(m.status))) {
+      box.append(h('button', { class: 'btn small', onclick: action(() => post(`/bookings/${b.id}/mollie-sync`), 'Status bij Mollie gecontroleerd.') }, 'Status bij Mollie controleren'));
+    }
+  }
+  return box;
+}
+
 async function bookingDetailView(id) {
   const [b, me] = await Promise.all([api(`/bookings/${id}`), api('/me')]);
   const patch = (body, message) => action(() => patchJson(`/bookings/${id}`, body), message);
@@ -479,7 +517,7 @@ async function bookingDetailView(id) {
   }, 'Betaling geregistreerd.') },
     field('Soort', h('select', { name: 'kind' }, Object.entries(PAYMENT_KINDS).map(([k, l]) => h('option', { value: k, selected: k === (b.depositPaid ? 'payment' : 'deposit') }, l)))),
     field('Bedrag (€)', h('input', { name: 'amount', required: true, inputmode: 'decimal', style: 'width:100px', value: euroInput(b.depositPaid ? b.outstandingCents : b.depositCents) })),
-    field('Hoe', h('select', { name: 'method' }, Object.entries(PAYMENT_METHODS).map(([k, l]) => h('option', { value: k }, l)))),
+    field('Hoe', h('select', { name: 'method' }, Object.entries(PAYMENT_METHODS).filter(([k]) => k !== 'mollie').map(([k, l]) => h('option', { value: k }, l)))),
     field('Datum', h('input', { type: 'date', name: 'paidOn', value: todayIso(), required: true })),
     field('Notitie', h('input', { name: 'note', maxlength: 500 })),
     h('button', { class: 'btn primary', type: 'submit' }, 'Toevoegen'));
@@ -497,7 +535,8 @@ async function bookingDetailView(id) {
       : h('p', { class: 'muted' }, 'Nog geen betalingen.'),
     h('div', { style: 'margin-top:12px' }, payForm),
     b.depositPaid && ['new', 'contacted', 'confirmed'].includes(b.status) &&
-      h('p', {}, h('button', { class: 'btn success', onclick: action(() => moveBooking(id, 'deposit_paid')) }, 'Aanbetaling is binnen → zet op "Aanbetaling ontvangen"')));
+      h('p', {}, h('button', { class: 'btn success', onclick: action(() => moveBooking(id, 'deposit_paid')) }, 'Aanbetaling is binnen → zet op "Aanbetaling ontvangen"')),
+    onlinePayments(b, me));
 
   // Agreements.
   const agreementForm = h('form', { class: 'inline', onsubmit: action(() => post(`/bookings/${id}/agreements`, { text: agreementForm.elements.text.value }), 'Afspraak toegevoegd.') },

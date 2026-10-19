@@ -15,6 +15,8 @@
     "migrate:dev": "tsx src/db/migrate-cli.ts",
     "create-admin": "node dist/scripts/create-admin.js",
     "create-admin:dev": "tsx src/scripts/create-admin.ts",
+    "seed-demo": "node dist/scripts/seed-demo.js",
+    "seed-demo:dev": "tsx src/scripts/seed-demo.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

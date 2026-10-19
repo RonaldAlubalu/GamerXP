@@ -6,6 +6,7 @@ import { createPool, type Db } from '../src/db/pool.js';
 import { hashPassword } from '../src/lib/auth.js';
 import { addDays, today } from '../src/lib/dates.js';
 import type { Mail } from '../src/lib/mailer.js';
+import type { MollieClient, MolliePayment } from '../src/services/mollie.js';
 
 export interface TestContext {
   app: FastifyInstance;
@@ -15,7 +16,7 @@ export interface TestContext {
   packageId: number;
 }
 
-export async function setupApp(overrides: Partial<Config> = {}): Promise<TestContext> {
+export async function setupApp(overrides: Partial<Config> = {}, mollie: MollieClient | null = null): Promise<TestContext> {
   const config = { ...loadConfig(), OWNER_EMAIL: 'owner@gamerxp.nl', ...overrides };
   const db = createPool(config.DATABASE_URL);
   await db.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
@@ -32,6 +33,7 @@ export async function setupApp(overrides: Partial<Config> = {}): Promise<TestCon
     mailer: { send: async (m) => void sent.push(m) },
     // Never call the real address lookup in tests: every address is 30 km away.
     distance: { drivingKm: async () => 30 },
+    mollie,
   });
   return { app, db, config, sent, packageId: rows[0]!.id };
 }
@@ -77,4 +79,28 @@ export async function loginAdmin(ctx: TestContext): Promise<string> {
     payload: { email: 'admin@gamerxp.nl', password: 'correct-horse-battery' },
   });
   return res.json().token;
+}
+
+// A fake Mollie: payments start 'open'; tests mark them paid with pay().
+export function fakeMollie() {
+  const payments = new Map<string, MolliePayment & { redirectUrl: string; webhookUrl?: string }>();
+  let n = 0;
+  const client: MollieClient = {
+    async createPayment(input) {
+      const id = `tr_test${++n}`;
+      const p = {
+        id, status: 'open' as const, amount: { currency: 'EUR', value: (input.amountCents / 100).toFixed(2) },
+        metadata: input.metadata, checkoutUrl: `https://www.mollie.com/checkout/${id}`,
+        redirectUrl: input.redirectUrl, webhookUrl: input.webhookUrl,
+      };
+      payments.set(id, p);
+      return p;
+    },
+    async getPayment(id) {
+      const p = payments.get(id);
+      if (!p) throw new Error('Mollie 404');
+      return p;
+    },
+  };
+  return { client, payments, pay: (id: string, status: MolliePayment['status'] = 'paid') => void (payments.get(id)!.status = status) };
 }

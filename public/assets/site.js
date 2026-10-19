@@ -13,7 +13,7 @@ export function formatDate(date) {
 export async function api(path, options = {}) {
   const res = await fetch(`/api${path}`, {
     ...options,
-    headers: { 'content-type': 'application/json', ...(options.headers || {}) },
+    headers: { ...(options.body ? { 'content-type': 'application/json' } : {}), ...(options.headers || {}) },
   });
   const body = res.status === 204 ? null : await res.json().catch(() => null);
   if (!res.ok) {

@@ -68,6 +68,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       // Lets the admin page point out missing setup.
       reviewUrlConfigured: Boolean(app.config.GOOGLE_REVIEW_URL),
       emailConfigured: Boolean(app.config.SMTP_HOST),
+      onlinePayments: Boolean(app.mollie),
     }));
 
     secured.post('/logout', async (req, reply) => {

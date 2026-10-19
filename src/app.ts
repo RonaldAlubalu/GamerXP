@@ -10,6 +10,8 @@ import type { Db } from './db/pool.js';
 import { HttpError } from './lib/errors.js';
 import { createMailer, type Mailer } from './lib/mailer.js';
 import { createDistanceService, type DistanceService } from './services/distance.js';
+import { createMollieClient, type MollieClient } from './services/mollie.js';
+import { paymentRoutes } from './routes/payments.js';
 import { publicRoutes } from './routes/public.js';
 import { adminRoutes } from './routes/admin/index.js';
 import { registerSite } from './site.js';
@@ -20,6 +22,7 @@ declare module 'fastify' {
     db: Db;
     mailer: Mailer;
     distance: DistanceService;
+    mollie: MollieClient | null;
   }
 }
 
@@ -30,10 +33,12 @@ export interface AppOptions {
   db: Db;
   mailer?: Mailer;
   distance?: DistanceService;
+  // Pass null to switch online payment off, or a fake client in tests.
+  mollie?: MollieClient | null;
   logger?: boolean;
 }
 
-export async function buildApp({ config, db, mailer, distance, logger = true }: AppOptions): Promise<FastifyInstance> {
+export async function buildApp({ config, db, mailer, distance, mollie, logger = true }: AppOptions): Promise<FastifyInstance> {
   const app = Fastify({
     logger: logger && {
       level: config.NODE_ENV === 'production' ? 'info' : 'debug',
@@ -48,6 +53,7 @@ export async function buildApp({ config, db, mailer, distance, logger = true }: 
   app.decorate('db', db);
   app.decorate('mailer', mailer ?? createMailer(config, (msg) => app.log.info(msg)));
   app.decorate('distance', distance ?? createDistanceService(config, (msg, err) => app.log.warn({ err }, msg)));
+  app.decorate('mollie', mollie === undefined ? createMollieClient(config) : mollie);
 
   await app.register(helmet, {
     contentSecurityPolicy: {
@@ -77,6 +83,7 @@ export async function buildApp({ config, db, mailer, distance, logger = true }: 
 
   await app.register(publicRoutes, { prefix: '/api' });
   await app.register(adminRoutes, { prefix: '/api/admin' });
+  await app.register(paymentRoutes);
 
   await registerSite(app);
   // Assets and the admin page. Website pages come from site/ (see site.ts).

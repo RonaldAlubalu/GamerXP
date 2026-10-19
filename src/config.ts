@@ -30,6 +30,10 @@ const schema = z.object({
   // Address lookup (PDOK Locatieserver, free) and driving distance (OSRM).
   GEOCODER_URL: z.url().default('https://api.pdok.nl/bzk/locatieserver/search/v3_1/free'),
   ROUTING_URL: z.url().default('https://router.project-osrm.org'),
+  // Mollie API key (test_... or live_...). Leave empty to switch online payment off.
+  MOLLIE_API_KEY: z.string().regex(/^((test|live)_\w+)?$/, 'MOLLIE_API_KEY must start with test_ or live_').default(''),
+  // Only for testing against a stand-in for Mollie.
+  MOLLIE_API_URL: z.url().default('https://api.mollie.com/v2'),
   // Link for leaving a Google review (from your Google Business Profile: "Ask for reviews").
   GOOGLE_REVIEW_URL: z.string().default(''),
 

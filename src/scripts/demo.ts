@@ -5,8 +5,11 @@
 //   npm run demo
 //
 // Website: http://localhost:8080   Admin: http://localhost:8080/admin
-// The data is kept in .demo/ between runs; delete that folder to start over.
-import { existsSync, mkdirSync } from 'node:fs';
+// The demo database lives in your home folder (~/.gamerxp-demo), outside the
+// project, so cloud-synced folders like OneDrive don't interfere with it.
+// Start over with fresh test customers: npm run demo -- --reset
+import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
@@ -19,7 +22,16 @@ import { addDemoData, DEMO_ADMIN } from './demo-data.js';
 const PORT = Number(process.env.PORT ?? 8080);
 const DB_PORT = Number(process.env.DEMO_DB_PORT ?? 54329);
 const ADMIN_PASSWORD = 'demo-wachtwoord-123';
-const dataDir = path.resolve('.demo', 'db');
+// As root (some sandboxes), PostgreSQL runs as a separate user that can't open
+// root's home folder, so the data goes to the shared temp folder instead.
+const runningAsRoot = process.getuid?.() === 0;
+const defaultDir = runningAsRoot ? path.join(os.tmpdir(), 'gamerxp-demo', 'db') : path.join(os.homedir(), '.gamerxp-demo', 'db');
+const dataDir = path.resolve(process.env.DEMO_DATA_DIR ?? defaultDir);
+
+if (process.argv.includes('--reset')) {
+  rmSync(path.dirname(dataDir), { recursive: true, force: true });
+  console.log('Old demo data removed.');
+}
 
 console.log('Starting the built-in database…');
 mkdirSync(path.dirname(dataDir), { recursive: true });
@@ -30,7 +42,7 @@ const database = new EmbeddedPostgres({
   password: 'demo',
   persistent: true,
   // PostgreSQL refuses to run as root, which some sandboxes and containers use.
-  createPostgresUser: process.getuid?.() === 0,
+  createPostgresUser: runningAsRoot,
   onLog: () => {},
   onError: (err) => {
     const text = String(err);
@@ -97,5 +109,5 @@ console.log(`
   Login:    ${DEMO_ADMIN} / ${ADMIN_PASSWORD}
   Online payments: ${app.mollie ? 'Mollie (MOLLIE_API_KEY)' : 'off (set MOLLIE_API_KEY=test_... to try Mollie)'}
 
-  Stop with Ctrl+C. Delete the .demo folder to start over with fresh test customers.
+  Stop with Ctrl+C. Fresh test customers: npm run demo -- --reset
 `);

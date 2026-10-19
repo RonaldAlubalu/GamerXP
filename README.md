@@ -87,7 +87,7 @@ npm install
 npm run demo
 ```
 
-This starts a built-in PostgreSQL database, adds 8 test customers in every phase and 2 contact messages, and runs the site. Open http://localhost:8080 to see it as a customer, and http://localhost:8080/admin with **demo@gamerxp.nl / demo-wachtwoord-123** for the admin. Emails are not sent; they are printed in the terminal. The data is kept in the `.demo` folder; delete it to start over. To try Mollie test payments: `MOLLIE_API_KEY=test_... npm run demo`.
+This starts a built-in PostgreSQL database, adds 8 test customers in every phase and 2 contact messages, and runs the site. Open http://localhost:8080 to see it as a customer, and http://localhost:8080/admin with **demo@gamerxp.nl / demo-wachtwoord-123** for the admin. Emails are not sent; they are printed in the terminal. The demo database is kept in your home folder (`~/.gamerxp-demo`), outside the project, so OneDrive or Dropbox don't interfere; `npm run demo -- --reset` starts over with fresh test customers. To try Mollie test payments: `MOLLIE_API_KEY=test_... npm run demo` (Windows PowerShell: `$env:MOLLIE_API_KEY="test_..."; npm run demo`).
 
 **With Docker Desktop:**
 

@@ -3,7 +3,7 @@ import type { Db } from '../db/pool.js';
 import { generateReference, generateSessionToken } from '../lib/auth.js';
 import { HttpError } from '../lib/errors.js';
 import type { BookingMailData } from '../lib/emails.js';
-import { bookingWindow, unavailableDates } from './availability.js';
+import { availableSlots, bookingWindow } from './availability.js';
 import { addEvent, createDefaultTasks } from './pipeline.js';
 
 export interface NewBooking {
@@ -28,7 +28,7 @@ export async function createBooking(
   config: Config,
   input: NewBooking,
 ): Promise<BookingMailData & { id: string; status: string }> {
-  const { minDate, maxDate } = bookingWindow(config);
+  const { minDate, maxDate } = await bookingWindow(db, config);
   if (input.partyDate < minDate || input.partyDate > maxDate) {
     throw new HttpError(422, `Je kunt boeken van ${minDate} tot en met ${maxDate}.`, 'date_out_of_range');
   }
@@ -45,9 +45,13 @@ export async function createBooking(
     );
     if (!pkg.rows[0]) throw new HttpError(422, 'Dit pakket bestaat niet (meer).', 'unknown_package');
 
-    const unavailable = await unavailableDates(client, config, input.partyDate, input.partyDate);
-    if (unavailable.length > 0) {
-      throw new HttpError(409, 'Deze datum is helaas niet meer beschikbaar. Kies een andere datum.', 'date_unavailable');
+    const free = await availableSlots(client, config, input.partyDate, input.partyDate);
+    if (!free[input.partyDate]?.includes(input.timeSlot)) {
+      throw new HttpError(
+        409,
+        'Dit tijdslot is helaas niet (meer) beschikbaar. Kies een ander moment.',
+        'slot_unavailable',
+      );
     }
 
     // Price is fixed at booking time: package plus extra stations. Travel costs and

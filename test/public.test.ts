@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { saveSettings } from '../src/services/availability.js';
+import { addDays } from '../src/lib/dates.js';
 import { bookingBody, futureDate, setupApp, teardown, type TestContext } from './helpers.js';
 
 let ctx: TestContext;
@@ -69,12 +71,17 @@ describe('public API', () => {
     expect(res.statusCode).toBe(201);
   });
 
-  it('rejects a second booking on a full date', async () => {
+  it('rejects a second booking in the same slot but allows another slot that day', async () => {
     const first = await ctx.app.inject({ method: 'POST', url: '/api/bookings', payload: bookingBody(ctx) });
     expect(first.statusCode).toBe(201);
     const second = await ctx.app.inject({ method: 'POST', url: '/api/bookings', payload: bookingBody(ctx) });
     expect(second.statusCode).toBe(409);
-    expect(second.json().code).toBe('date_unavailable');
+    expect(second.json().code).toBe('slot_unavailable');
+    const evening = await ctx.app.inject({ method: 'POST', url: '/api/bookings', payload: bookingBody(ctx, { timeSlot: 'avond' }) });
+    expect(evening.statusCode).toBe(201);
+    // Default daily capacity is 2, so the morning is now full too.
+    const morning = await ctx.app.inject({ method: 'POST', url: '/api/bookings', payload: bookingBody(ctx, { timeSlot: 'ochtend' }) });
+    expect(morning.statusCode).toBe(409);
   });
 
   it('never overbooks under concurrent requests', async () => {
@@ -98,14 +105,31 @@ describe('public API', () => {
     expect(res.statusCode).toBe(201);
   });
 
-  it('respects DAILY_CAPACITY', async () => {
-    await teardown(ctx);
-    ctx = await setupApp({ DAILY_CAPACITY: 2 });
+  it('respects the slot and daily capacity settings', async () => {
+    await saveSettings(ctx.db, { slotCapacity: 2, dailyCapacity: 2, minLeadDays: 3, maxAdvanceDays: 365 });
     const codes = [];
     for (let i = 0; i < 3; i++) {
       codes.push((await ctx.app.inject({ method: 'POST', url: '/api/bookings', payload: bookingBody(ctx) })).statusCode);
     }
     expect(codes).toEqual([201, 201, 409]);
+  });
+
+  it('only offers slots that are open in the weekly schedule or opened for that date', async () => {
+    const date = futureDate(ctx);
+    const weekday = ((new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7) + 1;
+    await ctx.db.query("UPDATE weekly_availability SET open = (slot = 'middag') WHERE weekday = $1", [weekday]);
+    await ctx.db.query("INSERT INTO slot_overrides (date, slot, open) VALUES ($1, 'avond', true)", [date]);
+
+    const res = await ctx.app.inject(`/api/availability?from=${date}&to=${date}`);
+    expect(res.json().days[date]).toEqual(['middag', 'avond']);
+    expect(res.json().slots.map((s: { key: string; start: string }) => `${s.key} ${s.start}`)).toEqual([
+      'ochtend 09:00', 'middag 13:00', 'avond 17:00',
+    ]);
+
+    const closed = await ctx.app.inject({ method: 'POST', url: '/api/bookings', payload: bookingBody(ctx, { timeSlot: 'ochtend' }) });
+    expect(closed.statusCode).toBe(409);
+    const opened = await ctx.app.inject({ method: 'POST', url: '/api/bookings', payload: bookingBody(ctx, { timeSlot: 'avond' }) });
+    expect(opened.statusCode).toBe(201);
   });
 
   it('rejects blocked dates and dates outside the booking window', async () => {
@@ -152,7 +176,7 @@ describe('public API', () => {
     expect(codes.at(-1)).toBe(429);
   });
 
-  it('reports unavailable dates', async () => {
+  it('reports bookable dates and slots', async () => {
     const blocked = futureDate(ctx, 20);
     await ctx.db.query('INSERT INTO blocked_dates (date) VALUES ($1)', [blocked]);
     await ctx.app.inject({ method: 'POST', url: '/api/bookings', payload: bookingBody(ctx) });
@@ -160,8 +184,10 @@ describe('public API', () => {
     const res = await ctx.app.inject(`/api/availability?to=${futureDate(ctx, 30)}`);
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    expect(body.minDate).toBe(futureDate(ctx, ctx.config.MIN_LEAD_DAYS));
-    expect(body.unavailable).toEqual([futureDate(ctx), blocked]);
+    expect(body.minDate).toBe(futureDate(ctx, 3));
+    expect(body.days[futureDate(ctx)]).toEqual(['ochtend', 'avond']);
+    expect(body.days[blocked]).toBeUndefined();
+    expect(body.days[addDays(blocked, 1)]).toEqual(['ochtend', 'middag', 'avond']);
   });
 
   it('stores contact messages and notifies the owner', async () => {

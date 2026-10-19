@@ -340,3 +340,22 @@ dl.summary dd { margin: 0; }
   .progress-steps li .label { padding-top: 7px; }
   .progress-steps li small { padding-top: 9px; margin-left: auto; }
 }
+
+/* Booking calendar ------------------------------------------------------------- */
+.booking-cal { max-width: 460px; }
+.cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.cal-head strong { font-family: var(--font-head); font-size: 1.2rem; text-transform: capitalize; }
+.small-round { width: 40px; height: 40px; font-size: 1.3rem; }
+.round-btn:disabled { opacity: .3; cursor: default; }
+.cal-weekdays, .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; text-align: center; }
+.cal-weekdays { color: var(--muted); font-size: .85rem; margin-bottom: 6px; }
+.cal-grid .muted { grid-column: 1 / -1; }
+.cal-day {
+  aspect-ratio: 1; border-radius: 10px; border: 1px solid var(--line); background: var(--bg);
+  color: var(--muted); font: 600 1rem var(--font-head); cursor: default; opacity: .45;
+}
+.cal-day.free { cursor: pointer; opacity: 1; color: var(--text); border-color: var(--green); background: rgba(82, 204, 24, .12); }
+.cal-day.free:hover { background: rgba(82, 204, 24, .3); }
+.cal-day.selected { background: var(--green); color: var(--bg); box-shadow: 0 0 0 3px rgba(82, 204, 24, .35); }
+.legend-dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: var(--green); vertical-align: middle; }
+.slot-date { margin: 18px 0 10px; }

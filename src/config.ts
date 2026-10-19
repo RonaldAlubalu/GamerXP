@@ -13,12 +13,6 @@ const schema = z.object({
   TIMEZONE: z.string().default('Europe/Amsterdam'),
   TRUST_PROXY: bool.default(false),
 
-  // Number of party setups that can go out on the same day.
-  DAILY_CAPACITY: z.coerce.number().int().positive().default(1),
-  // Bookings must be made at least this many days ahead...
-  MIN_LEAD_DAYS: z.coerce.number().int().min(0).default(3),
-  // ...and at most this many days ahead.
-  MAX_ADVANCE_DAYS: z.coerce.number().int().positive().default(365),
 
   // Deposit asked when a booking is confirmed (in cents).
   DEPOSIT_CENTS: z.coerce.number().int().min(0).default(10000),

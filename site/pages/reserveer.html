@@ -38,23 +38,22 @@
           </fieldset>
 
           <fieldset>
-            <legend>Wanneer?</legend>
-            <div class="row">
-              <div class="field">
-                <label for="b-date">Reserveringsdatum</label>
-                <input id="b-date" name="partyDate" type="date" required>
-                <small id="date-hint" aria-live="polite"></small>
+            <legend>Kies een datum en tijdslot</legend>
+            <div class="booking-cal">
+              <div class="cal-head">
+                <button type="button" class="round-btn small-round" id="cal-prev" aria-label="Vorige maand">‹</button>
+                <strong id="cal-title" aria-live="polite"></strong>
+                <button type="button" class="round-btn small-round" id="cal-next" aria-label="Volgende maand">›</button>
               </div>
-              <div class="field">
-                <label for="b-slot">Tijdslot</label>
-                <select id="b-slot" name="timeSlot" required>
-                  <option value="">Kies een tijdslot…</option>
-                  <option value="ochtend">Ochtend</option>
-                  <option value="middag">Middag</option>
-                  <option value="avond">Avond (evt. toeslag)</option>
-                </select>
-                <small>Bij een combinatie graag bij details aangeven. Eindigt je feestje na 19:30 uur? Dan bespreken we vooraf of een avondtoeslag van toepassing is.</small>
-              </div>
+              <div class="cal-weekdays" aria-hidden="true"><span>ma</span><span>di</span><span>wo</span><span>do</span><span>vr</span><span>za</span><span>zo</span></div>
+              <div class="cal-grid" id="cal-grid"><p class="muted">Beschikbaarheid laden…</p></div>
+              <p class="hint"><span class="legend-dot"></span> Groen = nog plek. Grijs = vol of niet beschikbaar.</p>
+            </div>
+            <input type="hidden" name="partyDate">
+            <div id="slot-picker" hidden>
+              <p class="slot-date">Tijdslots op <strong id="slot-date"></strong>:</p>
+              <div class="choice-cards" id="slot-buttons" role="radiogroup" aria-label="Tijdslot"></div>
+              <small class="hint">Bij een combinatie graag bij details aangeven. Eindigt je feestje na 19:30 uur? Dan bespreken we vooraf of een avondtoeslag van toepassing is.</small>
             </div>
           </fieldset>
 

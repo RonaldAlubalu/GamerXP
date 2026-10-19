@@ -200,4 +200,66 @@ describe('admin API', () => {
     const res = await ctx.app.inject({ method: 'PATCH', url: `/api/admin/messages/${msg.id}`, headers: auth(), payload: { handled: true } });
     expect(res.json()).toEqual({ id: msg.id, handled: true });
   });
+
+  it('edits the weekly schedule, slot hours and capacity', async () => {
+    const current = (await ctx.app.inject({ url: '/api/admin/availability', headers: auth() })).json();
+    expect(current.settings).toEqual({ slotCapacity: 1, dailyCapacity: 2, minLeadDays: 3, maxAdvanceDays: 365 });
+
+    const weekly = Object.fromEntries([1, 2, 3, 4, 5, 6, 7].map((d) => [d, { ochtend: false, middag: d === 6, avond: false }]));
+    const res = await ctx.app.inject({
+      method: 'PUT',
+      url: '/api/admin/availability',
+      headers: auth(),
+      payload: {
+        settings: { slotCapacity: 1, dailyCapacity: 1, minLeadDays: 7, maxAdvanceDays: 180 },
+        slots: [{ key: 'middag', start: '12:30', end: '16:30' }],
+        weekly,
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().settings.minLeadDays).toBe(7);
+    expect(res.json().slots[1]).toMatchObject({ key: 'middag', start: '12:30', end: '16:30' });
+    expect(res.json().weekly['6']).toEqual({ ochtend: false, middag: true, avond: false });
+
+    // Only Saturday afternoons are bookable now.
+    const days = (await ctx.app.inject('/api/availability')).json().days as Record<string, string[]>;
+    for (const [date, slots] of Object.entries(days)) {
+      expect(new Date(`${date}T00:00:00Z`).getUTCDay()).toBe(6);
+      expect(slots).toEqual(['middag']);
+    }
+
+    const invalid = await ctx.app.inject({
+      method: 'PUT',
+      url: '/api/admin/availability',
+      headers: auth(),
+      payload: { ...current, slots: [{ key: 'avond', start: '21:00', end: '17:00' }] },
+    });
+    expect(invalid.statusCode).toBe(400);
+  });
+
+  it('manages date exceptions and shows a month calendar', async () => {
+    const booking = await createBooking();
+    const date = booking.partyDate;
+    await ctx.app.inject({
+      method: 'PUT',
+      url: `/api/admin/availability/overrides/${date}/ochtend`,
+      headers: auth(),
+      payload: { open: false, reason: 'Tandarts' },
+    });
+    expect((await ctx.app.inject({ url: '/api/admin/availability/overrides', headers: auth() })).json()).toEqual([
+      { date, slot: 'ochtend', open: false, reason: 'Tandarts' },
+    ]);
+
+    const cal = (await ctx.app.inject({ url: `/api/admin/calendar?month=${date.slice(0, 7)}`, headers: auth() })).json();
+    const day = cal.days.find((d: { date: string }) => d.date === date);
+    expect(day.slots).toEqual([
+      { key: 'ochtend', open: false, booked: 0, available: false },
+      { key: 'middag', open: true, booked: 1, available: false },
+      { key: 'avond', open: true, booked: 0, available: true },
+    ]);
+    expect(day.bookings).toEqual([expect.objectContaining({ id: booking.id, timeSlot: 'middag', childName: 'Daan' })]);
+
+    await ctx.app.inject({ method: 'DELETE', url: `/api/admin/availability/overrides/${date}/ochtend`, headers: auth() });
+    expect((await ctx.app.inject({ url: '/api/admin/availability/overrides', headers: auth() })).json()).toEqual([]);
+  });
 });

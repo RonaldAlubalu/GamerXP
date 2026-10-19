@@ -70,7 +70,7 @@ function h(tag, attrs = {}, ...children) {
     if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
     else if (v !== false && v != null) el.setAttribute(k, v === true ? '' : v);
   }
-  el.append(...children.flat().filter((c) => c != null && c !== false).map((c) => (c instanceof Node ? c : String(c))));
+  el.append(...children.flat(Infinity).filter((c) => c != null && c !== false).map((c) => (c instanceof Node ? c : String(c))));
   return el;
 }
 
@@ -318,33 +318,156 @@ async function bookingDetailView(id) {
   );
 }
 
-async function datesView() {
-  const dates = await api('/blocked-dates');
-  const form = h('form', { class: 'toolbar', onsubmit: async (e) => {
+const WEEKDAYS = ['maandag', 'dinsdag', 'woensdag', 'donderdag', 'vrijdag', 'zaterdag', 'zondag'];
+const SLOT_LABELS = { ochtend: 'Ochtend', middag: 'Middag', avond: 'Avond' };
+
+async function availabilityView() {
+  const [av, blocked, overrides] = await Promise.all([api('/availability'), api('/blocked-dates'), api('/availability/overrides')]);
+  const num = (name, value, min, max) => h('input', { type: 'number', name, value, min, max, required: true });
+
+  const scheduleForm = h('form', { class: 'card', onsubmit: async (e) => {
     e.preventDefault();
-    const { date, reason } = Object.fromEntries(new FormData(form));
+    const f = scheduleForm.elements;
+    const weekly = Object.fromEntries([1, 2, 3, 4, 5, 6, 7].map((d) => [d, Object.fromEntries(
+      av.slots.map((s) => [s.key, f[`w${d}-${s.key}`].checked]))]));
+    const body = {
+      settings: {
+        slotCapacity: Number(f.slotCapacity.value), dailyCapacity: Number(f.dailyCapacity.value),
+        minLeadDays: Number(f.minLeadDays.value), maxAdvanceDays: Number(f.maxAdvanceDays.value),
+      },
+      slots: av.slots.map((s) => ({ key: s.key, start: f[`start-${s.key}`].value, end: f[`end-${s.key}`].value })),
+      weekly,
+    };
+    try {
+      await api('/availability', { method: 'PUT', body: JSON.stringify(body) });
+      flash('ok', 'Beschikbaarheid opgeslagen. De website toont dit direct.');
+      availabilityView();
+    } catch (err) { flash('error', err.message); }
+  } },
+    h('h2', {}, 'Weekrooster'),
+    h('p', { class: 'muted' }, 'Vink aan op welke dagdelen je normaal gesproken feestjes doet.'),
+    h('div', { class: 'table-wrap' }, h('table', { class: 'schedule' },
+      h('thead', {}, h('tr', {}, h('th', {}, ''), av.slots.map((s) => h('th', {}, s.label)))),
+      h('tbody', {}, WEEKDAYS.map((name, i) => h('tr', {},
+        h('th', {}, name),
+        av.slots.map((s) => h('td', {}, h('label', { class: 'switch' },
+          h('input', { type: 'checkbox', name: `w${i + 1}-${s.key}`, checked: av.weekly[i + 1][s.key] }),
+          h('span', {}, 'open'))))))))),
+    h('h2', {}, 'Tijden per dagdeel'),
+    h('div', { class: 'row' }, av.slots.map((s) => h('div', { class: 'field' },
+      h('label', {}, s.label),
+      h('div', { class: 'time-range' },
+        h('input', { type: 'time', name: `start-${s.key}`, value: s.start, required: true }), ' – ',
+        h('input', { type: 'time', name: `end-${s.key}`, value: s.end, required: true }))))),
+    h('h2', {}, 'Capaciteit en boekingsperiode'),
+    h('div', { class: 'row' },
+      h('div', { class: 'field' }, h('label', {}, 'Feestjes per dagdeel'), num('slotCapacity', av.settings.slotCapacity, 1, 10),
+        h('small', {}, 'Hoeveel sets je tegelijk kunt uitleveren.')),
+      h('div', { class: 'field' }, h('label', {}, 'Feestjes per dag (totaal)'), num('dailyCapacity', av.settings.dailyCapacity, 1, 10)),
+      h('div', { class: 'field' }, h('label', {}, 'Minimaal dagen vooruit'), num('minLeadDays', av.settings.minLeadDays, 0, 60)),
+      h('div', { class: 'field' }, h('label', {}, 'Maximaal dagen vooruit'), num('maxAdvanceDays', av.settings.maxAdvanceDays, 7, 730))),
+    h('button', { class: 'btn small', type: 'submit' }, 'Opslaan'));
+
+  const blockForm = h('form', { class: 'toolbar', onsubmit: async (e) => {
+    e.preventDefault();
+    const { date, reason } = Object.fromEntries(new FormData(blockForm));
     try {
       await api(`/blocked-dates/${date}`, { method: 'PUT', body: JSON.stringify({ reason }) });
       flash('ok', `${fmtDate(date)} geblokkeerd.`);
-      datesView();
+      availabilityView();
     } catch (err) { flash('error', err.message); }
   } },
     h('div', { class: 'field' }, h('label', {}, 'Datum'), h('input', { type: 'date', name: 'date', required: true, min: todayIso() })),
+    h('div', { class: 'field' }, h('label', {}, 'Reden (optioneel)'), h('input', { name: 'reason', maxlength: 200, placeholder: 'Bijv. vakantie' })),
+    h('button', { class: 'btn small', type: 'submit' }, 'Hele dag blokkeren'));
+
+  const overrideForm = h('form', { class: 'toolbar', onsubmit: async (e) => {
+    e.preventDefault();
+    const { date, slot, open, reason } = Object.fromEntries(new FormData(overrideForm));
+    try {
+      await api(`/availability/overrides/${date}/${slot}`, { method: 'PUT', body: JSON.stringify({ open: open === 'true', reason }) });
+      flash('ok', 'Uitzondering opgeslagen.');
+      availabilityView();
+    } catch (err) { flash('error', err.message); }
+  } },
+    h('div', { class: 'field' }, h('label', {}, 'Datum'), h('input', { type: 'date', name: 'date', required: true, min: todayIso() })),
+    h('div', { class: 'field' }, h('label', {}, 'Dagdeel'), h('select', { name: 'slot' }, av.slots.map((s) => h('option', { value: s.key }, s.label)))),
+    h('div', { class: 'field' }, h('label', {}, 'Wordt'), h('select', { name: 'open' },
+      h('option', { value: 'true' }, 'Extra open'), h('option', { value: 'false' }, 'Gesloten'))),
     h('div', { class: 'field' }, h('label', {}, 'Reden (optioneel)'), h('input', { name: 'reason', maxlength: 200 })),
-    h('button', { class: 'btn small', type: 'submit' }, 'Blokkeren'),
-  );
+    h('button', { class: 'btn small', type: 'submit' }, 'Toevoegen'));
+
   view.replaceChildren(
-    h('h1', {}, 'Geblokkeerde data'),
-    h('p', { class: 'muted' }, 'Op deze dagen kan niemand boeken, bijvoorbeeld tijdens vakantie.'),
-    form,
-    dates.length
-      ? table(['Datum', 'Reden', ''], dates.map((d) => h('tr', {},
-          h('td', {}, fmtDate(d.date)), h('td', {}, d.reason || '–'),
-          h('td', {}, h('button', { class: 'btn small secondary', onclick: async () => {
-            await api(`/blocked-dates/${d.date}`, { method: 'DELETE' });
-            datesView();
-          } }, 'Vrijgeven')))))
-      : h('p', { class: 'muted' }, 'Geen geblokkeerde data.'),
+    h('div', { class: 'page-head' }, h('h1', {}, 'Beschikbaarheid'), h('a', { href: '#/calendar' }, 'Bekijk agenda →')),
+    scheduleForm,
+    h('div', { class: 'card' },
+      h('h2', {}, 'Hele dagen blokkeren'),
+      h('p', { class: 'muted' }, 'Op deze dagen kan niemand boeken, bijvoorbeeld tijdens vakantie.'),
+      blockForm,
+      blocked.length
+        ? table(['Datum', 'Reden', ''], blocked.map((d) => h('tr', {},
+            h('td', {}, fmtDate(d.date)), h('td', {}, d.reason || '–'),
+            h('td', {}, h('button', { class: 'btn small secondary', onclick: async () => {
+              await api(`/blocked-dates/${d.date}`, { method: 'DELETE' });
+              availabilityView();
+            } }, 'Vrijgeven')))))
+        : h('p', { class: 'muted' }, 'Geen geblokkeerde dagen.')),
+    h('div', { class: 'card' },
+      h('h2', {}, 'Uitzonderingen per dagdeel'),
+      h('p', { class: 'muted' }, 'Open een extra dagdeel dat normaal dicht is, of sluit er een dat normaal open is.'),
+      overrideForm,
+      overrides.length
+        ? table(['Datum', 'Dagdeel', '', 'Reden', ''], overrides.map((o) => h('tr', {},
+            h('td', {}, fmtDate(o.date)), h('td', {}, SLOT_LABELS[o.slot]),
+            h('td', {}, h('span', { class: `status ${o.open ? 'confirmed' : 'cancelled'}` }, o.open ? 'Extra open' : 'Gesloten')),
+            h('td', {}, o.reason || '–'),
+            h('td', {}, h('button', { class: 'btn small secondary', onclick: async () => {
+              await api(`/availability/overrides/${o.date}/${o.slot}`, { method: 'DELETE' });
+              availabilityView();
+            } }, 'Verwijderen')))))
+        : h('p', { class: 'muted' }, 'Geen uitzonderingen.')),
+  );
+}
+
+async function calendarView() {
+  const params = new URLSearchParams(location.hash.split('?')[1] || '');
+  const month = params.get('month') ?? todayIso().slice(0, 7);
+  const cal = await api(`/calendar?month=${month}`);
+  const shift = (n) => {
+    const d = new Date(`${month}-01T00:00:00Z`);
+    d.setUTCMonth(d.getUTCMonth() + n);
+    return d.toISOString().slice(0, 7);
+  };
+  const title = new Intl.DateTimeFormat('nl-NL', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${month}-01T00:00:00Z`));
+  const offset = (new Date(`${month}-01T00:00:00Z`).getUTCDay() + 6) % 7;
+
+  const dayCell = (d) => {
+    const isToday = d.date === todayIso();
+    return h('div', { class: `cal-cell ${d.blocked ? 'blocked' : ''} ${isToday ? 'today' : ''} ${d.date < todayIso() ? 'past' : ''}` },
+      h('div', { class: 'cal-date' }, Number(d.date.slice(8)), d.blocked && h('span', { class: 'muted small' }, ` ${d.reason || 'geblokkeerd'}`)),
+      d.slots.map((s) => {
+        const bookings = d.bookings.filter((b) => b.timeSlot === s.key);
+        if (bookings.length) {
+          return bookings.map((b) => h('a', { class: `cal-chip booked st-${b.status}`, href: `#/bookings/${b.id}`, title: `${STATUS_LABELS[b.status]} · ${b.packageName}` },
+            `${SLOT_LABELS[s.key].slice(0, 3)} ${b.startTime ?? ''} ${b.childName || b.parentName} · ${b.city}`));
+        }
+        if (d.blocked || !s.open) return h('span', { class: 'cal-chip closed' }, `${SLOT_LABELS[s.key].slice(0, 3)} –`);
+        return h('span', { class: `cal-chip ${s.available ? 'free' : 'full'}` }, `${SLOT_LABELS[s.key].slice(0, 3)} ${s.available ? 'vrij' : 'vol'}`);
+      }));
+  };
+
+  view.replaceChildren(
+    h('div', { class: 'page-head' },
+      h('h1', {}, 'Agenda'),
+      h('a', { class: 'btn small secondary', href: `#/calendar?month=${shift(-1)}` }, '‹'),
+      h('strong', { class: 'cal-title' }, title),
+      h('a', { class: 'btn small secondary', href: `#/calendar?month=${shift(1)}` }, '›'),
+      h('a', { href: '#/availability' }, 'Beschikbaarheid aanpassen →')),
+    h('div', { class: 'admin-cal' },
+      ['ma', 'di', 'wo', 'do', 'vr', 'za', 'zo'].map((w) => h('div', { class: 'cal-wd' }, w)),
+      Array.from({ length: offset }, () => h('div', {})),
+      cal.days.map(dayCell)),
+    h('p', { class: 'muted small' }, 'Groen = vrij, oranje/paars = geboekt (klik voor details), grijs = gesloten.'),
   );
 }
 
@@ -419,7 +542,8 @@ async function render() {
   try {
     if (parts[0] === 'bookings' && parts[1]) await bookingDetailView(parts[1]);
     else if (parts[0] === 'list') await bookingsView();
-    else if (parts[0] === 'dates') await datesView();
+    else if (parts[0] === 'availability') await availabilityView();
+    else if (parts[0] === 'calendar') await calendarView();
     else if (parts[0] === 'messages') await messagesView();
     else if (parts[0] === 'packages') await packagesView();
     else await boardView();

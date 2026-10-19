@@ -5,7 +5,7 @@ import { bookingOwnerNotification, bookingReceivedMail, contactOwnerNotification
 import { HttpError } from '../lib/errors.js';
 import type { Mail } from '../lib/mailer.js';
 import { bookingRequest, contactRequest, dateString } from '../lib/schemas.js';
-import { bookingWindow, unavailableDates } from '../services/availability.js';
+import { availableSlots, bookingWindow, getTimeSlots } from '../services/availability.js';
 import { createBooking } from '../services/bookings.js';
 import { STAGE_INFO, STAGES, stageIndex, type Status } from '../services/pipeline.js';
 
@@ -28,16 +28,18 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
     return rows;
   });
 
+  // Bookable dates and time slots for the booking calendar.
   app.get('/availability', async (req) => {
-    const window = bookingWindow(app.config);
+    const window = await bookingWindow(app.db, app.config);
     const query = z
       .object({ from: dateString.optional(), to: dateString.optional() })
       .parse(req.query);
     const from = query.from && query.from > window.minDate ? query.from : window.minDate;
     const to = query.to && query.to < window.maxDate ? query.to : window.maxDate;
-    if (from > to) return { ...window, from, to, unavailable: [] };
+    const slots = await getTimeSlots(app.db);
+    if (from > to) return { ...window, from, to, slots, days: {} };
     if (daysBetween(from, to) > 400) throw new HttpError(400, 'Periode is te lang.');
-    return { ...window, from, to, unavailable: await unavailableDates(app.db, app.config, from, to) };
+    return { ...window, from, to, slots, days: await availableSlots(app.db, app.config, from, to) };
   });
 
   app.post(

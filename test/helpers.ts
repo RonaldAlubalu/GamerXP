@@ -20,6 +20,8 @@ export async function setupApp(overrides: Partial<Config> = {}): Promise<TestCon
   const db = createPool(config.DATABASE_URL);
   await db.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
   await migrate(db, () => {});
+  // Open every slot so tests don't depend on the starting schedule.
+  await db.query('UPDATE weekly_availability SET open = true');
   // Migrations create the real packages: Standaard (€275) and Ultimate (€350).
   const { rows } = await db.query<{ id: number }>("SELECT id FROM packages WHERE slug = 'standaard'");
   const sent: Mail[] = [];

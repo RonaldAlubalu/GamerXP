@@ -2,6 +2,7 @@ import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { generateSessionToken, hashToken, verifyPassword } from '../../lib/auth.js';
 import { HttpError } from '../../lib/errors.js';
+import { availabilityRoutes } from './availability.js';
 import { bookingRoutes } from './bookings.js';
 import { catalogRoutes } from './catalog.js';
 
@@ -70,5 +71,6 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
     await secured.register(bookingRoutes);
     await secured.register(catalogRoutes);
+    await secured.register(availabilityRoutes);
   });
 };

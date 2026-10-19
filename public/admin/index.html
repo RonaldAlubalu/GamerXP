@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>GamerXP Beheer</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/styles.css">
+  <link rel="stylesheet" href="/admin/admin.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="logo" href="#/bookings">Gamer<span>XP</span> <small>beheer</small></a>
+      <nav class="nav admin-nav" id="admin-nav" hidden>
+        <a href="#/bookings">Boekingen</a>
+        <a href="#/dates">Geblokkeerde data</a>
+        <a href="#/messages">Berichten</a>
+        <a href="#/packages">Pakketten</a>
+        <button class="btn small secondary" id="logout">Uitloggen</button>
+      </nav>
+    </div>
+  </header>
+  <main class="wrap admin-main">
+    <div id="notice" hidden></div>
+    <div id="view"></div>
+  </main>
+
+  <template id="login-tpl">
+    <form class="card login" id="login-form">
+      <h1>Inloggen</h1>
+      <div class="field"><label for="l-email">E-mail</label><input id="l-email" name="email" type="email" required autocomplete="username"></div>
+      <div class="field"><label for="l-pass">Wachtwoord</label><input id="l-pass" name="password" type="password" required autocomplete="current-password"></div>
+      <button class="btn" type="submit">Inloggen</button>
+    </form>
+  </template>
+
+  <script type="module" src="/admin/admin.js"></script>
+</body>
+</html>

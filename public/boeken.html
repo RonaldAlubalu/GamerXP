@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Boek je LAN-party – GamerXP</title>
+  <meta name="description" content="Boek een gaming LAN-party aan huis voor het kinderfeestje van je kind.">
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="logo" href="/">Gamer<span>XP</span></a>
+      <nav class="nav">
+        <a href="/#hoe-werkt-het">Hoe werkt het</a>
+        <a href="/#pakketten">Pakketten</a>
+        <a href="/#faq">Vragen</a>
+        <a href="/#contact">Contact</a>
+        <a class="btn small" href="/boeken">Boek nu</a>
+      </nav>
+    </div>
+  </header>
+  <main>
+    <section>
+      <div class="wrap">
+        <h1>Boek je LAN-party</h1>
+        <p class="lead">Vul het formulier in en wij nemen zo snel mogelijk contact met je op om je feest te bevestigen. Je zit nog nergens aan vast.</p>
+
+        <div id="booking-done" class="notice ok" hidden>
+          <h2>Bedankt voor je aanvraag! 🎉</h2>
+          <p>Je referentienummer is <strong id="booking-reference"></strong>. Je ontvangt een bevestiging van je aanvraag per e-mail. We nemen zo snel mogelijk contact met je op.</p>
+          <p><a href="/">Terug naar de homepage</a></p>
+        </div>
+
+        <div id="booking-notice" hidden></div>
+
+        <form id="booking-form" novalidate>
+          <fieldset>
+            <legend>Het feest</legend>
+            <div class="row">
+              <div class="field">
+                <label for="b-package">Pakket</label>
+                <select id="b-package" name="packageId" required><option value="">Kies een pakket…</option></select>
+              </div>
+              <div class="field">
+                <label for="b-date">Datum</label>
+                <input id="b-date" name="partyDate" type="date" required>
+                <small id="date-hint" aria-live="polite"></small>
+              </div>
+              <div class="field">
+                <label for="b-time">Gewenste starttijd</label>
+                <input id="b-time" name="startTime" type="time" required min="09:00" max="20:00" step="900" value="14:00">
+              </div>
+            </div>
+            <div class="row">
+              <div class="field"><label for="b-child">Naam van de jarige</label><input id="b-child" name="childName" required maxlength="50"></div>
+              <div class="field"><label for="b-age">Leeftijd (wordt)</label><input id="b-age" name="childAge" type="number" required min="3" max="18" value="8"></div>
+              <div class="field"><label for="b-guests">Aantal kinderen (incl. jarige)</label><input id="b-guests" name="guestCount" type="number" required min="1" max="40" value="8"></div>
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend>Jouw gegevens</legend>
+            <div class="row">
+              <div class="field"><label for="b-name">Naam ouder/verzorger</label><input id="b-name" name="parentName" required maxlength="100" autocomplete="name"></div>
+              <div class="field"><label for="b-email">E-mail</label><input id="b-email" name="email" type="email" required maxlength="200" autocomplete="email"></div>
+              <div class="field"><label for="b-phone">Telefoon</label><input id="b-phone" name="phone" type="tel" required maxlength="20" autocomplete="tel"></div>
+            </div>
+            <div class="row">
+              <div class="field"><label for="b-street">Straat en huisnummer</label><input id="b-street" name="street" required maxlength="200" autocomplete="street-address"></div>
+              <div class="field"><label for="b-postal">Postcode</label><input id="b-postal" name="postalCode" required maxlength="7" autocomplete="postal-code" placeholder="1234 AB"></div>
+              <div class="field"><label for="b-city">Woonplaats</label><input id="b-city" name="city" required maxlength="100" autocomplete="address-level2"></div>
+            </div>
+            <div class="field">
+              <label for="b-notes">Opmerkingen <small>(optioneel)</small></label>
+              <textarea id="b-notes" name="notes" maxlength="2000" placeholder="Bijv. favoriete games, de ruimte waar het feest plaatsvindt, allergieën…"></textarea>
+            </div>
+          </fieldset>
+
+          <div class="hp" aria-hidden="true"><label>Website <input name="website" tabindex="-1" autocomplete="off"></label></div>
+          <label class="check"><input type="checkbox" name="privacyConsent" required> <span>Ik ga akkoord met de <a href="/privacy" target="_blank">privacyverklaring</a> en geef toestemming om mijn gegevens en die van mijn kind te gebruiken voor deze boeking.</span></label>
+          <button class="btn" type="submit">Verstuur aanvraag</button>
+        </form>
+      </div>
+    </section>
+  </main>
+  <footer class="site-footer">
+    <div class="wrap">
+      <span>&copy; <span data-year></span> GamerXP &middot; Gaming LAN-party&#39;s aan huis</span>
+      <span><a href="/privacy">Privacyverklaring</a> &middot; <a href="mailto:info@gamerxp.nl">info@gamerxp.nl</a></span>
+    </div>
+  </footer>
+  <script type="module" src="/assets/booking.js"></script>
+</body>
+</html>

@@ -11,6 +11,7 @@ import { HttpError } from './lib/errors.js';
 import { createMailer, type Mailer } from './lib/mailer.js';
 import { publicRoutes } from './routes/public.js';
 import { adminRoutes } from './routes/admin/index.js';
+import { registerSite } from './site.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -73,12 +74,18 @@ export async function buildApp({ config, db, mailer, logger = true }: AppOptions
   await app.register(publicRoutes, { prefix: '/api' });
   await app.register(adminRoutes, { prefix: '/api/admin' });
 
-  await app.register(fastifyStatic, { root: PUBLIC_DIR, extensions: ['html'] });
-  app.setNotFoundHandler((req, reply) => {
+  await registerSite(app);
+  // Assets and the admin page. Website pages come from site/ (see site.ts).
+  await app.register(fastifyStatic, {
+    root: PUBLIC_DIR,
+    index: ['index.html'],
+    maxAge: config.NODE_ENV === 'production' ? '1d' : 0,
+  });
+  app.setNotFoundHandler(async (req, reply) => {
     if (req.url.startsWith('/api/')) {
       return reply.status(404).send({ error: 'Niet gevonden.', code: 'not_found' });
     }
-    return reply.status(404).type('text/html').sendFile('404.html');
+    return reply.status(404).type('text/html; charset=utf-8').send(await app.notFoundPage());
   });
 
   return app;

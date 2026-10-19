@@ -45,7 +45,7 @@ describe('admin API', () => {
 
   it('gives every new booking a checklist and a timeline', async () => {
     const booking = await createBooking();
-    expect(booking).toMatchObject({ status: 'new', childName: 'Daan', startTime: '14:00', priceCents: 19900, tasksDone: 0 });
+    expect(booking).toMatchObject({ status: 'new', childName: 'Daan', timeSlot: 'middag', startTime: null, priceCents: 27500, depositCents: 10000, tasksDone: 0 });
     expect(booking.tasksTotal).toBeGreaterThan(10);
 
     const detail = (await ctx.app.inject({ url: `/api/admin/bookings/${booking.id}`, headers: auth() })).json();
@@ -59,10 +59,11 @@ describe('admin API', () => {
     await patch(booking.id, { status: 'contacted' });
     expect(ctx.sent).toHaveLength(0); // no email for this stage
 
-    const confirmed = await patch(booking.id, { status: 'confirmed', depositCents: 5000 });
-    expect(confirmed.json()).toMatchObject({ status: 'confirmed', depositCents: 5000 });
-    expect(ctx.sent[0]!.subject).toContain('bevestigd');
-    expect(ctx.sent[0]!.text).toMatch(/€\s50,00/);
+    const confirmed = await patch(booking.id, { status: 'confirmed', depositCents: 5000, startTime: '14:30' });
+    expect(confirmed.json()).toMatchObject({ status: 'confirmed', depositCents: 5000, startTime: '14:30' });
+    expect(ctx.sent[0]!.subject).toContain('bevestiging');
+    expect(ctx.sent[0]!.text).toMatch(/aanbetaling van €\s50,00, te voldoen binnen 5 kalenderdagen/);
+    expect(ctx.sent[0]!.text).toContain('om 14:30');
     expect(ctx.sent[0]!.text).toContain('/status?t=');
 
     await patch(booking.id, { status: 'deposit_paid', paidCents: 5000 });
@@ -75,7 +76,7 @@ describe('admin API', () => {
     const statusMoves = events.filter((e: { type: string }) => e.type === 'status').map((e: { toStatus: string }) => e.toStatus);
     expect(statusMoves).toEqual(['cancelled', 'deposit_paid', 'confirmed', 'contacted']);
     const updates = events.filter((e: { type: string }) => e.type === 'update').map((e: { message: string }) => e.message);
-    expect(updates.join('\n')).toMatch(/Aanbetaling: €\s0,00 → €\s50,00/);
+    expect(updates.join('\n')).toMatch(/Aanbetaling: €\s100,00 → €\s50,00/);
     expect(events.filter((e: { type: string }) => e.type === 'email')).toHaveLength(2);
     expect(events[0].actor).toBe('admin@gamerxp.nl');
   });
@@ -178,7 +179,7 @@ describe('admin API', () => {
       payload: { active: false, priceCents: 39900 },
     });
     expect(updated.json()).toMatchObject({ active: false, priceCents: 39900, name: 'XL' });
-    expect((await ctx.app.inject('/api/packages')).json()).toHaveLength(1);
+    expect((await ctx.app.inject('/api/packages')).json()).toHaveLength(2);
   });
 
   it('blocks and unblocks dates', async () => {

@@ -44,10 +44,10 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
     '/bookings',
     { config: { rateLimit: { max: 5, timeWindow: '10 minutes' } } },
     async (req, reply) => {
-      const { privacyConsent: _consent, website: _honeypot, ...input } = bookingRequest.parse(req.body);
+      const { termsAccepted: _terms, website: _honeypot, ...input } = bookingRequest.parse(req.body);
       const booking = await createBooking(app.db, app.config, input);
 
-      await sendSafely(bookingReceivedMail(booking, app.config.PUBLIC_URL));
+      await sendSafely(bookingReceivedMail(booking, { publicUrl: app.config.PUBLIC_URL }));
       if (app.config.OWNER_EMAIL) {
         await sendSafely(
           bookingOwnerNotification(booking, app.config.OWNER_EMAIL, `${app.config.PUBLIC_URL}/admin/#/bookings/${booking.id}`),
@@ -82,11 +82,12 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
     async (req) => {
       const { token } = z.object({ token: z.string().min(20).max(100) }).parse(req.params);
       const { rows } = await app.db.query<{
-        reference: string; status: Status; partyDate: string; startTime: string; packageName: string;
-        childName: string; guestCount: number; priceCents: number; depositCents: number; paidCents: number;
+        reference: string; status: Status; partyDate: string; timeSlot: string; startTime: string | null;
+        packageName: string; extraStations: number; childName: string; guestCount: number | null;
+        priceCents: number; depositCents: number; paidCents: number;
       }>(
-        `SELECT b.reference, b.status, b.party_date AS "partyDate", to_char(b.start_time, 'HH24:MI') AS "startTime",
-                p.name AS "packageName", b.child_name AS "childName", b.guest_count AS "guestCount",
+        `SELECT b.reference, b.status, b.party_date AS "partyDate", b.time_slot AS "timeSlot",
+                to_char(b.start_time, 'HH24:MI') AS "startTime", p.name AS "packageName", b.extra_stations AS "extraStations", b.child_name AS "childName", b.guest_count AS "guestCount",
                 b.price_cents AS "priceCents", b.deposit_cents AS "depositCents", b.paid_cents AS "paidCents"
            FROM bookings b JOIN packages p ON p.id = b.package_id
           WHERE b.status_token = $1`,

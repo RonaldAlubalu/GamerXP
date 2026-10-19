@@ -20,10 +20,8 @@ export async function setupApp(overrides: Partial<Config> = {}): Promise<TestCon
   const db = createPool(config.DATABASE_URL);
   await db.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
   await migrate(db, () => {});
-  const { rows } = await db.query<{ id: number }>(
-    `INSERT INTO packages (slug, name, max_players, duration_hours, price_cents)
-     VALUES ('basis', 'LAN-Party Basis', 8, 3, 19900) RETURNING id`,
-  );
+  // Migrations create the real packages: Standaard (€275) and Ultimate (€350).
+  const { rows } = await db.query<{ id: number }>("SELECT id FROM packages WHERE slug = 'standaard'");
   const sent: Mail[] = [];
   const app = await buildApp({ config, db, logger: false, mailer: { send: async (m) => void sent.push(m) } });
   return { app, db, config, sent, packageId: rows[0]!.id };
@@ -42,7 +40,8 @@ export function bookingBody(ctx: TestContext, overrides: Record<string, unknown>
   return {
     packageId: ctx.packageId,
     partyDate: futureDate(ctx),
-    startTime: '14:00',
+    timeSlot: 'middag',
+    extraStations: 0,
     parentName: 'Sanne de Vries',
     email: 'sanne@example.nl',
     phone: '06 12345678',
@@ -53,7 +52,7 @@ export function bookingBody(ctx: TestContext, overrides: Record<string, unknown>
     childAge: 9,
     guestCount: 8,
     notes: '',
-    privacyConsent: true,
+    termsAccepted: true,
     ...overrides,
   };
 }

@@ -6,7 +6,9 @@ export interface BookingMailData {
   reference: string;
   packageName: string;
   partyDate: string;
-  startTime: string;
+  timeSlot: string;
+  startTime: string | null;
+  extraStations: number;
   parentName: string;
   email: string;
   phone: string;
@@ -14,8 +16,8 @@ export interface BookingMailData {
   postalCode: string;
   city: string;
   childName: string;
-  childAge: number;
-  guestCount: number;
+  childAge?: number | null;
+  guestCount?: number | null;
   notes: string;
   statusToken: string;
   priceCents?: number;
@@ -23,40 +25,54 @@ export interface BookingMailData {
   paidCents?: number;
 }
 
-const signature = '\n\nGame on!\nTeam GamerXP\nhttps://gamerxp.nl';
+export interface MailContext {
+  publicUrl: string;
+  // Optional payment instructions (e.g. IBAN), added to the confirmation email.
+  paymentInfo?: string;
+}
+
+const signature =
+  '\n\nGame on!\n\nRonald\nGamer Xperience\ncontact@gamerxp.nl · +31 (0)6 3420 6753\nhttps://gamerxp.nl';
 const euro = new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' });
 
 export const formatEuro = (cents: number) => euro.format(cents / 100);
+
+export const TIME_SLOT_LABELS: Record<string, string> = { ochtend: 'Ochtend', middag: 'Middag', avond: 'Avond' };
 
 export function statusUrl(publicUrl: string, token: string): string {
   return `${publicUrl}/status?t=${encodeURIComponent(token)}`;
 }
 
 function summary(b: BookingMailData): string {
+  const when = b.startTime
+    ? `${formatDutchDate(b.partyDate)} om ${b.startTime}`
+    : `${formatDutchDate(b.partyDate)} (${(TIME_SLOT_LABELS[b.timeSlot] ?? b.timeSlot).toLowerCase()})`;
   return [
     `Referentie: ${b.reference}`,
-    `Pakket: ${b.packageName}`,
-    `Datum: ${formatDutchDate(b.partyDate)}`,
-    `Starttijd: ${b.startTime.slice(0, 5)}`,
-    `Jarige: ${b.childName} (${b.childAge} jaar)`,
-    `Aantal kinderen: ${b.guestCount}`,
+    `Pakket: ${b.packageName}` + (b.extraStations ? ` + ${b.extraStations} extra gamestation(s)` : ''),
+    `Datum: ${when}`,
+    b.childName && `Jarige: ${b.childName}${b.childAge ? ` (${b.childAge} jaar)` : ''}`,
+    b.guestCount && `Aantal kinderen: ${b.guestCount}`,
     `Adres: ${b.street}, ${b.postalCode} ${b.city}`,
-  ].join('\n');
+    b.priceCents !== undefined && `Prijs: ${formatEuro(b.priceCents)} (excl. eventuele reiskosten)`,
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
-const followLink = (b: BookingMailData, publicUrl: string) =>
-  `\n\nVolg de voortgang van je feest: ${statusUrl(publicUrl, b.statusToken)}`;
+const followLink = (b: BookingMailData, ctx: MailContext) =>
+  `\n\nVolg de voortgang van je feest: ${statusUrl(ctx.publicUrl, b.statusToken)}`;
 
-export function bookingReceivedMail(b: BookingMailData, publicUrl: string): Mail {
+export function bookingReceivedMail(b: BookingMailData, ctx: MailContext): Mail {
   return {
     to: b.email,
     subject: `We hebben je aanvraag ontvangen (${b.reference})`,
     text:
       `Hoi ${b.parentName},\n\n` +
-      `Bedankt voor je aanvraag voor een GamerXP LAN-party! We bekijken hem zo snel mogelijk ` +
-      `en nemen contact met je op.\n\n${summary(b)}` +
-      (b.notes ? `\nOpmerkingen: ${b.notes}` : '') +
-      followLink(b, publicUrl) +
+      `Bedankt voor je aanvraag! Wij duiken in onze agenda en laten je binnen 24 uur weten ` +
+      `of jouw datum nog vrij is. Je zit nog nergens aan vast.\n\n${summary(b)}` +
+      (b.notes ? `\nDetails: ${b.notes}` : '') +
+      followLink(b, ctx) +
       `\n\nKlopt er iets niet? Beantwoord dan gewoon deze e-mail.${signature}`,
   };
 }
@@ -65,41 +81,51 @@ export function bookingOwnerNotification(b: BookingMailData, to: string, adminUr
   return {
     to,
     replyTo: b.email,
-    subject: `Nieuwe boeking: ${formatDutchDate(b.partyDate)} – ${b.childName} (${b.reference})`,
+    subject: `Nieuwe aanvraag: ${formatDutchDate(b.partyDate)} – ${b.packageName} in ${b.city} (${b.reference})`,
     text:
       `Nieuwe aanvraag binnen.\n\n${summary(b)}\n\n` +
-      `Ouder: ${b.parentName}\nE-mail: ${b.email}\nTelefoon: ${b.phone}\n` +
-      (b.notes ? `Opmerkingen: ${b.notes}\n` : '') +
+      `Naam: ${b.parentName}\nE-mail: ${b.email}\nTelefoon: ${b.phone || '-'}\n` +
+      (b.notes ? `Details: ${b.notes}\n` : '') +
       `\nBekijken: ${adminUrl}`,
   };
 }
 
 // The email a parent gets when their booking moves to a new stage.
 // Returns undefined for stages that don't need an email.
-export function statusChangeMail(status: Status, b: BookingMailData, publicUrl: string): Mail | undefined {
+export function statusChangeMail(status: Status, b: BookingMailData, ctx: MailContext): Mail | undefined {
   const hi = `Hoi ${b.parentName},\n\n`;
-  const footer = `\n\n${summary(b)}${followLink(b, publicUrl)}${signature}`;
+  const footer = `\n\n${summary(b)}${followLink(b, ctx)}${signature}`;
   const deposit = b.depositCents ?? 0;
+  const party = b.childName ? `het feest van ${b.childName}` : 'jullie feest';
 
   switch (status) {
     case 'confirmed':
       return {
         to: b.email,
-        subject: `Je GamerXP LAN-party is bevestigd! (${b.reference})`,
+        subject: `Je datum is vrij: bevestiging Gamer Xperience (${b.reference})`,
         text:
           hi +
-          `Goed nieuws: je LAN-party voor ${b.childName} is bevestigd!` +
+          `Goed nieuws: je datum is vrij en we hebben ${party} voor je vastgezet!` +
           (deposit > 0
-            ? ` Om de datum definitief vast te leggen vragen we een aanbetaling van ${formatEuro(deposit)}. ` +
-              `Vermeld bij de betaling je referentie ${b.reference}.`
+            ? `\n\nOm de datum definitief te maken vragen we een aanbetaling van ${formatEuro(deposit)}, ` +
+              `te voldoen binnen 5 kalenderdagen. Vermeld bij de betaling je referentie ${b.reference}. ` +
+              `Ontvangen we de aanbetaling niet op tijd, dan vervalt de reservering. ` +
+              `Het restbedrag betaal je vooraf via overboeking of contant op de dag zelf.` +
+              (ctx.paymentInfo ? `\n\n${ctx.paymentInfo}` : '')
             : '') +
+          `\n\nDoor de aanbetaling ga je akkoord met onze algemene voorwaarden: ${ctx.publicUrl}/algemene-voorwaarden` +
           footer,
       };
     case 'deposit_paid':
       return {
         to: b.email,
         subject: `Aanbetaling ontvangen – je feest staat vast! (${b.reference})`,
-        text: hi + `We hebben je aanbetaling ontvangen. Het feest van ${b.childName} staat definitief in onze agenda!` + footer,
+        text:
+          hi +
+          `Bedankt, we hebben je aanbetaling ontvangen. ${party.charAt(0).toUpperCase() + party.slice(1)} ` +
+          `staat definitief in onze agenda! Vlak voor het feest nemen we nog contact op over de laatste details, ` +
+          `zoals de gewenste games en het precieze tijdstip.` +
+          footer,
       };
     case 'completed':
       return {
@@ -107,18 +133,19 @@ export function statusChangeMail(status: Status, b: BookingMailData, publicUrl: 
         subject: `Bedankt voor het feest! (${b.reference})`,
         text:
           hi +
-          `Bedankt dat je voor GamerXP hebt gekozen! We hopen dat ${b.childName} en de vrienden een topdag hebben gehad. ` +
-          `We zouden het heel leuk vinden als je een review achterlaat of ons aanraadt bij andere ouders.` +
+          `Bedankt dat je voor Gamer Xperience hebt gekozen! We hopen dat jullie een topdag hebben gehad.\n\n` +
+          `Zou je ons willen helpen met een korte review op Google? Daar helpen we andere ouders enorm mee. ` +
+          `Zoek op "Gamer Xperience" in Google en klik op "Review schrijven".` +
           signature,
       };
     case 'cancelled':
       return {
         to: b.email,
-        subject: `Je GamerXP boeking is geannuleerd (${b.reference})`,
+        subject: `Je Gamer Xperience boeking is geannuleerd (${b.reference})`,
         text:
           hi +
           `Je boeking hieronder is geannuleerd. Heb je hier vragen over of wil je een andere datum? ` +
-          `Beantwoord dan deze e-mail.` +
+          `Beantwoord dan deze e-mail of stuur ons een berichtje via WhatsApp.` +
           footer,
       };
     default:

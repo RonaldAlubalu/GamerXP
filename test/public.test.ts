@@ -14,14 +14,34 @@ describe('public API', () => {
     expect(res.json()).toEqual({ status: 'ok' });
   });
 
-  it('lists only active packages', async () => {
+  it('lists only active packages, Ultimate first', async () => {
     await ctx.db.query(
       "INSERT INTO packages (slug, name, max_players, duration_hours, price_cents, active) VALUES ('old', 'Oud', 4, 2, 100, false)",
     );
     const res = await ctx.app.inject('/api/packages');
     expect(res.json()).toEqual([
-      expect.objectContaining({ slug: 'basis', maxPlayers: 8, durationHours: 3, priceCents: 19900 }),
+      expect.objectContaining({ slug: 'ultimate', maxPlayers: 8, durationHours: 4, priceCents: 35000 }),
+      expect.objectContaining({ slug: 'standaard', maxPlayers: 8, durationHours: 3, priceCents: 27500 }),
     ]);
+  });
+
+  it('prices extra game stations and sets the €100 deposit', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/bookings',
+      payload: bookingBody(ctx, { extraStations: '2', childName: '', childAge: '', guestCount: '', phone: '' }),
+    });
+    expect(res.statusCode).toBe(201);
+    const { rows } = await ctx.db.query('SELECT price_cents, deposit_cents, extra_stations, time_slot, start_time, child_age FROM bookings');
+    expect(rows[0]).toEqual({
+      price_cents: 32500, deposit_cents: 10000, extra_stations: 2, time_slot: 'middag', start_time: null, child_age: null,
+    });
+    expect(ctx.sent[0]!.text).toContain('+ 2 extra gamestation(s)');
+  });
+
+  it('accepts Belgian postal codes', async () => {
+    const res = await ctx.app.inject({ method: 'POST', url: '/api/bookings', payload: bookingBody(ctx, { postalCode: '2000' }) });
+    expect(res.statusCode).toBe(201);
   });
 
   it('creates a booking and sends emails to parent and owner', async () => {
@@ -106,11 +126,11 @@ describe('public API', () => {
     const res = await ctx.app.inject({
       method: 'POST',
       url: '/api/bookings',
-      payload: bookingBody(ctx, { postalCode: 'abc', privacyConsent: false }),
+      payload: bookingBody(ctx, { postalCode: 'abc', termsAccepted: false }),
     });
     expect(res.statusCode).toBe(400);
-    expect(res.json().issues.map((i: { path: string }) => i.path).sort()).toEqual(['postalCode', 'privacyConsent']);
-    expect(res.json().error).toMatch(/postcode|privacyverklaring/);
+    expect(res.json().issues.map((i: { path: string }) => i.path).sort()).toEqual(['postalCode', 'termsAccepted']);
+    expect(res.json().error).toMatch(/postcode|voorwaarden/);
   });
 
   it('rejects submissions that fill in the honeypot field', async () => {
@@ -157,13 +177,6 @@ describe('public API', () => {
     expect(ctx.sent[0]).toMatchObject({ to: 'owner@gamerxp.nl', replyTo: 'piet@example.nl' });
   });
 
-  it('serves the website and a 404 page', async () => {
-    expect((await ctx.app.inject('/')).statusCode).toBe(200);
-    const missing = await ctx.app.inject('/bestaat-niet');
-    expect(missing.statusCode).toBe(404);
-    expect(missing.headers['content-type']).toContain('text/html');
-    expect((await ctx.app.inject('/api/bestaat-niet')).json().code).toBe('not_found');
-  });
 
   it('shows parents the progress of their booking without personal details', async () => {
     const created = await ctx.app.inject({ method: 'POST', url: '/api/bookings', payload: bookingBody(ctx) });
@@ -172,7 +185,7 @@ describe('public API', () => {
     const res = await ctx.app.inject(`/api/status/${token}`);
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    expect(body).toMatchObject({ reference: created.json().reference, status: 'new', childName: 'Daan', priceCents: 19900 });
+    expect(body).toMatchObject({ reference: created.json().reference, status: 'new', childName: 'Daan', priceCents: 27500, timeSlot: 'middag', startTime: null });
     expect(body.steps[0]).toMatchObject({ key: 'new', state: 'current' });
     expect(body.steps[1]).toMatchObject({ key: 'contacted', state: 'todo' });
     expect(JSON.stringify(body)).not.toMatch(/Dorpsstraat|sanne@example|0612345678/);

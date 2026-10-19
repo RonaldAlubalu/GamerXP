@@ -38,4 +38,29 @@ export function showNotice(el, type, message) {
   el.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
-document.querySelectorAll('[data-year]').forEach((el) => (el.textContent = new Date().getFullYear()));
+
+// Mobile menu.
+const toggle = document.querySelector('.nav-toggle');
+const nav = document.getElementById('site-nav');
+if (toggle && nav) {
+  toggle.addEventListener('click', () => {
+    const open = nav.classList.toggle('open');
+    toggle.setAttribute('aria-expanded', String(open));
+  });
+}
+
+// Mark the current page in the menu.
+for (const a of document.querySelectorAll('.nav a:not(.btn)')) {
+  const href = a.getAttribute('href');
+  if (href !== '/' && (location.pathname === href || location.pathname.startsWith(`${href}/`))) {
+    a.setAttribute('aria-current', 'page');
+  }
+}
+
+// Review carousel arrows.
+for (const button of document.querySelectorAll('[data-scroll]')) {
+  button.addEventListener('click', () => {
+    const track = button.closest('.section')?.querySelector('.reviews');
+    if (track) track.scrollBy({ left: Number(button.dataset.scroll) * track.clientWidth * 0.9, behavior: 'smooth' });
+  });
+}

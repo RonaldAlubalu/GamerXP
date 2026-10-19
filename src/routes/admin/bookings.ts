@@ -3,13 +3,14 @@ import { z } from 'zod';
 import { addDays, today } from '../../lib/dates.js';
 import { formatEuro, statusChangeMail } from '../../lib/emails.js';
 import { HttpError } from '../../lib/errors.js';
-import { bookingStatus, dateString, timeString } from '../../lib/schemas.js';
+import { bookingStatus, dateString, TIME_SLOTS, timeString } from '../../lib/schemas.js';
 import { getBookingMailData } from '../../services/bookings.js';
 import { addEvent, createDefaultTasks, STAGE_INFO, STATUSES, type Status } from '../../services/pipeline.js';
 
 const BOOKING_COLUMNS = `
   b.id, b.reference, b.package_id AS "packageId", p.name AS "packageName",
-  b.party_date AS "partyDate", to_char(b.start_time, 'HH24:MI') AS "startTime",
+  b.party_date AS "partyDate", b.time_slot AS "timeSlot", to_char(b.start_time, 'HH24:MI') AS "startTime",
+  b.extra_stations AS "extraStations",
   b.parent_name AS "parentName", b.email, b.phone, b.street, b.postal_code AS "postalCode", b.city,
   b.child_name AS "childName", b.child_age AS "childAge", b.guest_count AS "guestCount",
   b.notes, b.status, b.admin_notes AS "adminNotes",
@@ -45,7 +46,7 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
     const { rows } = await app.db.query<{ status: Status }>(
       `SELECT ${BOOKING_COLUMNS} ${FROM_BOOKINGS}
         WHERE b.status NOT IN ('completed', 'cancelled') OR b.party_date >= $1 OR b.updated_at >= $1
-        ORDER BY b.party_date, b.start_time`,
+        ORDER BY b.party_date, array_position(ARRAY['ochtend', 'middag', 'avond'], b.time_slot), b.start_time`,
       [recent],
     );
     return STATUSES.map((key) => ({
@@ -70,7 +71,7 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
           AND ($2::date IS NULL OR b.party_date >= $2)
           AND ($3::date IS NULL OR b.party_date <= $3)
           AND ($4::text IS NULL OR concat_ws(' ', b.reference, b.parent_name, b.child_name, b.email, b.city) ILIKE '%' || $4 || '%')
-        ORDER BY b.party_date, b.start_time`,
+        ORDER BY b.party_date, array_position(ARRAY['ochtend', 'middag', 'avond'], b.time_slot), b.start_time`,
       [q.status ?? null, q.from ?? null, q.to ?? null, q.q || null],
     );
     return rows;
@@ -107,7 +108,10 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
         status: bookingStatus.optional(),
         adminNotes: z.string().max(5000).optional(),
         partyDate: dateString.optional(),
-        startTime: timeString.optional(),
+        timeSlot: z.enum(TIME_SLOTS).optional(),
+        // The exact start time is agreed with the parent; null clears it.
+        startTime: timeString.nullable().optional(),
+        extraStations: z.number().int().min(0).max(2).optional(),
         priceCents: z.number().int().min(0).optional(),
         depositCents: z.number().int().min(0).optional(),
         paidCents: z.number().int().min(0).optional(),
@@ -124,22 +128,32 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
          status        = COALESCE($2, status),
          admin_notes   = COALESCE($3, admin_notes),
          party_date    = COALESCE($4, party_date),
-         start_time    = COALESCE($5, start_time),
-         price_cents   = COALESCE($6, price_cents),
-         deposit_cents = COALESCE($7, deposit_cents),
-         paid_cents    = COALESCE($8, paid_cents),
+         start_time    = CASE WHEN $5 THEN $6::time ELSE start_time END,
+         price_cents   = COALESCE($7, price_cents),
+         deposit_cents = COALESCE($8, deposit_cents),
+         paid_cents    = COALESCE($9, paid_cents),
+         time_slot     = COALESCE($10, time_slot),
+         extra_stations = COALESCE($11, extra_stations),
          updated_at    = now()
        WHERE id = $1`,
       [
-        id, body.status ?? null, body.adminNotes ?? null, body.partyDate ?? null, body.startTime ?? null,
+        id, body.status ?? null, body.adminNotes ?? null, body.partyDate ?? null,
+        body.startTime !== undefined, body.startTime ?? null,
         body.priceCents ?? null, body.depositCents ?? null, body.paidCents ?? null,
+        body.timeSlot ?? null, body.extraStations ?? null,
       ],
     );
 
     // Record what changed on the timeline.
     const changes: string[] = [];
     if (body.partyDate && body.partyDate !== before.partyDate) changes.push(`Datum: ${before.partyDate} → ${body.partyDate}`);
-    if (body.startTime && body.startTime !== before.startTime) changes.push(`Starttijd: ${before.startTime} → ${body.startTime}`);
+    if (body.startTime !== undefined && body.startTime !== before.startTime) {
+      changes.push(`Starttijd: ${before.startTime ?? '–'} → ${body.startTime ?? '–'}`);
+    }
+    if (body.timeSlot && body.timeSlot !== before.timeSlot) changes.push(`Tijdslot: ${before.timeSlot} → ${body.timeSlot}`);
+    if (body.extraStations !== undefined && body.extraStations !== before.extraStations) {
+      changes.push(`Extra gamestations: ${before.extraStations} → ${body.extraStations}`);
+    }
     for (const [key, label] of [['priceCents', 'Prijs'], ['depositCents', 'Aanbetaling'], ['paidCents', 'Betaald']] as const) {
       const value = body[key];
       if (value !== undefined && value !== before[key]) changes.push(`${label}: ${formatEuro(before[key])} → ${formatEuro(value)}`);
@@ -149,7 +163,10 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
     if (body.status && body.status !== before.status) {
       await addEvent(app.db, id, { type: 'status', fromStatus: before.status, toStatus: body.status, actor: by });
       const mail = body.notifyCustomer
-        ? statusChangeMail(body.status, (await getBookingMailData(app.db, id))!, app.config.PUBLIC_URL)
+        ? statusChangeMail(body.status, (await getBookingMailData(app.db, id))!, {
+            publicUrl: app.config.PUBLIC_URL,
+            paymentInfo: app.config.PAYMENT_INFO,
+          })
         : undefined;
       if (mail) {
         try {

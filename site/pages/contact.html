@@ -1,0 +1,37 @@
+<!--{"title": "Contact opnemen | Vragen over jouw Gamefeestje? | Gamer Xperience", "description": "Heb je een vraag of wil je een datum checken? 📞 Neem contact op met Gamer Xperience! Wij verzorgen gamefeestjes door heel Nederland & België vanuit Eindhoven. App, mail of bel ons.", "scripts": ["/assets/contact.js"]}-->
+    <section class="hero short">
+      <div class="wrap narrow">
+        <h1>Contact <span class="pink">Gamer Xperience</span></h1>
+        <p>Vraag over een feestje? Of wil je even sparren over wat bij jouw groep past? Stuur gerust een berichtje. We reageren meestal binnen een paar uur.</p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="wrap split">
+        <div>
+          <div id="contact-notice" hidden></div>
+          <form id="contact-form" class="card" novalidate>
+            <h2>Stuur een bericht</h2>
+            <div class="field"><label for="c-name">Naam</label><input id="c-name" name="name" required maxlength="100" autocomplete="name"></div>
+            <div class="row">
+              <div class="field"><label for="c-email">E-mail</label><input id="c-email" name="email" type="email" required maxlength="200" autocomplete="email"></div>
+              <div class="field"><label for="c-phone">Telefoonnummer <small>(optioneel)</small></label><input id="c-phone" name="phone" type="tel" maxlength="20" autocomplete="tel"></div>
+            </div>
+            <div class="field"><label for="c-message">Bericht</label><textarea id="c-message" name="message" required maxlength="5000"></textarea></div>
+            <div class="hp" aria-hidden="true"><label>Website <input name="website" tabindex="-1" autocomplete="off"></label></div>
+            <button class="btn" type="submit">Verstuur bericht</button>
+          </form>
+        </div>
+        <div>
+          <h2>Liever direct contact?</h2>
+          <ul class="contact-list">
+            <li><a href="https://wa.me/31634206753" target="_blank" rel="noopener"><img src="/assets/img/gamer-xperience-whatsapp.webp" alt="" width="32" height="32"> Stuur een berichtje via WhatsApp</a></li>
+            <li><a href="tel:+31634206753">📞 Bel met +31 (0) 6 3420 6753</a></li>
+            <li><a href="mailto:contact@gamerxp.nl">✉️ contact@gamerxp.nl</a></li>
+          </ul>
+          <p class="muted" style="margin-top: 24px">Wij verzorgen gamefeestjes door heel Nederland en België, vanuit Eindhoven.</p>
+          <p><a class="btn" href="/reserveer">Direct een datum aanvragen</a></p>
+          <img class="photo" src="/assets/img/img20240629140945.webp" alt="Kinderen gamen samen op een Gamer Xperience feestje" loading="lazy" width="1200" height="900" style="margin-top: 24px">
+        </div>
+      </div>
+    </section>

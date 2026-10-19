@@ -1,0 +1,29 @@
+<!--{"title": "Volg je feest | Gamer Xperience", "description": "Bekijk de voortgang van je Gamer Xperience feest.", "noindex": true, "scripts": ["/assets/status.js"]}-->
+    <section class="section">
+      <div class="wrap status-page">
+        <h1>Volg je <span class="pink">feest</span></h1>
+        <div id="status-notice" hidden></div>
+
+        <form id="lookup-form" class="card" hidden novalidate>
+          <p class="lead">Vul je referentienummer (uit de bevestigingsmail) en je e-mailadres in.</p>
+          <div class="row">
+            <div class="field"><label for="s-ref">Referentie</label><input id="s-ref" name="reference" required placeholder="GXP-ABC123" maxlength="20"></div>
+            <div class="field"><label for="s-email">E-mail</label><input id="s-email" name="email" type="email" required maxlength="200" autocomplete="email"></div>
+          </div>
+          <button class="btn" type="submit">Bekijk status</button>
+        </form>
+
+        <div id="status-view" hidden>
+          <div class="card status-hero">
+            <span class="badge" id="st-label"></span>
+            <h2 id="st-title"></h2>
+            <p id="st-text" class="lead"></p>
+          </div>
+          <ol class="progress-steps" id="st-steps"></ol>
+          <div class="card">
+            <dl class="summary" id="st-summary"></dl>
+          </div>
+          <p class="lead">Vragen of iets wijzigen? Stuur een berichtje via <a href="https://wa.me/31634206753" target="_blank" rel="noopener">WhatsApp</a> of mail naar <a href="mailto:contact@gamerxp.nl">contact@gamerxp.nl</a> en vermeld je referentie.</p>
+        </div>
+      </div>
+    </section>

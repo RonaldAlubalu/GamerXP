@@ -20,6 +20,13 @@ const schema = z.object({
   // ...and at most this many days ahead.
   MAX_ADVANCE_DAYS: z.coerce.number().int().positive().default(365),
 
+  // Deposit asked when a booking is confirmed (in cents).
+  DEPOSIT_CENTS: z.coerce.number().int().min(0).default(10000),
+  // Price per extra game station on top of the package price (in cents).
+  EXTRA_STATION_CENTS: z.coerce.number().int().min(0).default(2500),
+  // Optional payment instructions added to the confirmation email, e.g. an IBAN.
+  PAYMENT_INFO: z.string().default(''),
+
   SESSION_TTL_HOURS: z.coerce.number().int().positive().default(12),
 
   // When SMTP_HOST is empty, emails are logged instead of sent.
@@ -28,7 +35,7 @@ const schema = z.object({
   SMTP_SECURE: bool.default(false),
   SMTP_USER: z.string().default(''),
   SMTP_PASS: z.string().default(''),
-  MAIL_FROM: z.string().default('GamerXP <info@gamerxp.nl>'),
+  MAIL_FROM: z.string().default('Gamer Xperience <contact@gamerxp.nl>'),
   // Where new booking and contact notifications are sent.
   OWNER_EMAIL: z.string().default(''),
 });

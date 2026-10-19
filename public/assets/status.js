@@ -4,11 +4,12 @@ const notice = document.getElementById('status-notice');
 const lookupForm = document.getElementById('lookup-form');
 const statusView = document.getElementById('status-view');
 
+const SLOTS = { ochtend: 'ochtend', middag: 'middag', avond: 'avond' };
 const fmtDay = (d) => new Intl.DateTimeFormat('nl-NL', { day: 'numeric', month: 'short' }).format(new Date(d));
 
 function render(s) {
   document.getElementById('st-label').textContent = s.statusLabel.toUpperCase();
-  document.getElementById('st-title').textContent = `Het feest van ${s.childName}`;
+  document.getElementById('st-title').textContent = s.childName ? `Het feest van ${s.childName}` : 'Jouw Gamer Xperience feest';
   document.getElementById('st-text').textContent = s.statusText;
 
   document.getElementById('st-steps').replaceChildren(
@@ -34,9 +35,9 @@ function render(s) {
   const outstanding = Math.max(s.priceCents - s.paidCents, 0);
   const rows = [
     ['Referentie', s.reference],
-    ['Datum', `${formatDate(s.partyDate)} om ${s.startTime}`],
-    ['Pakket', s.packageName],
-    ['Aantal kinderen', s.guestCount],
+    ['Datum', s.startTime ? `${formatDate(s.partyDate)} om ${s.startTime}` : `${formatDate(s.partyDate)} (${SLOTS[s.timeSlot] ?? s.timeSlot})`],
+    ['Pakket', s.packageName + (s.extraStations ? ` + ${s.extraStations} extra gamestation${s.extraStations > 1 ? 's' : ''}` : '')],
+    ...(s.guestCount ? [['Aantal kinderen', s.guestCount]] : []),
     ['Prijs', formatPrice(s.priceCents)],
     ...(s.depositCents ? [['Aanbetaling', formatPrice(s.depositCents)]] : []),
     ...(s.status !== 'cancelled' ? [['Nog te betalen', outstanding ? formatPrice(outstanding) : 'Niets, alles is betaald ✓']] : []),

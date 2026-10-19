@@ -8,8 +8,9 @@ import { addEvent, createDefaultTasks } from './pipeline.js';
 
 export interface NewBooking {
   packageId: number;
+  extraStations: number;
   partyDate: string;
-  startTime: string;
+  timeSlot: 'ochtend' | 'middag' | 'avond';
   parentName: string;
   email: string;
   phone: string;
@@ -17,8 +18,8 @@ export interface NewBooking {
   postalCode: string;
   city: string;
   childName: string;
-  childAge: number;
-  guestCount: number;
+  childAge?: number;
+  guestCount?: number;
   notes: string;
 }
 
@@ -49,6 +50,10 @@ export async function createBooking(
       throw new HttpError(409, 'Deze datum is helaas niet meer beschikbaar. Kies een andere datum.', 'date_unavailable');
     }
 
+    // Price is fixed at booking time: package plus extra stations. Travel costs and
+    // an evening surcharge are agreed afterwards and added in the admin page.
+    const priceCents = pkg.rows[0].price_cents + input.extraStations * config.EXTRA_STATION_CENTS;
+
     // Retry on the (very unlikely) event of a reference collision.
     for (let attempt = 0; ; attempt++) {
       const reference = generateReference();
@@ -56,15 +61,16 @@ export async function createBooking(
       await client.query('SAVEPOINT insert_booking');
       try {
         const { rows } = await client.query<{ id: string; status: string }>(
-          `INSERT INTO bookings (reference, package_id, party_date, start_time, parent_name, email, phone,
-                                 street, postal_code, city, child_name, child_age, guest_count, notes,
-                                 price_cents, status_token)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+          `INSERT INTO bookings (reference, package_id, extra_stations, party_date, time_slot, parent_name, email,
+                                 phone, street, postal_code, city, child_name, child_age, guest_count, notes,
+                                 price_cents, deposit_cents, status_token)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
            RETURNING id, status`,
           [
-            reference, input.packageId, input.partyDate, input.startTime, input.parentName, input.email,
-            input.phone, input.street, input.postalCode, input.city, input.childName, input.childAge,
-            input.guestCount, input.notes, pkg.rows[0].price_cents, statusToken,
+            reference, input.packageId, input.extraStations, input.partyDate, input.timeSlot, input.parentName,
+            input.email, input.phone, input.street, input.postalCode, input.city, input.childName,
+            input.childAge ?? null, input.guestCount ?? null, input.notes, priceCents, config.DEPOSIT_CENTS,
+            statusToken,
           ],
         );
         const booking = rows[0]!;
@@ -76,8 +82,10 @@ export async function createBooking(
           ...booking,
           reference,
           statusToken,
+          startTime: null,
           packageName: pkg.rows[0].name,
-          priceCents: pkg.rows[0].price_cents,
+          priceCents,
+          depositCents: config.DEPOSIT_CENTS,
         };
       } catch (err) {
         if ((err as { code?: string }).code === '23505' && attempt < 5) {
@@ -98,7 +106,8 @@ export async function createBooking(
 // Loads a booking in the shape the email templates expect.
 export async function getBookingMailData(db: Db, id: string): Promise<BookingMailData | undefined> {
   const { rows } = await db.query<BookingMailData>(
-    `SELECT b.reference, p.name AS "packageName", b.party_date AS "partyDate", b.start_time AS "startTime",
+    `SELECT b.reference, p.name AS "packageName", b.party_date AS "partyDate", to_char(b.start_time, 'HH24:MI') AS "startTime",
+            b.time_slot AS "timeSlot", b.extra_stations AS "extraStations",
             b.parent_name AS "parentName", b.email, b.phone, b.street, b.postal_code AS "postalCode", b.city,
             b.child_name AS "childName", b.child_age AS "childAge", b.guest_count AS "guestCount", b.notes,
             b.status_token AS "statusToken", b.price_cents AS "priceCents", b.deposit_cents AS "depositCents",

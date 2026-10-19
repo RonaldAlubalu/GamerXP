@@ -1,0 +1,104 @@
+<!--{"title": "Gaming Feestje Thuis Boeken | Fortnite, Roblox & Minecraft | Gamer Xperience", "description": "Gamer Xperience brengt de ultieme setup met Fortnite, Minecraft & meer gewoon bij jou thuis! Vanaf €275 incl. opbouw. Vraag nu vrijblijvend aan – binnen 24 uur reactie!", "scripts": ["/assets/booking.js"]}-->
+    <section class="hero short">
+      <div class="wrap narrow">
+        <h1>Vraag vrijblijvend <span class="pink">jouw datum</span> aan</h1>
+        <p>Vul je gegevens in en binnen 24 uur weet je precies waar je aan toe bent.</p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="wrap narrow">
+        <p class="notice warn">🎮 Wat gaan we hard! Tot januari zijn alle vrijdagen volgeboekt. Vraag snel naar onze beschikbaarheid in de weekenden!</p>
+
+        <div id="booking-done" class="card" hidden>
+          <span class="badge">AANVRAAG ONTVANGEN</span>
+          <h2>Bedankt voor je aanvraag! 🎉</h2>
+          <p>Je referentienummer is <strong id="booking-reference"></strong>. Je ontvangt een bevestiging per e-mail. Wij duiken in onze agenda en laten je binnen 24 uur weten of jouw datum nog vrij is.</p>
+          <p><a class="btn" id="booking-status-link" href="/status">Volg je aanvraag</a> <a class="btn secondary" href="/">Terug naar home</a></p>
+        </div>
+
+        <div id="booking-notice" hidden></div>
+
+        <form id="booking-form" novalidate>
+          <p class="muted">Dit formulier is een vrijblijvende aanvraag. Wij duiken in onze agenda en laten je binnen 24 uur weten of jouw datum nog vrij is!</p>
+
+          <fieldset>
+            <legend>Kies je Gamer Party</legend>
+            <div class="choice-cards" id="package-choices" role="radiogroup" aria-label="Pakket">
+              <p class="muted">Pakketten laden…</p>
+            </div>
+            <div class="field">
+              <label for="b-extra">Aantal extra gamestations</label>
+              <select id="b-extra" name="extraStations">
+                <option value="0">Geen</option>
+                <option value="1">+1 Gamestation (+ €25,-)</option>
+                <option value="2">+2 Gamestations (+ €50,-)</option>
+              </select>
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend>Wanneer?</legend>
+            <div class="row">
+              <div class="field">
+                <label for="b-date">Reserveringsdatum</label>
+                <input id="b-date" name="partyDate" type="date" required>
+                <small id="date-hint" aria-live="polite"></small>
+              </div>
+              <div class="field">
+                <label for="b-slot">Tijdslot</label>
+                <select id="b-slot" name="timeSlot" required>
+                  <option value="">Kies een tijdslot…</option>
+                  <option value="ochtend">Ochtend</option>
+                  <option value="middag">Middag</option>
+                  <option value="avond">Avond (evt. toeslag)</option>
+                </select>
+                <small>Bij een combinatie graag bij details aangeven. Eindigt je feestje na 19:30 uur? Dan bespreken we vooraf of een avondtoeslag van toepassing is.</small>
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend>Contactgegevens</legend>
+            <div class="row">
+              <div class="field"><label for="b-name">Naam</label><input id="b-name" name="parentName" required maxlength="100" autocomplete="name"></div>
+              <div class="field"><label for="b-email">E-mail</label><input id="b-email" name="email" type="email" required maxlength="200" autocomplete="email"></div>
+              <div class="field"><label for="b-phone">Telefoonnummer <small>(optioneel)</small></label><input id="b-phone" name="phone" type="tel" maxlength="20" autocomplete="tel"></div>
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend>Adres van het feest</legend>
+            <div class="row">
+              <div class="field"><label for="b-street">Straat en huisnummer</label><input id="b-street" name="street" required maxlength="200" autocomplete="street-address"></div>
+              <div class="field"><label for="b-postal">Postcode</label><input id="b-postal" name="postalCode" required maxlength="7" autocomplete="postal-code" placeholder="1234 AB"></div>
+              <div class="field"><label for="b-city">Plaats</label><input id="b-city" name="city" required maxlength="100" autocomplete="address-level2"></div>
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend>Over het feest <small class="muted">(optioneel)</small></legend>
+            <div class="row">
+              <div class="field"><label for="b-child">Naam van de jarige</label><input id="b-child" name="childName" maxlength="50"></div>
+              <div class="field"><label for="b-age">Leeftijd (wordt)</label><input id="b-age" name="childAge" type="number" min="1" max="18"></div>
+              <div class="field"><label for="b-guests">Aantal kinderen</label><input id="b-guests" name="guestCount" type="number" min="1" max="40"></div>
+            </div>
+            <div class="field">
+              <label for="b-notes">Details</label>
+              <textarea id="b-notes" name="notes" maxlength="2000" placeholder="Verjaardag / specifieke games / thema"></textarea>
+            </div>
+          </fieldset>
+
+          <div class="price-summary" id="price-summary" hidden>
+            Indicatie: <strong id="price-total"></strong>
+            <div class="hint">Excl. reiskosten (€0,50 per km retour vanaf Eindhoven, max. €100) en een eventuele avondtoeslag. Aanbetaling €100 na bevestiging.</div>
+          </div>
+
+          <div class="hp" aria-hidden="true"><label>Website <input name="website" tabindex="-1" autocomplete="off"></label></div>
+          <label class="check"><input type="checkbox" name="termsAccepted" required> <span>Ik ga akkoord met de <a href="/algemene-voorwaarden" target="_blank">algemene voorwaarden</a> en de <a href="/privacy" target="_blank">privacyverklaring</a>.</span></label>
+          <button class="btn big" type="submit">Vraag beschikbaarheid aan</button>
+        </form>
+      </div>
+    </section>
+
+    {{> reviews}}

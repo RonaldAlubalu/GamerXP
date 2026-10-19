@@ -28,20 +28,25 @@ export const STAGE_INFO: Record<Status, StageInfo> = {
   new: {
     label: 'Nieuw',
     customerLabel: 'Aanvraag ontvangen',
-    customerText: 'We hebben je aanvraag ontvangen en bekijken hem zo snel mogelijk.',
-    tasks: ['Aanvraag bekeken', 'Beschikbaarheid en reisafstand gecontroleerd'],
+    customerText: 'We hebben je aanvraag ontvangen. Binnen 24 uur laten we weten of jouw datum nog vrij is.',
+    tasks: ['Aanvraag bekeken', 'Binnen 24 uur gereageerd'],
   },
   contacted: {
     label: 'Contact opgenomen',
     customerLabel: 'In overleg',
     customerText: 'We hebben contact met je opgenomen om de details door te nemen.',
-    tasks: ['Ouder gebeld of gemaild', 'Ruimte, tafels en stopcontacten besproken'],
+    tasks: [
+      'Reiskosten berekend (€0,50 per km retour vanaf Eindhoven, max. €100)',
+      'Avondtoeslag nodig? (€50 bij eindtijd na 19:30)',
+      'Ruimte besproken: grote tafel en stopcontacten',
+    ],
   },
   confirmed: {
     label: 'Bevestigd',
     customerLabel: 'Bevestigd',
-    customerText: 'Je feest is bevestigd! Na ontvangst van de aanbetaling staat alles definitief vast.',
-    tasks: ['Bevestiging verstuurd', 'Aanbetalingsverzoek verstuurd'],
+    customerText:
+      'Je datum is vrij! Na ontvangst van de aanbetaling (binnen 5 dagen) staat je feest definitief vast.',
+    tasks: ['Bevestiging en aanbetalingsverzoek (€100) verstuurd', 'Aanbetaling binnen 5 dagen? Anders vervalt de reservering'],
   },
   deposit_paid: {
     label: 'Aanbetaling ontvangen',
@@ -52,20 +57,33 @@ export const STAGE_INFO: Record<Status, StageInfo> = {
   scheduled: {
     label: 'Ingepland',
     customerLabel: 'Voorbereiding',
-    customerText: 'We bereiden je feest voor: games kiezen, apparatuur testen en de route plannen.',
-    tasks: ['Games gekozen (passend bij PEGI-leeftijd)', 'Apparatuur getest en ingepakt', 'Vertrektijd en route gepland'],
+    customerText: 'We bereiden je feest voor: games klaarzetten, alles updaten en de route plannen.',
+    tasks: [
+      'Starttijd en gewenste games/thema afgestemd',
+      'Alle games geüpdatet (uiterlijk 48 uur vooraf)',
+      'Bus ingeladen: gamestations, extra stations en netwerk',
+      'Ultimate: neonverlichting, prijzen en toernooischema mee',
+    ],
   },
   party_held: {
     label: 'Feest geweest',
     customerLabel: 'Feest gegeven',
     customerText: 'Het feest is geweest. We hopen dat jullie een geweldige dag hebben gehad!',
-    tasks: ['Opgebouwd', 'Feest begeleid', 'Opgeruimd en apparatuur compleet retour'],
+    tasks: [
+      'Opgebouwd (60 minuten vooraf)',
+      'Standaard: borg (€100) ontvangen',
+      'Afgebouwd en apparatuur compleet retour',
+    ],
   },
   completed: {
     label: 'Afgerond',
     customerLabel: 'Afgerond',
-    customerText: 'Alles is afgerond. Bedankt dat je voor GamerXP hebt gekozen!',
-    tasks: ['Restbedrag ontvangen', 'Bedankmail en reviewverzoek verstuurd'],
+    customerText: 'Alles is afgerond. Bedankt dat je voor Gamer Xperience hebt gekozen!',
+    tasks: [
+      'Restbedrag ontvangen (overboeking of contant)',
+      'Standaard: borg terugbetaald',
+      'Bedankmail en Google-reviewverzoek verstuurd',
+    ],
   },
   cancelled: {
     label: 'Geannuleerd',

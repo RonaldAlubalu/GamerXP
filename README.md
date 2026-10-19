@@ -80,15 +80,22 @@ Server settings live in `.env` (see [`.env.example`](.env.example)). Availabilit
 
 ## Trying it out with test customers
 
-**On your own computer** (needs [Docker Desktop](https://www.docker.com/products/docker-desktop/)):
+**With only Node.js** (Node 22 or newer, on Mac, Windows or Linux, also inside Claude Cowork):
 
 ```sh
-git clone https://github.com/RonaldAlubalu/GamerXP.git && cd GamerXP
-git checkout claude/gamerxp-backend-migration-ew43zk
+npm install
+npm run demo
+```
+
+This starts a built-in PostgreSQL database, adds 8 test customers in every phase and 2 contact messages, and runs the site. Open http://localhost:8080 to see it as a customer, and http://localhost:8080/admin with **demo@gamerxp.nl / demo-wachtwoord-123** for the admin. Emails are not sent; they are printed in the terminal. The data is kept in the `.demo` folder; delete it to start over. To try Mollie test payments: `MOLLIE_API_KEY=test_... npm run demo`.
+
+**With Docker Desktop:**
+
+```sh
 docker compose -f docker-compose.demo.yml up --build
 ```
 
-Open http://localhost:8080 to see the site as a customer, and http://localhost:8080/admin with **demo@gamerxp.nl / demo-wachtwoord-123** for the admin. It starts with 8 test customers in every phase and 2 contact messages. Emails are not sent, only logged (`docker compose -f docker-compose.demo.yml logs app`). To try Mollie, put your test key in front of the command: `MOLLIE_API_KEY=test_... docker compose -f docker-compose.demo.yml up --build`. Start over with `docker compose -f docker-compose.demo.yml down -v`.
+Same site, test customers and login. Start over with `docker compose -f docker-compose.demo.yml down -v`.
 
 **On the server:** `docker compose exec app npm run seed-demo` adds the same test customers (all with `@example.nl` addresses). `docker compose exec app npm run seed-demo -- --clear` removes them again.
 

@@ -23,6 +23,7 @@ export interface BookingMailData {
   priceCents?: number;
   depositCents?: number;
   paidCents?: number;
+  travelKm?: number | null;
 }
 
 export interface MailContext {
@@ -61,7 +62,8 @@ function summary(b: BookingMailData): string {
     b.childName && `Jarige: ${b.childName}${b.childAge ? ` (${b.childAge} jaar)` : ''}`,
     b.guestCount && `Aantal kinderen: ${b.guestCount}`,
     `Adres: ${b.street}, ${b.postalCode} ${b.city}`,
-    b.priceCents !== undefined && `Prijs: ${formatEuro(b.priceCents)} (excl. eventuele reiskosten)`,
+    b.priceCents !== undefined &&
+      `Prijs: ${formatEuro(b.priceCents)} (${b.travelKm == null ? 'excl. reiskosten' : 'incl. reiskosten'})`,
   ]
     .filter(Boolean)
     .join('\n');

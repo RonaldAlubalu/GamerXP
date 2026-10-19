@@ -25,6 +25,8 @@ export interface NewCommunication extends MessageTarget {
   body: string;
   delivery?: 'sent' | 'failed';
   actor: string;
+  // Automatic messages (like the booking confirmation) don't change whose turn it is.
+  keepTurn?: boolean;
 }
 
 // Logs a message and updates whose turn it is: after a message from the customer
@@ -36,7 +38,7 @@ export async function logCommunication(app: FastifyInstance, c: NewCommunication
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
     [c.bookingId ?? null, c.contactMessageId ?? null, c.direction, c.channel, c.subject ?? '', c.body, c.delivery ?? null, c.actor],
   );
-  if (c.delivery !== 'failed') {
+  if (c.delivery !== 'failed' && !c.keepTurn) {
     const waitingOn = c.direction === 'in' ? 'me' : 'customer';
     if (c.bookingId) {
       await app.db.query(
@@ -60,6 +62,7 @@ export async function sendAndLog(
   target: MessageTarget,
   mail: Mail,
   actor: string,
+  options: { keepTurn?: boolean } = {},
 ): Promise<boolean> {
   let delivery: 'sent' | 'failed' = 'sent';
   try {
@@ -76,6 +79,7 @@ export async function sendAndLog(
     body: mail.text,
     delivery,
     actor,
+    keepTurn: options.keepTurn,
   });
   return delivery === 'sent';
 }

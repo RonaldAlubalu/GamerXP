@@ -133,7 +133,7 @@ export async function getBookingMailData(db: Db, id: string): Promise<BookingMai
             b.parent_name AS "parentName", b.email, b.phone, b.street, b.postal_code AS "postalCode", b.city,
             b.child_name AS "childName", b.child_age AS "childAge", b.guest_count AS "guestCount", b.notes,
             b.status_token AS "statusToken", b.price_cents AS "priceCents", b.deposit_cents AS "depositCents",
-            b.paid_cents AS "paidCents"
+            b.paid_cents AS "paidCents", b.travel_km::float AS "travelKm"
        FROM bookings b JOIN packages p ON p.id = b.package_id
       WHERE b.id = $1`,
     [id],

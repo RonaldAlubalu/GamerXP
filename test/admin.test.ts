@@ -244,7 +244,7 @@ describe('admin API', () => {
 
     const detail = (await ctx.app.inject({ url: `/api/admin/bookings/${booking.id}`, headers: auth() })).json();
     expect(detail.communications.map((c: { channel: string; actor: string }) => `${c.channel}:${c.actor}`)).toEqual([
-      'whatsapp:Sanne de Vries', 'email:admin@gamerxp.nl', 'website:Sanne de Vries',
+      'whatsapp:Sanne de Vries', 'email:admin@gamerxp.nl', 'email:Website', 'website:Sanne de Vries',
     ]);
   });
 

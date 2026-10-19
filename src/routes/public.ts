@@ -7,6 +7,7 @@ import type { Mail } from '../lib/mailer.js';
 import { bookingRequest, contactRequest, dateString } from '../lib/schemas.js';
 import { availableSlots, bookingWindow, getTimeSlots } from '../services/availability.js';
 import { createBooking, recalculatePrice } from '../services/bookings.js';
+import { sendAndLog } from '../services/communications.js';
 import { travelCents } from '../services/pricing.js';
 import { amountsDue, paymentLink } from '../services/online-payments.js';
 import { STAGE_INFO, STAGES, stageIndex, type Status } from '../services/pipeline.js';
@@ -62,7 +63,9 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
         req.log.warn({ err }, 'Travel distance lookup failed'),
       );
 
-      await sendSafely(bookingReceivedMail(booking, { publicUrl: app.config.PUBLIC_URL }));
+      await sendAndLog(app, { bookingId: booking.id }, bookingReceivedMail(booking, { publicUrl: app.config.PUBLIC_URL }), 'Website', {
+        keepTurn: true,
+      });
       if (app.config.OWNER_EMAIL) {
         await sendSafely(
           bookingOwnerNotification(booking, app.config.OWNER_EMAIL, `${app.config.PUBLIC_URL}/admin/#/bookings/${booking.id}`),

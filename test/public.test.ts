@@ -256,7 +256,10 @@ describe('public API', () => {
 
   it('logs the website request as the first message', async () => {
     await ctx.app.inject({ method: 'POST', url: '/api/bookings', payload: bookingBody(ctx, { notes: 'Graag Minecraft' }) });
-    const { rows } = await ctx.db.query('SELECT direction, channel, body FROM communications');
-    expect(rows).toEqual([{ direction: 'in', channel: 'website', body: 'Graag Minecraft' }]);
+    const { rows } = await ctx.db.query('SELECT direction, channel, body FROM communications ORDER BY id');
+    expect(rows[0]).toEqual({ direction: 'in', channel: 'website', body: 'Graag Minecraft' });
+    // The automatic confirmation is logged too, without changing whose turn it is.
+    expect(rows[1]).toMatchObject({ direction: 'out', channel: 'email' });
+    expect((await ctx.db.query('SELECT waiting_on FROM bookings')).rows[0].waiting_on).toBe('me');
   });
 });

@@ -35,6 +35,7 @@ if (process.argv.includes('--reset')) {
 }
 
 console.log('Starting the built-in database…');
+const log: string[] = [];
 mkdirSync(path.dirname(dataDir), { recursive: true });
 const database = new EmbeddedPostgres({
   databaseDir: dataDir,
@@ -44,15 +45,37 @@ const database = new EmbeddedPostgres({
   persistent: true,
   // PostgreSQL refuses to run as root, which some sandboxes and containers use.
   createPostgresUser: runningAsRoot,
-  onLog: () => {},
+  // Kept so we can explain why the database didn't start.
+  onLog: (message) => {
+    log.push(String(message));
+  },
   onError: (err) => {
     const text = String(err);
     if (/error|fatal/i.test(text) && !/already exists/i.test(text)) console.error(text);
   },
 });
 const firstRun = !existsSync(path.join(dataDir, 'PG_VERSION'));
-if (firstRun) await database.initialise();
-await database.start();
+try {
+  if (firstRun) await database.initialise();
+  await database.start();
+} catch (err) {
+  console.error('\nThe built-in database could not start.\n');
+  if (err) console.error(String(err));
+  const output = log.join('').trim();
+  if (output) console.error(`Database output:\n${output.split(/\r?\n/).slice(-15).join('\n')}\n`);
+  console.error(
+    [
+      'Common causes:',
+      '- Windows: PowerShell or Command Prompt was opened with "Run as administrator".',
+      '  The database refuses to run as administrator; open a normal window instead.',
+      '- Windows: the Microsoft Visual C++ Redistributable (x64) is missing:',
+      '  https://aka.ms/vs/17/release/vc_redist.x64.exe',
+      `- Port ${DB_PORT} is already in use: set DEMO_DB_PORT to another port.`,
+      '- A previous attempt left broken data behind: npm run demo -- --reset',
+    ].join('\n'),
+  );
+  process.exit(1);
+}
 
 // Create the database on the first run.
 const admin = new pg.Client({ host: 'localhost', port: DB_PORT, user: 'gamerxp', password: 'demo', database: 'postgres' });

@@ -4,37 +4,53 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow">
-  <title>GamerXP Beheer</title>
-  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/assets/styles.css">
+  <title>Gamer Xperience Admin</title>
+  <link rel="icon" href="/assets/favicon.png" type="image/png">
   <link rel="stylesheet" href="/admin/admin.css">
+  <script src="/admin/theme.js"></script>
 </head>
 <body>
-  <header class="site-header">
-    <div class="wrap">
-      <a class="logo" href="#/board">Gamer<span>XP</span> <small>beheer</small></a>
-      <nav class="nav admin-nav" id="admin-nav" hidden>
-        <a href="#/board">Pipeline</a>
-        <a href="#/calendar">Agenda</a>
-        <a href="#/list">Lijst</a>
-        <a href="#/availability">Beschikbaarheid</a>
-        <a href="#/messages">Berichten</a>
-        <a href="#/packages">Pakketten</a>
-        <button class="btn small secondary" id="logout">Uitloggen</button>
+  <div class="app" id="app">
+    <aside class="sidebar" id="sidebar" hidden>
+      <div class="brand">
+        <img src="/assets/img/logo.webp" alt="" width="36" height="38">
+        <div><strong>Gamer Xperience</strong><span>Admin</span></div>
+      </div>
+      <nav class="side-nav" id="side-nav">
+        <a href="#/board" data-route="board"><span class="ico">▦</span> Pipeline</a>
+        <a href="#/list" data-route="list"><span class="ico">☰</span> Boekingen</a>
+        <a href="#/calendar" data-route="calendar"><span class="ico">▣</span> Agenda</a>
+        <a href="#/messages" data-route="messages"><span class="ico">✉</span> Berichten <span class="count" id="count-messages" hidden></span></a>
+        <a href="#/reviews" data-route="reviews"><span class="ico">★</span> Reviews <span class="count" id="count-reviews" hidden></span></a>
+        <div class="side-heading">Instellingen</div>
+        <a href="#/availability" data-route="availability"><span class="ico">◷</span> Beschikbaarheid</a>
+        <a href="#/packages" data-route="packages"><span class="ico">◈</span> Pakketten</a>
       </nav>
+      <div class="side-footer">
+        <a href="/" target="_blank" rel="noopener">Website bekijken ↗</a>
+        <button type="button" class="link-btn" id="theme-toggle">Donker thema</button>
+        <span class="muted small" id="me"></span>
+        <button type="button" class="btn ghost small" id="logout">Uitloggen</button>
+      </div>
+    </aside>
+    <div class="main">
+      <header class="topbar" id="topbar" hidden>
+        <button type="button" class="menu-btn" id="menu-btn" aria-label="Menu">☰</button>
+        <h1 id="page-title"></h1>
+        <div class="topbar-actions" id="topbar-actions"></div>
+      </header>
+      <div id="notice" class="toast" hidden></div>
+      <main class="content" id="view"></main>
     </div>
-  </header>
-  <main class="wrap admin-main">
-    <div id="notice" hidden></div>
-    <div id="view"></div>
-  </main>
+  </div>
 
   <template id="login-tpl">
-    <form class="card login" id="login-form">
-      <h1>Inloggen</h1>
+    <form class="login card" id="login-form">
+      <img src="/assets/img/logo.webp" alt="" width="64" height="68">
+      <h1>Gamer Xperience Admin</h1>
       <div class="field"><label for="l-email">E-mail</label><input id="l-email" name="email" type="email" required autocomplete="username"></div>
       <div class="field"><label for="l-pass">Wachtwoord</label><input id="l-pass" name="password" type="password" required autocomplete="current-password"></div>
-      <button class="btn" type="submit">Inloggen</button>
+      <button class="btn primary" type="submit">Inloggen</button>
     </form>
   </template>
 

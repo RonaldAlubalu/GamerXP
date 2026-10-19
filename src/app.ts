@@ -9,6 +9,7 @@ import type { Config } from './config.js';
 import type { Db } from './db/pool.js';
 import { HttpError } from './lib/errors.js';
 import { createMailer, type Mailer } from './lib/mailer.js';
+import { createDistanceService, type DistanceService } from './services/distance.js';
 import { publicRoutes } from './routes/public.js';
 import { adminRoutes } from './routes/admin/index.js';
 import { registerSite } from './site.js';
@@ -18,6 +19,7 @@ declare module 'fastify' {
     config: Config;
     db: Db;
     mailer: Mailer;
+    distance: DistanceService;
   }
 }
 
@@ -27,10 +29,11 @@ export interface AppOptions {
   config: Config;
   db: Db;
   mailer?: Mailer;
+  distance?: DistanceService;
   logger?: boolean;
 }
 
-export async function buildApp({ config, db, mailer, logger = true }: AppOptions): Promise<FastifyInstance> {
+export async function buildApp({ config, db, mailer, distance, logger = true }: AppOptions): Promise<FastifyInstance> {
   const app = Fastify({
     logger: logger && {
       level: config.NODE_ENV === 'production' ? 'info' : 'debug',
@@ -44,6 +47,7 @@ export async function buildApp({ config, db, mailer, logger = true }: AppOptions
   app.decorate('config', config);
   app.decorate('db', db);
   app.decorate('mailer', mailer ?? createMailer(config, (msg) => app.log.info(msg)));
+  app.decorate('distance', distance ?? createDistanceService(config, (msg, err) => app.log.warn({ err }, msg)));
 
   await app.register(helmet, {
     contentSecurityPolicy: {

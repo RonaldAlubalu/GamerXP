@@ -35,8 +35,9 @@ describe('public API', () => {
     });
     expect(res.statusCode).toBe(201);
     const { rows } = await ctx.db.query('SELECT price_cents, deposit_cents, extra_stations, time_slot, start_time, child_age FROM bookings');
+    // €275 package + 2 × €25 extra stations + 30 km × 2 × €0,50 travel.
     expect(rows[0]).toEqual({
-      price_cents: 32500, deposit_cents: 10000, extra_stations: 2, time_slot: 'middag', start_time: null, child_age: null,
+      price_cents: 35500, deposit_cents: 10000, extra_stations: 2, time_slot: 'middag', start_time: null, child_age: null,
     });
     expect(ctx.sent[0]!.text).toContain('+ 2 extra gamestation(s)');
   });
@@ -211,7 +212,7 @@ describe('public API', () => {
     const res = await ctx.app.inject(`/api/status/${token}`);
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    expect(body).toMatchObject({ reference: created.json().reference, status: 'new', childName: 'Daan', priceCents: 27500, timeSlot: 'middag', startTime: null });
+    expect(body).toMatchObject({ reference: created.json().reference, status: 'new', childName: 'Daan', priceCents: 30500, timeSlot: 'middag', startTime: null });
     expect(body.steps[0]).toMatchObject({ key: 'new', state: 'current' });
     expect(body.steps[1]).toMatchObject({ key: 'contacted', state: 'todo' });
     expect(JSON.stringify(body)).not.toMatch(/Dorpsstraat|sanne@example|0612345678/);
@@ -230,5 +231,32 @@ describe('public API', () => {
     expect(statusUrl).toContain(ok.json().token);
     const wrong = await ctx.app.inject({ method: 'POST', url: '/api/status/lookup', payload: { reference, email: 'x@example.nl' } });
     expect(wrong.statusCode).toBe(404);
+  });
+
+  it('adds the evening surcharge for the evening slot', async () => {
+    await ctx.app.inject({ method: 'POST', url: '/api/bookings', payload: bookingBody(ctx, { timeSlot: 'avond' }) });
+    const { rows } = await ctx.db.query('SELECT price_cents, evening_surcharge, travel_km::float AS km FROM bookings');
+    expect(rows[0]).toEqual({ price_cents: 27500 + 3000 + 5000, evening_surcharge: true, km: 30 });
+  });
+
+  it('still books when the distance lookup fails', async () => {
+    ctx.app.distance.drivingKm = async () => {
+      throw new Error('offline');
+    };
+    const res = await ctx.app.inject({ method: 'POST', url: '/api/bookings', payload: bookingBody(ctx) });
+    expect(res.statusCode).toBe(201);
+    expect((await ctx.db.query('SELECT price_cents, travel_km FROM bookings')).rows[0]).toEqual({ price_cents: 27500, travel_km: null });
+  });
+
+  it('quotes travel costs, capped at €100', async () => {
+    expect((await ctx.app.inject('/api/quote?postalCode=1234AB&city=Utrecht')).json()).toMatchObject({ km: 30, travelCents: 3000 });
+    ctx.app.distance.drivingKm = async () => 180;
+    expect((await ctx.app.inject('/api/quote?postalCode=1234AB&city=Groningen')).json()).toMatchObject({ km: 180, travelCents: 10000 });
+  });
+
+  it('logs the website request as the first message', async () => {
+    await ctx.app.inject({ method: 'POST', url: '/api/bookings', payload: bookingBody(ctx, { notes: 'Graag Minecraft' }) });
+    const { rows } = await ctx.db.query('SELECT direction, channel, body FROM communications');
+    expect(rows).toEqual([{ direction: 'in', channel: 'website', body: 'Graag Minecraft' }]);
   });
 });

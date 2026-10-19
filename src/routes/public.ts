@@ -6,7 +6,8 @@ import { HttpError } from '../lib/errors.js';
 import type { Mail } from '../lib/mailer.js';
 import { bookingRequest, contactRequest, dateString } from '../lib/schemas.js';
 import { availableSlots, bookingWindow, getTimeSlots } from '../services/availability.js';
-import { createBooking } from '../services/bookings.js';
+import { createBooking, recalculatePrice } from '../services/bookings.js';
+import { travelCents } from '../services/pricing.js';
 import { STAGE_INFO, STAGES, stageIndex, type Status } from '../services/pipeline.js';
 
 export const publicRoutes: FastifyPluginAsync = async (app) => {
@@ -49,6 +50,17 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
       const { termsAccepted: _terms, website: _honeypot, ...input } = bookingRequest.parse(req.body);
       const booking = await createBooking(app.db, app.config, input);
 
+      // Look up the travel distance for the price breakdown. A slow or failing lookup
+      // never holds up the booking: the distance can be filled in from the admin page.
+      const lookup = app.distance.drivingKm(input.postalCode, input.city).then(async (km) => {
+        if (km === null) return;
+        await app.db.query('UPDATE bookings SET travel_km = $2 WHERE id = $1 AND travel_km IS NULL', [booking.id, km]);
+        await recalculatePrice(app.db, app.config, booking.id);
+      });
+      await Promise.race([lookup, new Promise((r) => setTimeout(r, 4000))]).catch((err) =>
+        req.log.warn({ err }, 'Travel distance lookup failed'),
+      );
+
       await sendSafely(bookingReceivedMail(booking, { publicUrl: app.config.PUBLIC_URL }));
       if (app.config.OWNER_EMAIL) {
         await sendSafely(
@@ -64,14 +76,35 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
     },
   );
 
+  // Travel cost estimate for the booking form.
+  app.get(
+    '/quote',
+    { config: { rateLimit: { max: 30, timeWindow: '10 minutes' } } },
+    async (req) => {
+      const { postalCode, city } = z
+        .object({ postalCode: z.string().trim().min(4).max(7), city: z.string().trim().min(2).max(100) })
+        .parse(req.query);
+      const km = await app.distance.drivingKm(postalCode, city);
+      return km === null
+        ? { km: null, travelCents: null }
+        : { km, travelCents: travelCents(km, app.config), maxCents: app.config.TRAVEL_MAX_CENTS };
+    },
+  );
+
   app.post(
     '/contact',
     { config: { rateLimit: { max: 5, timeWindow: '10 minutes' } } },
     async (req, reply) => {
       const { website: _honeypot, ...msg } = contactRequest.parse(req.body);
-      await app.db.query('INSERT INTO contact_messages (name, email, phone, message) VALUES ($1, $2, $3, $4)', [
-        msg.name, msg.email, msg.phone, msg.message,
-      ]);
+      const { rows } = await app.db.query<{ id: number }>(
+        'INSERT INTO contact_messages (name, email, phone, message) VALUES ($1, $2, $3, $4) RETURNING id',
+        [msg.name, msg.email, msg.phone, msg.message],
+      );
+      await app.db.query(
+        `INSERT INTO communications (contact_message_id, direction, channel, subject, body, actor)
+         VALUES ($1, 'in', 'website', 'Contactformulier', $2, $3)`,
+        [rows[0]!.id, msg.message, msg.name],
+      );
       if (app.config.OWNER_EMAIL) await sendSafely(contactOwnerNotification(msg, app.config.OWNER_EMAIL));
       return reply.status(201).send({ ok: true });
     },

@@ -76,20 +76,4 @@ export const catalogRoutes: FastifyPluginAsync = async (app) => {
     await app.db.query('DELETE FROM blocked_dates WHERE date = $1', [date]);
     return reply.status(204).send();
   });
-
-  // Contact messages ---------------------------------------------------------
-  app.get('/messages', async () => {
-    const { rows } = await app.db.query(
-      'SELECT id, name, email, phone, message, handled, created_at AS "createdAt" FROM contact_messages ORDER BY created_at DESC LIMIT 200',
-    );
-    return rows;
-  });
-
-  app.patch('/messages/:id', async (req) => {
-    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(req.params);
-    const { handled } = z.object({ handled: z.boolean() }).parse(req.body);
-    const { rowCount } = await app.db.query('UPDATE contact_messages SET handled = $2 WHERE id = $1', [id, handled]);
-    if (!rowCount) throw new HttpError(404, 'Bericht niet gevonden.', 'not_found');
-    return { id, handled };
-  });
 };

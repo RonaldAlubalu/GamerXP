@@ -5,6 +5,7 @@ import { HttpError } from '../../lib/errors.js';
 import { availabilityRoutes } from './availability.js';
 import { bookingRoutes } from './bookings.js';
 import { catalogRoutes } from './catalog.js';
+import { messageRoutes } from './messages.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -62,7 +63,12 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       req.admin = rows[0];
     });
 
-    secured.get('/me', async (req) => req.admin);
+    secured.get('/me', async (req) => ({
+      ...req.admin,
+      // Lets the admin page point out missing setup.
+      reviewUrlConfigured: Boolean(app.config.GOOGLE_REVIEW_URL),
+      emailConfigured: Boolean(app.config.SMTP_HOST),
+    }));
 
     secured.post('/logout', async (req, reply) => {
       await app.db.query('DELETE FROM admin_sessions WHERE token_hash = $1', [hashToken(bearerToken(req)!)]);
@@ -72,5 +78,6 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     await secured.register(bookingRoutes);
     await secured.register(catalogRoutes);
     await secured.register(availabilityRoutes);
+    await secured.register(messageRoutes);
   });
 };

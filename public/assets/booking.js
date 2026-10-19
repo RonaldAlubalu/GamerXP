@@ -13,6 +13,7 @@ const monthName = new Intl.DateTimeFormat('nl-NL', { month: 'long', year: 'numer
 let packages = [];
 let availability = { days: {}, slots: [], minDate: '', maxDate: '' };
 let month = ''; // 'YYYY-MM' shown in the calendar
+let travel = null; // { km, travelCents } for the entered address
 
 // Packages ----------------------------------------------------------------------
 
@@ -41,10 +42,30 @@ function updatePrice() {
     box.hidden = true;
     return;
   }
-  const total = selected.priceCents + Number(form.elements.extraStations.value) * EXTRA_STATION_CENTS;
+  const evening = form.elements.timeSlot?.value === 'avond' ? 5000 : 0;
+  const total = selected.priceCents + Number(form.elements.extraStations.value) * EXTRA_STATION_CENTS + evening + (travel?.travelCents ?? 0);
   document.getElementById('price-total').textContent = formatPrice(total);
+  document.getElementById('price-travel').textContent = travel?.km
+    ? `Inclusief reiskosten ${formatPrice(travel.travelCents)} (${String(travel.km).replace('.', ',')} km enkele reis)${evening ? ' en avondtoeslag €50' : ''}.`
+    : `Excl. reiskosten (€0,50 per km retour vanaf Eindhoven, max. €100)${evening ? ', incl. avondtoeslag €50' : ''}.`;
   box.hidden = false;
 }
+
+// Estimate travel costs once postcode and city are filled in.
+async function updateTravel() {
+  const postalCode = form.elements.postalCode.value.trim();
+  const city = form.elements.city.value.trim();
+  if (postalCode.length < 4 || city.length < 2) return;
+  try {
+    const quote = await api(`/quote?${new URLSearchParams({ postalCode, city })}`);
+    travel = quote.km === null ? null : quote;
+  } catch {
+    travel = null;
+  }
+  updatePrice();
+}
+form.elements.postalCode.addEventListener('change', updateTravel);
+form.elements.city.addEventListener('change', updateTravel);
 
 // Calendar ----------------------------------------------------------------------
 

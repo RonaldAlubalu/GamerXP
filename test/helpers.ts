@@ -25,7 +25,14 @@ export async function setupApp(overrides: Partial<Config> = {}): Promise<TestCon
   // Migrations create the real packages: Standaard (€275) and Ultimate (€350).
   const { rows } = await db.query<{ id: number }>("SELECT id FROM packages WHERE slug = 'standaard'");
   const sent: Mail[] = [];
-  const app = await buildApp({ config, db, logger: false, mailer: { send: async (m) => void sent.push(m) } });
+  const app = await buildApp({
+    config,
+    db,
+    logger: false,
+    mailer: { send: async (m) => void sent.push(m) },
+    // Never call the real address lookup in tests: every address is 30 km away.
+    distance: { drivingKm: async () => 30 },
+  });
   return { app, db, config, sent, packageId: rows[0]!.id };
 }
 

@@ -29,6 +29,8 @@ export interface MailContext {
   publicUrl: string;
   // Optional payment instructions (e.g. IBAN), added to the confirmation email.
   paymentInfo?: string;
+  // Link for leaving a Google review.
+  reviewUrl?: string;
 }
 
 const signature =
@@ -36,6 +38,9 @@ const signature =
 const euro = new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' });
 
 export const formatEuro = (cents: number) => euro.format(cents / 100);
+
+// Adds the standard sign-off to a message written in the admin page.
+export const withSignature = (text: string) => `${text.trim()}${signature}`;
 
 export const TIME_SLOT_LABELS: Record<string, string> = { ochtend: 'Ochtend', middag: 'Middag', avond: 'Avond' };
 
@@ -134,8 +139,7 @@ export function statusChangeMail(status: Status, b: BookingMailData, ctx: MailCo
         text:
           hi +
           `Bedankt dat je voor Gamer Xperience hebt gekozen! We hopen dat jullie een topdag hebben gehad.\n\n` +
-          `Zou je ons willen helpen met een korte review op Google? Daar helpen we andere ouders enorm mee. ` +
-          `Zoek op "Gamer Xperience" in Google en klik op "Review schrijven".` +
+          reviewAsk(ctx) +
           signature,
       };
     case 'cancelled':
@@ -151,6 +155,22 @@ export function statusChangeMail(status: Status, b: BookingMailData, ctx: MailCo
     default:
       return undefined;
   }
+}
+
+const reviewAsk = (ctx: MailContext) =>
+  `Zou je ons willen helpen met een korte review op Google? Daar helpen we andere ouders enorm mee. ` +
+  (ctx.reviewUrl ? `Het kost maar een minuutje: ${ctx.reviewUrl}` : `Zoek op "Gamer Xperience" in Google en klik op "Review schrijven".`);
+
+export function reviewRequestMail(b: BookingMailData, ctx: MailContext): Mail {
+  return {
+    to: b.email,
+    subject: 'Hoe was het feest? ⭐',
+    text:
+      `Hoi ${b.parentName},\n\n` +
+      `Nogmaals bedankt dat we ${b.childName ? `het feest van ${b.childName}` : 'jullie feest'} mochten verzorgen! ` +
+      reviewAsk(ctx) +
+      signature,
+  };
 }
 
 export function contactOwnerNotification(

@@ -20,6 +20,18 @@ const schema = z.object({
   EXTRA_STATION_CENTS: z.coerce.number().int().min(0).default(2500),
   // Optional payment instructions added to the confirmation email, e.g. an IBAN.
   PAYMENT_INFO: z.string().default(''),
+  // Travel costs: cents per km of the round trip (so per km one way it is double), with a maximum.
+  TRAVEL_CENTS_PER_KM: z.coerce.number().int().min(0).default(50),
+  TRAVEL_MAX_CENTS: z.coerce.number().int().min(0).default(10000),
+  // Surcharge when the party ends after 19:30.
+  EVENING_SURCHARGE_CENTS: z.coerce.number().int().min(0).default(5000),
+  // Where the bus leaves from, used to calculate travel distance (a postcode or address).
+  BASE_LOCATION: z.string().default('5611AB Eindhoven'),
+  // Address lookup (PDOK Locatieserver, free) and driving distance (OSRM).
+  GEOCODER_URL: z.url().default('https://api.pdok.nl/bzk/locatieserver/search/v3_1/free'),
+  ROUTING_URL: z.url().default('https://router.project-osrm.org'),
+  // Link for leaving a Google review (from your Google Business Profile: "Ask for reviews").
+  GOOGLE_REVIEW_URL: z.string().default(''),
 
   SESSION_TTL_HOURS: z.coerce.number().int().positive().default(12),
 

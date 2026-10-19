@@ -96,24 +96,24 @@ export async function getAvailability(
   from: string,
   to: string,
 ): Promise<DayAvailability[]> {
-  const [settings, schedule, overrides, blocked, booked] = await Promise.all([
-    getSettings(db),
-    getWeeklySchedule(db),
-    db.query<{ date: string; slot: SlotKey; open: boolean }>(
-      'SELECT date, slot, open FROM slot_overrides WHERE date BETWEEN $1 AND $2',
-      [from, to],
-    ),
-    db.query<{ date: string; reason: string }>('SELECT date, reason FROM blocked_dates WHERE date BETWEEN $1 AND $2', [
-      from,
-      to,
-    ]),
-    db.query<{ date: string; slot: SlotKey; count: number }>(
-      `SELECT party_date AS date, time_slot AS slot, count(*)::int AS count FROM bookings
-        WHERE party_date BETWEEN $1 AND $2 AND status <> 'cancelled'
-        GROUP BY party_date, time_slot`,
-      [from, to],
-    ),
-  ]);
+  // Sequential on purpose: inside a booking this runs on a single transaction client,
+  // which can only run one query at a time.
+  const settings = await getSettings(db);
+  const schedule = await getWeeklySchedule(db);
+  const overrides = await db.query<{ date: string; slot: SlotKey; open: boolean }>(
+    'SELECT date, slot, open FROM slot_overrides WHERE date BETWEEN $1 AND $2',
+    [from, to],
+  );
+  const blocked = await db.query<{ date: string; reason: string }>(
+    'SELECT date, reason FROM blocked_dates WHERE date BETWEEN $1 AND $2',
+    [from, to],
+  );
+  const booked = await db.query<{ date: string; slot: SlotKey; count: number }>(
+    `SELECT party_date AS date, time_slot AS slot, count(*)::int AS count FROM bookings
+      WHERE party_date BETWEEN $1 AND $2 AND status <> 'cancelled'
+      GROUP BY party_date, time_slot`,
+    [from, to],
+  );
 
   const overrideMap = new Map(overrides.rows.map((o) => [`${o.date}|${o.slot}`, o.open]));
   const blockedMap = new Map(blocked.rows.map((b) => [b.date, b.reason]));

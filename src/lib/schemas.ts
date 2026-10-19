@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { STATUSES } from '../services/pipeline.js';
 import { isValidDate } from './dates.js';
 
 export const dateString = z.string().refine(isValidDate, 'Ongeldige datum (gebruik JJJJ-MM-DD).');
@@ -49,4 +50,4 @@ export const contactRequest = z.object({
   website: z.string().max(0).optional(),
 });
 
-export const bookingStatus = z.enum(['pending', 'confirmed', 'cancelled', 'completed']);
+export const bookingStatus = z.enum(STATUSES);

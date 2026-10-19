@@ -1,9 +1,10 @@
 import type { Config } from '../config.js';
 import type { Db } from '../db/pool.js';
-import { generateReference } from '../lib/auth.js';
+import { generateReference, generateSessionToken } from '../lib/auth.js';
 import { HttpError } from '../lib/errors.js';
 import type { BookingMailData } from '../lib/emails.js';
 import { bookingWindow, unavailableDates } from './availability.js';
+import { addEvent, createDefaultTasks } from './pipeline.js';
 
 export interface NewBooking {
   packageId: number;
@@ -37,9 +38,10 @@ export async function createBooking(
     // Serialize bookings per date so two parents can't grab the last slot at once.
     await client.query("SELECT pg_advisory_xact_lock(hashtext('booking:' || $1))", [input.partyDate]);
 
-    const pkg = await client.query<{ name: string }>('SELECT name FROM packages WHERE id = $1 AND active', [
-      input.packageId,
-    ]);
+    const pkg = await client.query<{ name: string; price_cents: number }>(
+      'SELECT name, price_cents FROM packages WHERE id = $1 AND active',
+      [input.packageId],
+    );
     if (!pkg.rows[0]) throw new HttpError(422, 'Dit pakket bestaat niet (meer).', 'unknown_package');
 
     const unavailable = await unavailableDates(client, config, input.partyDate, input.partyDate);
@@ -50,21 +52,33 @@ export async function createBooking(
     // Retry on the (very unlikely) event of a reference collision.
     for (let attempt = 0; ; attempt++) {
       const reference = generateReference();
+      const statusToken = generateSessionToken();
       await client.query('SAVEPOINT insert_booking');
       try {
         const { rows } = await client.query<{ id: string; status: string }>(
           `INSERT INTO bookings (reference, package_id, party_date, start_time, parent_name, email, phone,
-                                 street, postal_code, city, child_name, child_age, guest_count, notes)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                                 street, postal_code, city, child_name, child_age, guest_count, notes,
+                                 price_cents, status_token)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
            RETURNING id, status`,
           [
             reference, input.packageId, input.partyDate, input.startTime, input.parentName, input.email,
             input.phone, input.street, input.postalCode, input.city, input.childName, input.childAge,
-            input.guestCount, input.notes,
+            input.guestCount, input.notes, pkg.rows[0].price_cents, statusToken,
           ],
         );
+        const booking = rows[0]!;
+        await createDefaultTasks(client, booking.id);
+        await addEvent(client, booking.id, { type: 'created', toStatus: booking.status, actor: input.parentName });
         await client.query('COMMIT');
-        return { ...input, ...rows[0]!, reference, packageName: pkg.rows[0].name };
+        return {
+          ...input,
+          ...booking,
+          reference,
+          statusToken,
+          packageName: pkg.rows[0].name,
+          priceCents: pkg.rows[0].price_cents,
+        };
       } catch (err) {
         if ((err as { code?: string }).code === '23505' && attempt < 5) {
           await client.query('ROLLBACK TO SAVEPOINT insert_booking');
@@ -86,7 +100,9 @@ export async function getBookingMailData(db: Db, id: string): Promise<BookingMai
   const { rows } = await db.query<BookingMailData>(
     `SELECT b.reference, p.name AS "packageName", b.party_date AS "partyDate", b.start_time AS "startTime",
             b.parent_name AS "parentName", b.email, b.phone, b.street, b.postal_code AS "postalCode", b.city,
-            b.child_name AS "childName", b.child_age AS "childAge", b.guest_count AS "guestCount", b.notes
+            b.child_name AS "childName", b.child_age AS "childAge", b.guest_count AS "guestCount", b.notes,
+            b.status_token AS "statusToken", b.price_cents AS "priceCents", b.deposit_cents AS "depositCents",
+            b.paid_cents AS "paidCents"
        FROM bookings b JOIN packages p ON p.id = b.package_id
       WHERE b.id = $1`,
     [id],

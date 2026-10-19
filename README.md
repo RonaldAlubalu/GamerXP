@@ -6,8 +6,9 @@ It replaces the website-builder site with one app you run yourself:
 
 - **Public website** (Dutch): homepage with packages, FAQ and contact form, a booking page with live date availability, a privacy statement and a 404 page.
 - **Booking backend**: party packages, an availability calendar with daily capacity, blocked dates, booking requests that can't be double-booked, and a contact form.
-- **Email notifications**: the parent gets a confirmation of their request, you get notified of every new booking and message, and the parent is emailed again when you confirm or cancel.
-- **Admin page** at `/admin`: manage bookings (confirm, cancel, complete, internal notes), blocked dates, contact messages and packages.
+- **Email notifications**: the parent gets a confirmation of their request and an email at each key stage, and you get notified of every new booking and message.
+- **Booking pipeline** at `/admin`: a board of all bookings by stage (new → contacted → confirmed → deposit paid → scheduled → party held → completed), with a checklist, timeline, notes and payment tracking per booking. You also manage blocked dates, contact messages and packages there.
+- **Parent progress page** at `/status`: parents follow their party's progress through a private link in every email.
 
 **Stack:** Node.js 22 + TypeScript, Fastify, PostgreSQL 16, Docker Compose, and Caddy (automatic HTTPS).
 
@@ -66,12 +67,39 @@ All settings live in `.env`; see [`.env.example`](.env.example). The most import
 | `MAX_ADVANCE_DAYS` | How far ahead parents can book. Default `365`. |
 | `OWNER_EMAIL` | Receives new-booking and contact notifications. |
 
-## How bookings work
+## Booking pipeline
 
-1. A parent picks a package and a date on `/boeken`. Dates that are blocked or fully booked are flagged straight away.
-2. The booking is saved as **Aanvraag** (pending) and counts toward that day's capacity right away. A per-date database lock makes sure two parents can never grab the last slot at the same time.
-3. You review it in `/admin` and click **Bevestigen** (confirmed) or **Annuleren** (cancelled). You choose whether the parent gets an email. A cancelled booking frees up the date again.
-4. After the party, mark it **Afgerond** (completed).
+Every booking moves through these stages. The admin home page (`/admin`) shows them as a board with one column per stage:
+
+| Stage | Meaning | Email to parent |
+| --- | --- | --- |
+| **Nieuw** | Request came in through the website | "We hebben je aanvraag ontvangen" (automatic) |
+| **Contact opgenomen** | You called or emailed the parent | – |
+| **Bevestigd** | Party agreed; deposit requested | Confirmation, including the deposit amount if set |
+| **Aanbetaling ontvangen** | Deposit paid, date is final | Deposit received |
+| **Ingepland** | Preparing: games, equipment, route | – |
+| **Feest geweest** | Party done, equipment back | – |
+| **Afgerond** | Fully paid, thank-you sent | Thank you + review request |
+| **Geannuleerd** | Cancelled at any stage (frees the date) | Cancellation notice |
+
+Each time you move a booking to a stage that has an email, the admin page asks whether to send it.
+
+For each booking you also get:
+
+- **A checklist** of tasks per stage (e.g. "Games gekozen (passend bij PEGI-leeftijd)", "Apparatuur getest en ingepakt"). Tick tasks off, or add your own. Progress bars on the board show how far each booking is. The default tasks are in `src/services/pipeline.ts`.
+- **A timeline** that logs everything automatically: stage changes, emails sent (or failed), ticked tasks, changes to dates and amounts, and your own notes, each with who did it and when.
+- **Payment tracking**: the price is copied from the package when the parent books, so later price changes don't affect it. You set the deposit and the amount paid, and the outstanding amount is calculated for you.
+- **Rescheduling** of the date and start time.
+
+Upcoming parties within a week, and parties that have passed but aren't marked as held, are flagged on the board.
+
+### Parent progress page
+
+Every email to the parent contains a private link (`/status?t=…`) where they can follow their party through the stages. It shows the date, package and amounts, but not their address or contact details. Parents who lose the link can look it up at `/status` with their reference number and email address. From any booking in the admin page you can also copy the link to send it yourself.
+
+### Capacity
+
+Every booking that isn't cancelled occupies one party setup on its date. A per-date database lock makes sure two parents can never take the last slot at the same moment.
 
 ## Development
 

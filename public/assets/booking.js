@@ -49,10 +49,11 @@ form.addEventListener('submit', async (e) => {
   const button = form.querySelector('button[type=submit]');
   button.disabled = true;
   try {
-    const { reference } = await api('/bookings', { method: 'POST', body: JSON.stringify(formData(form)) });
+    const { reference, statusUrl } = await api('/bookings', { method: 'POST', body: JSON.stringify(formData(form)) });
     form.hidden = true;
     document.getElementById('booking-done').hidden = false;
     document.getElementById('booking-reference').textContent = reference;
+    document.getElementById('booking-status-link').href = new URL(statusUrl).pathname + new URL(statusUrl).search;
     window.scrollTo({ top: 0, behavior: 'smooth' });
   } catch (err) {
     if (err.body?.code === 'date_unavailable') unavailable.add(dateInput.value);

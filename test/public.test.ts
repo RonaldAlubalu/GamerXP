@@ -27,15 +27,17 @@ describe('public API', () => {
   it('creates a booking and sends emails to parent and owner', async () => {
     const res = await ctx.app.inject({ method: 'POST', url: '/api/bookings', payload: bookingBody(ctx) });
     expect(res.statusCode).toBe(201);
-    const { reference, status } = res.json();
+    const { reference, status, statusUrl } = res.json();
     expect(reference).toMatch(/^GXP-[2-9A-Z]{6}$/);
-    expect(status).toBe('pending');
+    expect(status).toBe('new');
+    expect(statusUrl).toMatch(/\/status\?t=/);
 
     const { rows } = await ctx.db.query('SELECT postal_code, party_date FROM bookings');
     expect(rows).toEqual([{ postal_code: '1234 AB', party_date: futureDate(ctx) }]);
 
     expect(ctx.sent.map((m) => m.to)).toEqual(['sanne@example.nl', 'owner@gamerxp.nl']);
     expect(ctx.sent[0]!.text).toContain(reference);
+    expect(ctx.sent[0]!.text).toContain(statusUrl);
     expect(ctx.sent[1]!.replyTo).toBe('sanne@example.nl');
   });
 
@@ -161,5 +163,33 @@ describe('public API', () => {
     expect(missing.statusCode).toBe(404);
     expect(missing.headers['content-type']).toContain('text/html');
     expect((await ctx.app.inject('/api/bestaat-niet')).json().code).toBe('not_found');
+  });
+
+  it('shows parents the progress of their booking without personal details', async () => {
+    const created = await ctx.app.inject({ method: 'POST', url: '/api/bookings', payload: bookingBody(ctx) });
+    const token = new URL(created.json().statusUrl).searchParams.get('t');
+
+    const res = await ctx.app.inject(`/api/status/${token}`);
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body).toMatchObject({ reference: created.json().reference, status: 'new', childName: 'Daan', priceCents: 19900 });
+    expect(body.steps[0]).toMatchObject({ key: 'new', state: 'current' });
+    expect(body.steps[1]).toMatchObject({ key: 'contacted', state: 'todo' });
+    expect(JSON.stringify(body)).not.toMatch(/Dorpsstraat|sanne@example|0612345678/);
+
+    expect((await ctx.app.inject(`/api/status/${'x'.repeat(40)}`)).statusCode).toBe(404);
+  });
+
+  it('lets parents find their status page with reference and email', async () => {
+    const created = await ctx.app.inject({ method: 'POST', url: '/api/bookings', payload: bookingBody(ctx) });
+    const { reference, statusUrl } = created.json();
+    const ok = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/status/lookup',
+      payload: { reference: reference.toLowerCase(), email: 'SANNE@example.nl' },
+    });
+    expect(statusUrl).toContain(ok.json().token);
+    const wrong = await ctx.app.inject({ method: 'POST', url: '/api/status/lookup', payload: { reference, email: 'x@example.nl' } });
+    expect(wrong.statusCode).toBe(404);
   });
 });

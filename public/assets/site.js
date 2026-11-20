@@ -64,3 +64,11 @@ for (const button of document.querySelectorAll('[data-scroll]')) {
     if (track) track.scrollBy({ left: Number(button.dataset.scroll) * track.clientWidth * 0.9, behavior: 'smooth' });
   });
 }
+
+// Booking button that stays in view on phones, once the visitor scrolls past the first screen.
+const stickyCta = document.querySelector('.sticky-cta');
+if (stickyCta && !/^\/(reserveer|status|betalen)/.test(location.pathname)) {
+  const toggleCta = () => (stickyCta.hidden = scrollY < 500);
+  addEventListener('scroll', toggleCta, { passive: true });
+  toggleCta();
+}

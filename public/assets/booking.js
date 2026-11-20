@@ -47,7 +47,7 @@ function updatePrice() {
   document.getElementById('price-total').textContent = formatPrice(total);
   document.getElementById('price-travel').textContent = travel?.km
     ? `Inclusief reiskosten ${formatPrice(travel.travelCents)} (${String(travel.km).replace('.', ',')} km enkele reis)${evening ? ' en avondtoeslag €50' : ''}.`
-    : `Excl. reiskosten (€0,50 per km retour vanaf Eindhoven, max. €100)${evening ? ', incl. avondtoeslag €50' : ''}.`;
+    : `Excl. reiskosten: vul je adres in en je ziet ze direct${evening ? ' (incl. avondtoeslag €50)' : ''}.`;
   box.hidden = false;
 }
 
@@ -111,13 +111,15 @@ function selectDate(date) {
   document.getElementById('slot-date').textContent = formatDate(date);
   const previous = form.elements.timeSlot?.value;
   const free = availability.days[date] ?? [];
+  const open = availability.slots.filter((s) => free.includes(s.key));
+  // Keep the chosen time slot when it is free on this day too, else take the first free one.
+  const chosen = free.includes(previous) ? previous : open[0]?.key;
   slotButtons.replaceChildren(
-    ...availability.slots
-      .filter((s) => free.includes(s.key))
+    ...open
       .map((s) => {
         const label = document.createElement('label');
         const input = document.createElement('input');
-        Object.assign(input, { type: 'radio', name: 'timeSlot', value: s.key, required: true, checked: s.key === previous || free.length === 1 });
+        Object.assign(input, { type: 'radio', name: 'timeSlot', value: s.key, required: true, checked: s.key === chosen });
         const text = document.createElement('span');
         const name = document.createElement('strong');
         name.textContent = s.label + (s.key === 'avond' ? ' (evt. toeslag)' : '');
@@ -130,6 +132,26 @@ function selectDate(date) {
   );
   slotPicker.hidden = false;
   renderCalendar();
+  updatePrice();
+}
+
+// A line above the calendar that follows the real availability.
+function renderAvailabilityNote() {
+  const note = document.getElementById('availability-note');
+  const free = Object.keys(availability.days).sort();
+  if (!free.length) {
+    note.textContent = 'Op dit moment zijn alle data volgeboekt. Stuur ons een berichtje via WhatsApp, dan denken we met je mee.';
+    note.hidden = false;
+    return;
+  }
+  const until = new Date(`${availability.minDate}T00:00:00Z`);
+  until.setUTCDate(until.getUTCDate() + 56);
+  const weekendDays = free.filter((d) => d <= iso(until) && [0, 6].includes(new Date(`${d}T00:00:00Z`).getUTCDay())).length;
+  // Only mention it when weekends are getting scarce.
+  note.hidden = weekendDays > 6;
+  note.textContent = weekendDays
+    ? `🎮 Weekenden gaan hard: nog ${weekendDays} vrije weekenddag${weekendDays === 1 ? '' : 'en'} in de komende 8 weken.`
+    : '🎮 De weekenden van de komende 8 weken zijn volgeboekt. Kijk verder vooruit of kies een doordeweekse dag.';
 }
 
 async function loadAvailability() {
@@ -139,6 +161,7 @@ async function loadAvailability() {
     month = (firstFree ?? availability.minDate).slice(0, 7);
   }
   renderCalendar();
+  renderAvailabilityNote();
   const chosen = form.elements.partyDate.value;
   if (chosen && availability.days[chosen]) selectDate(chosen);
   else {
@@ -172,19 +195,56 @@ async function init() {
 
 form.addEventListener('change', updatePrice);
 
+// Steps -------------------------------------------------------------------------
+
+const steps = [...form.querySelectorAll('.step')];
+const backButton = document.getElementById('step-back');
+const nextButton = document.getElementById('step-next');
+const submitButton = document.getElementById('step-submit');
+let step = 0;
+
+function showStep(n, scroll = true) {
+  step = n;
+  steps.forEach((el, i) => (el.hidden = i !== n));
+  [...document.getElementById('steps-bar').children].forEach((li, i) => {
+    li.className = i < n ? 'done' : i === n ? 'current' : '';
+  });
+  backButton.hidden = n === 0;
+  nextButton.hidden = n === steps.length - 1;
+  submitButton.hidden = !nextButton.hidden;
+  notice.hidden = true;
+  if (scroll) document.getElementById('steps-bar').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+const calendarChosen = () => Boolean(form.elements.partyDate.value && form.elements.timeSlot?.value && form.elements.packageId?.value);
+const stepHasProblem = (n) => (n === 0 && !calendarChosen()) || Boolean(steps[n].querySelector(':invalid'));
+
+// Checks the fields of the step on screen and points at the first problem.
+function stepIsValid(n) {
+  if (n === 0 && !calendarChosen()) {
+    showNotice(notice, 'error', form.elements.packageId?.value ? 'Kies eerst een datum en een tijdslot in de kalender.' : 'Kies een pakket.');
+    return false;
+  }
+  const invalid = steps[n].querySelector(':invalid');
+  invalid?.reportValidity();
+  return !invalid;
+}
+
+nextButton.addEventListener('click', () => stepIsValid(step) && showStep(step + 1));
+backButton.addEventListener('click', () => showStep(step - 1));
+
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
-  if (!form.elements.partyDate.value || !form.elements.timeSlot?.value) {
-    showNotice(notice, 'error', 'Kies een datum en een tijdslot in de kalender.');
+  const problem = steps.findIndex((_, n) => stepHasProblem(n));
+  if (problem >= 0) {
+    if (problem !== step) showStep(problem, false);
+    stepIsValid(problem);
     return;
   }
-  if (!form.reportValidity()) return;
-  const button = form.querySelector('button[type=submit]');
-  button.disabled = true;
+  submitButton.disabled = true;
   try {
     const { reference, statusUrl } = await api('/bookings', { method: 'POST', body: JSON.stringify(formData(form)) });
     form.hidden = true;
-    notice.hidden = true;
     document.getElementById('booking-done').hidden = false;
     document.getElementById('booking-reference').textContent = reference;
     const url = new URL(statusUrl);
@@ -192,11 +252,14 @@ form.addEventListener('submit', async (e) => {
     // Show the confirmation itself, not the top of the page.
     document.getElementById('booking-done').scrollIntoView({ behavior: 'smooth', block: 'center' });
   } catch (err) {
+    // Go to the step with the field the server rejected, or the calendar when the slot was just taken.
+    const field = form.elements[err.body?.issues?.[0]?.path];
+    const target = err.status === 409 ? 0 : steps.findIndex((el) => field instanceof Element && el.contains(field));
+    if (target >= 0 && target !== step) showStep(target, false);
     showNotice(notice, 'error', err.message);
-    // Someone else may have just taken this slot: refresh the calendar.
     if (err.status === 409) await loadAvailability().catch(() => {});
   } finally {
-    button.disabled = false;
+    submitButton.disabled = false;
   }
 });
 

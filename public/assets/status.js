@@ -33,14 +33,20 @@ function render(s) {
   );
 
   const outstanding = Math.max(s.priceCents - s.paidCents, 0);
+  // Until we confirm the date, nothing has to be paid yet.
+  const unconfirmed = ['new', 'contacted'].includes(s.status);
   const rows = [
     ['Referentie', s.reference],
     ['Datum', s.startTime ? `${formatDate(s.partyDate)} om ${s.startTime}` : `${formatDate(s.partyDate)} (${SLOTS[s.timeSlot] ?? s.timeSlot})`],
     ['Pakket', s.packageName + (s.extraStations ? ` + ${s.extraStations} extra gamestation${s.extraStations > 1 ? 's' : ''}` : '')],
     ...(s.guestCount ? [['Aantal kinderen', s.guestCount]] : []),
-    ['Prijs', formatPrice(s.priceCents)],
-    ...(s.depositCents ? [['Aanbetaling', formatPrice(s.depositCents)]] : []),
-    ...(s.status !== 'cancelled' ? [['Nog te betalen', outstanding ? formatPrice(outstanding) : 'Niets, alles is betaald ✓']] : []),
+    [unconfirmed ? 'Prijsindicatie' : 'Prijs', formatPrice(s.priceCents)],
+    ...(unconfirmed
+      ? [['Betalen', `Pas na onze bevestiging${s.depositCents ? ` (aanbetaling ${formatPrice(s.depositCents)})` : ''}`]]
+      : [
+          ...(s.depositCents ? [['Aanbetaling', formatPrice(s.depositCents)]] : []),
+          ...(s.status !== 'cancelled' ? [['Nog te betalen', outstanding ? formatPrice(outstanding) : 'Niets, alles is betaald ✓']] : []),
+        ]),
   ];
   document.getElementById('st-summary').replaceChildren(
     ...rows.flatMap(([k, v]) => {

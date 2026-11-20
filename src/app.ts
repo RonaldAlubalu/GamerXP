@@ -10,6 +10,7 @@ import type { Db } from './db/pool.js';
 import { HttpError } from './lib/errors.js';
 import { createMailer, type Mailer } from './lib/mailer.js';
 import { createDistanceService, type DistanceService } from './services/distance.js';
+import { createImapSource, runMailImport, type MailSource } from './services/mail-import.js';
 import { createMollieClient, type MollieClient } from './services/mollie.js';
 import { paymentRoutes } from './routes/payments.js';
 import { publicRoutes } from './routes/public.js';
@@ -23,6 +24,7 @@ declare module 'fastify' {
     mailer: Mailer;
     distance: DistanceService;
     mollie: MollieClient | null;
+    mailSource: MailSource | null;
   }
 }
 
@@ -35,10 +37,12 @@ export interface AppOptions {
   distance?: DistanceService;
   // Pass null to switch online payment off, or a fake client in tests.
   mollie?: MollieClient | null;
+  // Pass null to switch the email import off, or a fake mailbox in tests.
+  mailSource?: MailSource | null;
   logger?: boolean;
 }
 
-export async function buildApp({ config, db, mailer, distance, mollie, logger = true }: AppOptions): Promise<FastifyInstance> {
+export async function buildApp({ config, db, mailer, distance, mollie, mailSource, logger = true }: AppOptions): Promise<FastifyInstance> {
   const app = Fastify({
     logger: logger && {
       level: config.NODE_ENV === 'production' ? 'info' : 'debug',
@@ -54,6 +58,18 @@ export async function buildApp({ config, db, mailer, distance, mollie, logger = 
   app.decorate('mailer', mailer ?? createMailer(config, (msg) => app.log.info(msg)));
   app.decorate('distance', distance ?? createDistanceService(config, (msg, err) => app.log.warn({ err }, msg)));
   app.decorate('mollie', mollie === undefined ? createMollieClient(config) : mollie);
+  app.decorate('mailSource', mailSource === undefined ? createImapSource(config) : mailSource);
+
+  // Check the mailbox for customer emails every few minutes.
+  if (app.mailSource && config.NODE_ENV !== 'test') {
+    const check = () =>
+      runMailImport(app)
+        .then((r) => r.imported && app.log.info(r, 'Imported customer emails'))
+        .catch((err) => app.log.error({ err }, 'Email import failed'));
+    const timer = setInterval(check, config.IMAP_POLL_MINUTES * 60_000);
+    app.addHook('onReady', async () => void check());
+    app.addHook('onClose', async () => clearInterval(timer));
+  }
 
   await app.register(helmet, {
     contentSecurityPolicy: {

@@ -6,6 +6,7 @@ import { createPool, type Db } from '../src/db/pool.js';
 import { hashPassword } from '../src/lib/auth.js';
 import { addDays, today } from '../src/lib/dates.js';
 import type { Mail } from '../src/lib/mailer.js';
+import type { IncomingMail, MailSource } from '../src/services/mail-import.js';
 import type { MollieClient, MolliePayment } from '../src/services/mollie.js';
 
 export interface TestContext {
@@ -14,6 +15,8 @@ export interface TestContext {
   config: Config;
   sent: Mail[];
   packageId: number;
+  // Emails waiting in the fake mailbox.
+  inbox: IncomingMail[];
 }
 
 export async function setupApp(overrides: Partial<Config> = {}, mollie: MollieClient | null = null): Promise<TestContext> {
@@ -26,6 +29,8 @@ export async function setupApp(overrides: Partial<Config> = {}, mollie: MollieCl
   // Migrations create the real packages: Standaard (€275) and Ultimate (€350).
   const { rows } = await db.query<{ id: number }>("SELECT id FROM packages WHERE slug = 'standaard'");
   const sent: Mail[] = [];
+  const inbox: IncomingMail[] = [];
+  const mailSource: MailSource = { fetchSince: async () => inbox };
   const app = await buildApp({
     config,
     db,
@@ -34,8 +39,9 @@ export async function setupApp(overrides: Partial<Config> = {}, mollie: MollieCl
     // Never call the real address lookup in tests: every address is 30 km away.
     distance: { drivingKm: async () => 30 },
     mollie,
+    mailSource,
   });
-  return { app, db, config, sent, packageId: rows[0]!.id };
+  return { app, db, config, sent, packageId: rows[0]!.id, inbox };
 }
 
 export async function teardown(ctx: TestContext): Promise<void> {

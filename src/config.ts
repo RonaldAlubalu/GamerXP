@@ -46,6 +46,16 @@ const schema = z.object({
   SMTP_USER: z.string().default(''),
   SMTP_PASS: z.string().default(''),
   MAIL_FROM: z.string().default('Gamer Xperience <contact@gamerxp.nl>'),
+  // Mailbox to import customer emails from (IMAP). Leave IMAP_HOST empty to switch the import off.
+  IMAP_HOST: z.string().default(''),
+  IMAP_PORT: z.coerce.number().int().positive().default(993),
+  IMAP_SECURE: bool.default(true),
+  IMAP_USER: z.string().default(''),
+  IMAP_PASS: z.string().default(''),
+  IMAP_MAILBOX: z.string().default('INBOX'),
+  // How often the mailbox is checked, and how far back the first check looks.
+  IMAP_POLL_MINUTES: z.coerce.number().int().positive().default(5),
+  IMAP_LOOKBACK_DAYS: z.coerce.number().int().positive().default(14),
   // Where new booking and contact notifications are sent.
   OWNER_EMAIL: z.string().default(''),
 });

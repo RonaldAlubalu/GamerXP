@@ -52,7 +52,17 @@ git pull && docker compose up -d --build
 
 Use the SMTP details of your mail provider (for example the mailbox of contact@gamerxp.nl, Brevo, Postmark or Amazon SES). Until `SMTP_HOST` is set, emails are only written to the log (`docker compose logs app`) and the admin shows a warning. Set up SPF/DKIM for `gamerxp.nl` so mail doesn't land in spam.
 
-Emails you send from the admin come from `MAIL_FROM`. Customers' replies land in that mailbox. Log important replies on the booking ("WhatsApp / telefoon vastleggen", channel *E-mail*) so the conversation stays complete and "whose turn" stays correct.
+Emails you send from the admin come from `MAIL_FROM`. Customers' replies land in that mailbox.
+
+### Importing customer emails
+
+Set `IMAP_HOST`, `IMAP_USER` and `IMAP_PASS` to the mailbox customers reply to (usually the one behind contact@gamerxp.nl). Every few minutes (`IMAP_POLL_MINUTES`) new emails are read and added to the conversation they belong to, and the booking switches to "jouw beurt":
+
+- an email with a booking reference (`GXP-…`) in the subject or text goes to that booking;
+- otherwise it goes to the sender's current booking, matched on email address;
+- otherwise to their open conversation under *Berichten*, or it starts a new one there.
+
+The mailbox is only read: nothing is marked as read, moved or deleted. Quoted earlier messages are cut from replies, and each email is imported once. The first check looks back `IMAP_LOOKBACK_DAYS`. *Berichten → E-mail ophalen* checks right away. Without IMAP, log important replies by hand on the booking ("WhatsApp / telefoon vastleggen", channel *E-mail*).
 
 ### Backups
 

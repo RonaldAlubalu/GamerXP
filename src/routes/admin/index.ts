@@ -2,6 +2,7 @@ import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { generateSessionToken, hashToken, verifyPassword } from '../../lib/auth.js';
 import { HttpError } from '../../lib/errors.js';
+import { runMailImport } from '../../services/mail-import.js';
 import { availabilityRoutes } from './availability.js';
 import { bookingRoutes } from './bookings.js';
 import { catalogRoutes } from './catalog.js';
@@ -69,7 +70,19 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       reviewUrlConfigured: Boolean(app.config.GOOGLE_REVIEW_URL),
       emailConfigured: Boolean(app.config.SMTP_HOST),
       onlinePayments: Boolean(app.mollie),
+      mailImportConfigured: Boolean(app.mailSource),
     }));
+
+    // Check the mailbox now instead of waiting for the next automatic check.
+    secured.post('/mail-import', async () => {
+      if (!app.mailSource) throw new HttpError(409, 'E-mail importeren is nog niet ingesteld (IMAP).', 'not_configured');
+      try {
+        return await runMailImport(app);
+      } catch (err) {
+        app.log.error({ err }, 'Email import failed');
+        throw new HttpError(502, 'De mailbox kon niet worden gelezen. Controleer de IMAP-instellingen.', 'import_failed');
+      }
+    });
 
     secured.post('/logout', async (req, reply) => {
       await app.db.query('DELETE FROM admin_sessions WHERE token_hash = $1', [hashToken(bearerToken(req)!)]);

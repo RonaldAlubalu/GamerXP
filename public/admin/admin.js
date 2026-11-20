@@ -621,7 +621,16 @@ async function messagesView(selectedId) {
   const [messages, me, selected] = await Promise.all([
     api('/messages'), api('/me'), selectedId ? api(`/messages/${selectedId}`) : null,
   ]);
-  setPage('Berichten');
+  setPage('Berichten', me.mailImportConfigured && h('button', {
+    class: 'btn',
+    onclick: async () => {
+      try {
+        const r = await post('/mail-import');
+        flash('ok', r.imported ? `${r.imported} nieuwe e-mail(s) geïmporteerd.` : 'Geen nieuwe e-mails.');
+        await render();
+      } catch (err) { flash('error', err.message); }
+    },
+  }, '↻ E-mail ophalen'));
 
   const list = h('div', { class: 'card inbox-list' },
     messages.length
@@ -629,7 +638,7 @@ async function messagesView(selectedId) {
           h('div', { class: 'top' }, h('strong', {}, m.name), h('span', { class: 'muted small' }, fmtDateTime(m.lastMessageAt ?? m.createdAt))),
           h('div', { class: 'preview' }, m.message),
           h('div', { class: 'badges', style: 'margin-top:4px' }, m.handled ? badge('Afgehandeld', 'success') : waitingBadge(m.waitingOn))))
-      : h('p', { class: 'empty' }, 'Nog geen berichten via het contactformulier.'));
+      : h('p', { class: 'empty' }, 'Nog geen berichten.'));
 
   const detail = selected
     ? card(h('div', { class: 'card-head' },

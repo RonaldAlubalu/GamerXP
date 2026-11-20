@@ -45,6 +45,8 @@ export const bookingRequest = z.object({
   childName: text(50).default(''),
   childAge: optionalInt(1, 18, 'Leeftijd moet tussen 1 en 18 zijn.'),
   guestCount: optionalInt(1, 40, 'Aantal kinderen moet tussen 1 en 40 zijn.'),
+  // Parking at the party address: free, paid or unknown.
+  parking: z.enum(['', 'free', 'paid', 'unknown']).default(''),
   notes: text(2000).default(''),
   termsAccepted: z.literal(true, 'Je moet akkoord gaan met de algemene voorwaarden.'),
   // Honeypot: hidden in the form, bots tend to fill it in.

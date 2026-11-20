@@ -21,6 +21,7 @@ export interface NewBooking {
   childName: string;
   childAge?: number;
   guestCount?: number;
+  parking?: '' | 'free' | 'paid' | 'unknown';
   notes: string;
 }
 
@@ -79,14 +80,14 @@ export async function createBooking(
         const { rows } = await client.query<{ id: string; status: string }>(
           `INSERT INTO bookings (reference, package_id, extra_stations, party_date, time_slot, parent_name, email,
                                  phone, street, postal_code, city, child_name, child_age, guest_count, notes,
-                                 price_cents, deposit_cents, status_token, evening_surcharge, package_price_cents)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+                                 price_cents, deposit_cents, status_token, evening_surcharge, package_price_cents, parking)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
            RETURNING id, status`,
           [
             reference, input.packageId, input.extraStations, input.partyDate, input.timeSlot, input.parentName,
             input.email, input.phone, input.street, input.postalCode, input.city, input.childName,
             input.childAge ?? null, input.guestCount ?? null, input.notes, priceCents, config.DEPOSIT_CENTS,
-            statusToken, eveningSurcharge, pkg.rows[0].price_cents,
+            statusToken, eveningSurcharge, pkg.rows[0].price_cents, input.parking ?? '',
           ],
         );
         const booking = rows[0]!;
@@ -131,7 +132,7 @@ export async function getBookingMailData(db: Db, id: string): Promise<BookingMai
     `SELECT b.reference, p.name AS "packageName", b.party_date AS "partyDate", to_char(b.start_time, 'HH24:MI') AS "startTime",
             b.time_slot AS "timeSlot", b.extra_stations AS "extraStations",
             b.parent_name AS "parentName", b.email, b.phone, b.street, b.postal_code AS "postalCode", b.city,
-            b.child_name AS "childName", b.child_age AS "childAge", b.guest_count AS "guestCount", b.notes,
+            b.child_name AS "childName", b.child_age AS "childAge", b.guest_count AS "guestCount", b.notes, b.parking,
             b.status_token AS "statusToken", b.price_cents AS "priceCents", b.deposit_cents AS "depositCents",
             b.paid_cents AS "paidCents", b.travel_km::float AS "travelKm"
        FROM bookings b JOIN packages p ON p.id = b.package_id

@@ -461,6 +461,7 @@ async function bookingDetailView(id) {
       h('dt', {}, 'Pakket'), h('dd', {}, `${b.packageName}${b.extraStations ? ` + ${b.extraStations} extra station(s)` : ''}`),
       h('dt', {}, 'Jarige'), h('dd', {}, b.childName ? `${b.childName}${b.childAge ? `, wordt ${b.childAge}` : ''}` : '–'),
       h('dt', {}, 'Kinderen'), h('dd', {}, b.guestCount ?? '–'),
+      h('dt', {}, 'Parkeren'), h('dd', {}, { free: 'Gratis parkeren', paid: 'Betaald parkeren: parkeerkosten boven €10 doorberekenen', unknown: 'Weet de klant niet: navragen' }[b.parking] ?? 'Niet opgegeven'),
       h('dt', {}, 'Details'), h('dd', {}, b.notes || '–'),
       h('dt', {}, 'Aangevraagd'), h('dd', {}, fmtDateTime(b.createdAt))),
     h('h3', { style: 'margin-top:16px' }, 'Planning'),
@@ -500,6 +501,7 @@ async function bookingDetailView(id) {
     extrasBox,
     h('div', { class: 'inline' },
       h('button', { type: 'button', class: 'btn small', onclick: () => addExtraRow() }, '+ Regel'),
+      h('button', { type: 'button', class: 'btn small', onclick: () => addExtraRow({ label: 'Parkeerkosten', amountCents: 0 }) }, '+ Parkeerkosten'),
       h('button', { class: 'btn primary', type: 'submit', style: 'margin-left:auto' }, 'Prijs opslaan')));
   const priceCard = card('Prijsberekening',
     h('table', { class: 'price-table' },

@@ -46,8 +46,9 @@ function updatePrice() {
   const total = selected.priceCents + Number(form.elements.extraStations.value) * EXTRA_STATION_CENTS + evening + (travel?.travelCents ?? 0);
   document.getElementById('price-total').textContent = formatPrice(total);
   document.getElementById('price-travel').textContent = travel?.km
-    ? `Inclusief reiskosten ${formatPrice(travel.travelCents)} (${String(travel.km).replace('.', ',')} km enkele reis)${evening ? ' en avondtoeslag €50' : ''}.`
+    ? `Inclusief reiskosten ${formatPrice(travel.travelCents)} (${(travel.km * 2).toLocaleString('nl-NL', { maximumFractionDigits: 1 })} km retour)${evening ? ' en avondtoeslag €50' : ''}.`
     : `Excl. reiskosten: vul je adres in en je ziet ze direct${evening ? ' (incl. avondtoeslag €50)' : ''}.`;
+  if (form.elements.parking.value === 'paid') document.getElementById('price-travel').textContent += ' Excl. eventuele parkeerkosten.';
   box.hidden = false;
 }
 

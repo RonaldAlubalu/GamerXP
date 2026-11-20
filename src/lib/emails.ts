@@ -19,6 +19,7 @@ export interface BookingMailData {
   childAge?: number | null;
   guestCount?: number | null;
   notes: string;
+  parking?: string;
   statusToken: string;
   priceCents?: number;
   depositCents?: number;
@@ -44,6 +45,12 @@ export const formatEuro = (cents: number) => euro.format(cents / 100);
 
 // Adds the standard sign-off to a message written in the admin page.
 export const withSignature = (text: string) => `${text.trim()}${signature}`;
+
+export const PARKING_LABELS: Record<string, string> = {
+  free: 'Gratis parkeren',
+  paid: 'Betaald parkeren',
+  unknown: 'Weet de klant niet',
+};
 
 export const TIME_SLOT_LABELS: Record<string, string> = { ochtend: 'Ochtend', middag: 'Middag', avond: 'Avond' };
 
@@ -81,6 +88,8 @@ export function bookingReceivedMail(b: BookingMailData, ctx: MailContext): Mail 
       `Bedankt voor je aanvraag! Wij duiken in onze agenda en laten je binnen 24 uur weten ` +
       `of jouw datum nog vrij is. Je zit nog nergens aan vast.\n\n${summary(b)}` +
       (b.notes ? `\nDetails: ${b.notes}` : '') +
+      `\n\nDe prijs is een indicatie. De definitieve prijs kan afwijken door de berekening van de reiskosten ` +
+      `(altijd op basis van retour) en eventuele parkeerkosten. Je hoort het exacte bedrag bij onze bevestiging.` +
       followLink(b, ctx) +
       `\n\nKlopt er iets niet? Beantwoord dan gewoon deze e-mail.${signature}`,
   };
@@ -94,6 +103,7 @@ export function bookingOwnerNotification(b: BookingMailData, to: string, adminUr
     text:
       `Nieuwe aanvraag binnen.\n\n${summary(b)}\n\n` +
       `Naam: ${b.parentName}\nE-mail: ${b.email}\nTelefoon: ${b.phone || '-'}\n` +
+      (b.parking ? `Parkeren: ${PARKING_LABELS[b.parking] ?? b.parking}\n` : '') +
       (b.notes ? `Details: ${b.notes}\n` : '') +
       `\nBekijken: ${adminUrl}`,
   };

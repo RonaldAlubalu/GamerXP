@@ -72,11 +72,21 @@
 
             <fieldset>
               <legend>Adres van het feest</legend>
-              <p class="hint">Hiermee berekenen we direct je reiskosten.</p>
+              <p class="hint">Hiermee berekenen we direct je reiskosten (€0,50 per km, altijd heen en terug vanaf Eindhoven, max. €100).</p>
               <div class="row">
                 <div class="field"><label for="b-street">Straat en huisnummer</label><input id="b-street" name="street" required maxlength="200" autocomplete="street-address"></div>
                 <div class="field"><label for="b-postal">Postcode</label><input id="b-postal" name="postalCode" required maxlength="7" autocomplete="postal-code" placeholder="1234 AB"></div>
                 <div class="field"><label for="b-city">Plaats</label><input id="b-city" name="city" required maxlength="100" autocomplete="address-level2"></div>
+              </div>
+              <div class="field">
+                <label for="b-parking">Parkeren bij het adres</label>
+                <select id="b-parking" name="parking">
+                  <option value="">Maak een keuze (optioneel)</option>
+                  <option value="free">Gratis parkeren voor de deur of dichtbij</option>
+                  <option value="paid">Betaald parkeren (bijv. binnenstad)</option>
+                  <option value="unknown">Weet ik niet</option>
+                </select>
+                <small class="hint">Parkeerkosten tot €10 berekenen we niet door. Zijn ze hoger, dan berekenen we het volledige bedrag door. Een plek op eigen terrein of een bezoekersvergunning voorkomt dat.</small>
               </div>
             </fieldset>
           </div>
@@ -95,6 +105,7 @@
               </div>
             </fieldset>
 
+            <p class="hint">De getoonde prijs is een indicatie. De definitieve prijs kan afwijken door de berekening van de reiskosten en eventuele parkeerkosten. Je hoort het exacte bedrag bij onze bevestiging.</p>
             <div class="hp" aria-hidden="true"><label>Website <input name="website" tabindex="-1" autocomplete="off"></label></div>
             <label class="check"><input type="checkbox" name="termsAccepted" required> <span>Ik ga akkoord met de <a href="/algemene-voorwaarden" target="_blank">algemene voorwaarden</a> en de <a href="/privacy" target="_blank">privacyverklaring</a>.</span></label>
           </div>

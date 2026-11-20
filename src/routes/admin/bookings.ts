@@ -16,7 +16,7 @@ const BOOKING_COLUMNS = `
   b.extra_stations AS "extraStations",
   b.parent_name AS "parentName", b.email, b.phone, b.street, b.postal_code AS "postalCode", b.city,
   b.child_name AS "childName", b.child_age AS "childAge", b.guest_count AS "guestCount",
-  b.notes, b.status, b.admin_notes AS "adminNotes", b.waiting_on AS "waitingOn",
+  b.notes, b.parking, b.status, b.admin_notes AS "adminNotes", b.waiting_on AS "waitingOn",
   b.package_price_cents AS "packagePriceCents", b.travel_km::float AS "travelKm",
   b.evening_surcharge AS "eveningSurcharge", b.price_extras AS "priceExtras",
   b.price_cents AS "priceCents", b.deposit_cents AS "depositCents", b.paid_cents AS "paidCents",

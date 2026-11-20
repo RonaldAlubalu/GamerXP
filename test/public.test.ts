@@ -239,6 +239,16 @@ describe('public API', () => {
     expect(rows[0]).toEqual({ price_cents: 27500 + 3000 + 5000, evening_surcharge: true, km: 30 });
   });
 
+  it('stores what the customer said about parking and tells the owner', async () => {
+    const res = await ctx.app.inject({ method: 'POST', url: '/api/bookings', payload: bookingBody(ctx, { parking: 'paid' }) });
+    expect(res.statusCode).toBe(201);
+    expect((await ctx.db.query('SELECT parking FROM bookings')).rows[0].parking).toBe('paid');
+    expect(ctx.sent.find((m) => m.to === 'owner@gamerxp.nl')!.text).toContain('Parkeren: Betaald parkeren');
+    expect(ctx.sent.find((m) => m.to === 'sanne@example.nl')!.text).toContain('De prijs is een indicatie');
+    const bad = await ctx.app.inject({ method: 'POST', url: '/api/bookings', payload: bookingBody(ctx, { parking: 'valet' }) });
+    expect(bad.statusCode).toBe(400);
+  });
+
   it('still books when the distance lookup fails', async () => {
     ctx.app.distance.drivingKm = async () => {
       throw new Error('offline');

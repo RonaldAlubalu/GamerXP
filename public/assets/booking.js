@@ -189,7 +189,8 @@ form.addEventListener('submit', async (e) => {
     document.getElementById('booking-reference').textContent = reference;
     const url = new URL(statusUrl);
     document.getElementById('booking-status-link').href = url.pathname + url.search;
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    // Show the confirmation itself, not the top of the page.
+    document.getElementById('booking-done').scrollIntoView({ behavior: 'smooth', block: 'center' });
   } catch (err) {
     showNotice(notice, 'error', err.message);
     // Someone else may have just taken this slot: refresh the calendar.

@@ -16,10 +16,14 @@ if [ "$(id -u)" != 0 ]; then
   exit 1
 fi
 
-echo "==> Installing Docker, git and the firewall"
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -q
-apt-get install -y -q docker.io docker-compose-v2 git ufw openssl curl
+if docker compose version >/dev/null 2>&1 && command -v ufw >/dev/null; then
+  echo "==> Docker and the firewall are already installed"
+else
+  echo "==> Installing Docker, git and the firewall"
+  apt-get update -q
+  apt-get install -y -q docker.io docker-compose-v2 git ufw openssl curl
+fi
 
 echo "==> Firewall: only SSH and the website are reachable"
 ufw allow OpenSSH >/dev/null

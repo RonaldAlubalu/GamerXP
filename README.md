@@ -52,6 +52,8 @@ Run `sh /opt/gamerxp/deploy/setup-server.sh gamerxp.nl` later to switch to the r
 
 ### Updating
 
+With the repository secrets `DEPLOY_HOST` and `DEPLOY_SSH_KEY` set (see `.github/workflows/deploy.yml`), every push updates the server by itself. By hand:
+
 ```sh
 git pull && docker compose up -d --build
 ```

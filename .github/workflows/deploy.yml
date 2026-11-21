@@ -1,0 +1,47 @@
+# Puts the newest version on the server after every push, or by hand from the
+# Actions tab ("Run workflow"). Needs two repository secrets:
+#   DEPLOY_HOST     the server's IP address or hostname
+#   DEPLOY_SSH_KEY  the private half of an SSH key the server accepts for root
+# Without them the job does nothing.
+name: Deploy
+
+on:
+  push:
+    branches: [claude/gamerxp-backend-migration-ew43zk]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Update the server
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_SSH_KEY" ]; then
+            echo "DEPLOY_HOST and DEPLOY_SSH_KEY are not set; nothing to do."
+            exit 0
+          fi
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy
+          chmod 600 ~/.ssh/deploy
+          # Installs everything on a fresh server; on later runs it updates and restarts the site.
+          ssh -i ~/.ssh/deploy -o StrictHostKeyChecking=accept-new "root@$DEPLOY_HOST" '
+            set -e
+            if [ -d /opt/gamerxp/.git ]; then
+              git -C /opt/gamerxp pull --ff-only
+            else
+              command -v git >/dev/null || { apt-get update -q && apt-get install -y -q git; }
+              git clone https://github.com/RonaldAlubalu/GamerXP.git /opt/gamerxp
+            fi
+            sh /opt/gamerxp/deploy/setup-server.sh
+          '

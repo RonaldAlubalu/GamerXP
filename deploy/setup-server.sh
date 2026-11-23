@@ -92,8 +92,8 @@ if [ -n "${GMAIL_USER:-}" ] && [ -n "${GMAIL_APP_PASSWORD:-}" ]; then
   set_env SMTP_SECURE false
   set_env SMTP_USER "$GMAIL_USER"
   set_env SMTP_PASS "$GMAIL_APP_PASSWORD"
-  set_env MAIL_FROM "Gamer Xperience <$GMAIL_USER>"
-  set_env OWNER_EMAIL "$GMAIL_USER"
+  set_env MAIL_FROM "Gamer Xperience <${MAIL_ADDRESS:-$GMAIL_USER}>"
+  set_env OWNER_EMAIL "${MAIL_ADDRESS:-$GMAIL_USER}"
   set_env IMAP_HOST imap.gmail.com
   set_env IMAP_PORT 993
   set_env IMAP_SECURE true

@@ -44,6 +44,9 @@ jobs:
           MOLLIE_API_KEY: ${{ secrets.MOLLIE_GXP_TEST }}
           GMAIL_USER: ${{ secrets.GOOGLE_LOGIN || secrets.GMAIL_USER }}
           BACKUP_PEER_HOST: ${{ secrets.BACKUP_VPS_RD }}
+          # The address customers see and reply to. The mailbox login (GOOGLE_LOGIN) can be another address
+          # of the same Google account; Google then needs this one as an alias of it.
+          MAIL_ADDRESS: contact@gamerxp.nl
           # Where customers leave a Google review (public link, not a secret).
           GOOGLE_REVIEW_URL: https://g.page/r/CelcATNY-Po9EAE/review
           BACKUP_PEER_PUBKEY: ${{ secrets.BACKUP_PEER_PUBKEY }}
@@ -77,7 +80,7 @@ jobs:
           # The key travels inside the script over SSH, so it never shows up in a command line.
           {
           printf "export MOLLIE_API_KEY='%s' APP_IMAGE_LOADED='%s'\n" "$MOLLIE_API_KEY" "$LOADED"
-          printf "export GOOGLE_REVIEW_URL='%s'\n" "$GOOGLE_REVIEW_URL"
+          printf "export GOOGLE_REVIEW_URL='%s' MAIL_ADDRESS='%s'\n" "$GOOGLE_REVIEW_URL" "$MAIL_ADDRESS"
           printf "export BACKUP_PEER_HOST='%s' BACKUP_PEER_PUBKEY='%s'\n" "$BACKUP_PEER_HOST" "$BACKUP_PEER_PUBKEY"
           # Google shows app passwords with spaces (sometimes non-breaking ones); they work without.
           clean() { printf %s "$1" | LC_ALL=C sed 's/\xc2\xa0//g' | tr -d '[:space:]'; }

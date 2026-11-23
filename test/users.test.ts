@@ -89,6 +89,14 @@ describe('admin users', () => {
     expect((await call(owner, 'GET', '/overview')).json().systemProblems).toBe(0);
   });
 
+  it('explains mailbox login problems in plain words', async () => {
+    const { explain } = await import('../src/services/status.js');
+    expect(explain(Object.assign(new Error('Command failed'), { authenticationFailed: true, responseText: '[AUTHENTICATIONFAILED] Invalid credentials (Failure)' }))).toContain('app-wachtwoord (16 letters)');
+    expect(explain(new Error('Invalid login: 534-5.7.9 Application-specific password required'))).toContain('Google vraagt om een app-wachtwoord');
+    expect(explain(new Error('connect ETIMEDOUT 142.250.0.1:993'))).toContain('geen antwoord');
+    expect(explain(new Error('iets anders'))).toBe('iets anders');
+  });
+
   it('always keeps an owner', async () => {
     const [me] = (await call(owner, 'GET', '/users')).json();
     expect((await call(owner, 'DELETE', `/users/${me.id}`)).statusCode).toBe(409);

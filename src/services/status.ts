@@ -20,6 +20,22 @@ export interface SystemStatus {
 const TIMEOUT_MS = 10_000;
 const HOUR = 3_600_000;
 
+// Turns a login or connection error into something a non-technical owner can act on.
+export function explain(err: unknown): string {
+  const e = err as { message?: string; responseText?: string; response?: string; code?: string; authenticationFailed?: boolean };
+  const raw = [e.responseText, e.response, e.message, e.code].filter(Boolean).join(' ');
+  if (/application-specific password|app password|534[- ]5\.7\.9/i.test(raw)) {
+    return 'Google vraagt om een app-wachtwoord. Maak er een aan in je Google-account (Beveiliging > Tweestapsverificatie > App-wachtwoorden) en zet dat in GOOGLE_PWD.';
+  }
+  if (e.authenticationFailed || /invalid credentials|authenticationfailed|username and password not accepted|535[- ]5\.7\.8|invalid login/i.test(raw)) {
+    return 'Google weigert de inlognaam of het wachtwoord. Controleer of GOOGLE_LOGIN het volledige e-mailadres is en GOOGLE_PWD een app-wachtwoord (16 letters), niet je gewone wachtwoord.';
+  }
+  if (/imap.*(disabled|not enabled)|please enable imap/i.test(raw)) return 'IMAP staat uit voor deze mailbox. Zet het aan in de Gmail-instellingen of laat de beheerder het aanzetten.';
+  if (/ENOTFOUND|EAI_AGAIN/.test(raw)) return 'De mailserver is niet gevonden (controleer de servernaam).';
+  if (/ETIMEDOUT|ECONNREFUSED|ECONNRESET|geen antwoord/.test(raw)) return 'De server geeft geen antwoord. Mogelijk blokkeert de hosting deze verbinding.';
+  return raw.slice(0, 200) || 'onbekende fout';
+}
+
 // Runs a connection test with a time limit and turns the outcome into a check.
 async function probe(key: string, label: string, okDetail: string, run: () => Promise<unknown>): Promise<Check> {
   try {
@@ -29,7 +45,7 @@ async function probe(key: string, label: string, okDetail: string, run: () => Pr
     ]);
     return { key, label, state: 'ok', detail: okDetail };
   } catch (err) {
-    return { key, label, state: 'error', detail: `Werkt niet: ${(err as Error).message || 'onbekende fout'}` };
+    return { key, label, state: 'error', detail: `Werkt niet. ${explain(err)}` };
   }
 }
 

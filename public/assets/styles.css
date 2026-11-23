@@ -440,6 +440,13 @@ body:has(main > .hero:first-child) .site-header {
   margin-bottom: calc(-1 * var(--header-h)); background: transparent; backdrop-filter: none; border-bottom-color: transparent;
   transition: background .2s, border-color .2s;
 }
+/* Dark at the top of the photo, fading out, so the logo and menu stand out. It is part of the
+   photo's own overlay, which avoids a visible edge under the header. */
+body:has(main > .hero:first-child) main > .hero:first-child::before {
+  content: ""; position: absolute; inset: 0 0 auto 0; height: calc(var(--header-h) * 2.4); pointer-events: none;
+  background: linear-gradient(180deg, rgba(7, 11, 31, .85) 0%, rgba(7, 11, 31, .55) 40%, rgba(7, 11, 31, 0) 100%);
+}
+body:has(main > .hero:first-child) main > .hero:first-child > * { position: relative; }
 body:has(main > .hero:first-child) .site-header.scrolled,
 body:has(main > .hero:first-child) .site-header:has(.nav.open) {
   background: rgba(7, 11, 31, .92); backdrop-filter: blur(10px); border-bottom-color: rgba(82, 204, 24, .25);

@@ -1,7 +1,9 @@
 # Puts the newest version on the server after every push, or by hand from the
 # Actions tab ("Run workflow"). Needs two repository secrets:
 #   DEPLOY_HOST     the server's IP address or hostname
-#   DEPLOY_SSH_KEY  the private half of an SSH key the server accepts for root
+#   DEPLOY_SSH_KEY  the private half of an SSH key the server accepts
+# and optionally:
+#   DEPLOY_USER     the login name (default: root). Any other user needs sudo without a password.
 # Without them the job does nothing.
 name: Deploy
 
@@ -26,6 +28,7 @@ jobs:
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
           if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_SSH_KEY" ]; then
             echo "DEPLOY_HOST and DEPLOY_SSH_KEY are not set; nothing to do."
@@ -35,13 +38,14 @@ jobs:
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy
           chmod 600 ~/.ssh/deploy
           # Installs everything on a fresh server; on later runs it updates and restarts the site.
-          ssh -i ~/.ssh/deploy -o StrictHostKeyChecking=accept-new "root@$DEPLOY_HOST" '
-            set -e
-            if [ -d /opt/gamerxp/.git ]; then
-              git -C /opt/gamerxp pull --ff-only
-            else
-              command -v git >/dev/null || { apt-get update -q && apt-get install -y -q git; }
-              git clone https://github.com/RonaldAlubalu/GamerXP.git /opt/gamerxp
-            fi
-            sh /opt/gamerxp/deploy/setup-server.sh
-          '
+          ssh -i ~/.ssh/deploy -o StrictHostKeyChecking=accept-new "${DEPLOY_USER:-root}@$DEPLOY_HOST" \
+            'if [ "$(id -u)" = 0 ]; then sh -s; else sudo -n sh -s; fi' <<'REMOTE'
+          set -e
+          if [ -d /opt/gamerxp/.git ]; then
+            git -C /opt/gamerxp pull --ff-only
+          else
+            command -v git >/dev/null || { apt-get update -q && apt-get install -y -q git; }
+            git clone https://github.com/RonaldAlubalu/GamerXP.git /opt/gamerxp
+          fi
+          sh /opt/gamerxp/deploy/setup-server.sh
+          REMOTE

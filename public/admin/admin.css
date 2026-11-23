@@ -318,3 +318,11 @@ details.collapsible summary { cursor: pointer; font-weight: 600; }
 .reminder-row:last-child { border-bottom: 0; }
 .reminder-row > div:first-child { flex: 1; min-width: 240px; }
 .reminder-text { margin-top: 4px; white-space: pre-line; }
+
+/* Clickable calendar: open or close a slot, block or free a day */
+.cal-date { display: flex; justify-content: space-between; align-items: center; gap: 4px; }
+.cal-day-toggle { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: .85rem; padding: 0 3px; border-radius: 4px; line-height: 1.2; }
+.cal-day-toggle:hover { background: var(--surface-2); color: var(--danger); }
+button.cal-chip { border: 0; width: 100%; text-align: left; cursor: pointer; font-family: inherit; }
+button.cal-chip.closed { background: none; border: 1px dashed var(--border); opacity: .8; }
+button.cal-chip:hover { outline: 2px solid var(--primary); outline-offset: -1px; opacity: 1; }

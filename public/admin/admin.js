@@ -719,8 +719,25 @@ async function reviewsView() {
 }
 
 async function availabilityView() {
-  const [av, blocked, overrides] = await Promise.all([api('/availability'), api('/blocked-dates'), api('/availability/overrides')]);
+  const month = new URLSearchParams(location.hash.split('?')[1] || '').get('month') ?? todayIso().slice(0, 7);
+  const [av, blocked, overrides, cal] = await Promise.all([
+    api('/availability'), api('/blocked-dates'), api('/availability/overrides'), api(`/calendar?month=${month}`),
+  ]);
   setPage('Beschikbaarheid', h('a', { class: 'btn', href: '#/calendar' }, 'Agenda bekijken'));
+  const shiftMonth = (n) => {
+    const d = new Date(`${month}-01T00:00:00Z`);
+    d.setUTCMonth(d.getUTCMonth() + n);
+    return d.toISOString().slice(0, 7);
+  };
+  const monthTitle = new Intl.DateTimeFormat('nl-NL', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${month}-01T00:00:00Z`));
+  const calendarCard = card(
+    h('div', { class: 'card-head' }, h('h2', {}, 'Kalender'),
+      h('div', { class: 'cal-nav' },
+        h('a', { class: 'btn small', href: `#/availability?month=${shiftMonth(-1)}`, 'aria-label': 'Vorige maand' }, '‹'),
+        h('strong', {}, monthTitle),
+        h('a', { class: 'btn small', href: `#/availability?month=${shiftMonth(1)}`, 'aria-label': 'Volgende maand' }, '›'))),
+    h('p', { class: 'muted' }, 'Kies per dag wanneer je beschikbaar bent. Wat je hier aanklikt gaat vóór het weekrooster hieronder.'),
+    calendarGrid(cal));
   const num = (name, value, min, max) => h('input', { type: 'number', name, value, min, max, required: true });
 
   const scheduleForm = h('form', { onsubmit: action(() => {
@@ -771,7 +788,8 @@ async function availabilityView() {
     h('button', { class: 'btn', type: 'submit' }, 'Toevoegen'));
 
   view.replaceChildren(
-    card('Weekrooster', h('p', { class: 'muted' }, 'Vink aan op welke dagdelen je normaal gesproken feestjes doet. Bezoekers kunnen alleen die dagdelen boeken.'), scheduleForm),
+    calendarCard,
+    card('Weekrooster', h('p', { class: 'muted' }, 'Het standaardrooster: vink aan op welke dagdelen je normaal gesproken feestjes doet. Losse dagen pas je aan in de kalender hierboven.'), scheduleForm),
     card('Hele dagen blokkeren', blockForm,
       h('div', { style: 'margin-top:12px' }, table(['Datum', 'Reden', ''], blocked.map((d) => h('tr', {},
         h('td', {}, fmtDate(d.date)), h('td', {}, d.reason || '–'),
@@ -797,7 +815,6 @@ async function calendarView() {
     return d.toISOString().slice(0, 7);
   };
   const title = new Intl.DateTimeFormat('nl-NL', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${month}-01T00:00:00Z`));
-  const offset = (new Date(`${month}-01T00:00:00Z`).getUTCDay() + 6) % 7;
   setPage('Agenda',
     h('div', { class: 'cal-nav' },
       h('a', { class: 'btn small', href: `#/calendar?month=${shift(-1)}`, 'aria-label': 'Vorige maand' }, '‹'),
@@ -806,27 +823,50 @@ async function calendarView() {
       h('a', { class: 'btn small', href: '#/calendar' }, 'Vandaag')),
     h('a', { class: 'btn', href: '#/availability' }, 'Beschikbaarheid'));
 
-  const dayCell = (d) => h('div', { class: `cal-cell ${d.blocked ? 'blocked' : ''} ${d.date === todayIso() ? 'today' : ''} ${d.date < todayIso() ? 'past' : ''}` },
-    h('div', { class: 'cal-date' }, Number(d.date.slice(8)), d.blocked && h('span', { class: 'muted small' }, ` ${d.reason || 'geblokkeerd'}`)),
-    d.slots.map((s) => {
-      const bookings = d.bookings.filter((b) => b.timeSlot === s.key);
-      const short = SLOT_LABELS[s.key].slice(0, 3);
-      if (bookings.length) {
-        return bookings.map((b) => h('a', { class: `cal-chip booked st-${b.status}`, href: `#/bookings/${b.id}`, title: `${STATUS_LABELS[b.status]} · ${b.packageName}` },
-          `${b.startTime ?? short} ${b.childName || b.parentName} · ${b.city}`));
-      }
-      if (d.blocked || !s.open) return h('span', { class: 'cal-chip closed' }, `${short} –`);
-      return h('span', { class: `cal-chip ${s.available ? 'free' : 'full'}` }, `${short} ${s.available ? 'vrij' : 'vol'}`);
-    }));
+  view.replaceChildren(calendarGrid(cal));
+}
 
-  view.replaceChildren(
+// Month grid used by the Agenda and the availability page. Click a time slot to open or
+// close it for that day, or the button next to the date to block or free the whole day.
+function calendarGrid(cal) {
+  const today = todayIso();
+  const setSlot = (d, s, open) => action(
+    () => api(`/availability/overrides/${d.date}/${s.key}`, { method: 'PUT', body: JSON.stringify({ open }) }),
+    `${fmtDate(d.date)}, ${SLOT_LABELS[s.key].toLowerCase()}: ${open ? 'open' : 'gesloten'}.`);
+  const dayCell = (d) => {
+    const past = d.date < today;
+    return h('div', { class: `cal-cell ${d.blocked ? 'blocked' : ''} ${d.date === today ? 'today' : ''} ${past ? 'past' : ''}` },
+      h('div', { class: 'cal-date' },
+        h('span', {}, Number(d.date.slice(8)), d.blocked && h('span', { class: 'muted small' }, ` ${d.reason || 'geblokkeerd'}`)),
+        !past && h('button', {
+          type: 'button', class: 'cal-day-toggle',
+          title: d.blocked ? 'Deze dag weer vrijgeven' : 'Deze hele dag blokkeren',
+          'aria-label': `${fmtDate(d.date)}: ${d.blocked ? 'vrijgeven' : 'hele dag blokkeren'}`,
+          onclick: action(() => d.blocked ? del(`/blocked-dates/${d.date}`) : api(`/blocked-dates/${d.date}`, { method: 'PUT', body: JSON.stringify({ reason: '' }) }),
+            `${fmtDate(d.date)} ${d.blocked ? 'vrijgegeven' : 'geblokkeerd'}.`),
+        }, d.blocked ? '↺' : '⊘')),
+      d.slots.map((s) => {
+        const bookings = d.bookings.filter((b) => b.timeSlot === s.key);
+        const short = SLOT_LABELS[s.key].slice(0, 3);
+        if (bookings.length) {
+          return bookings.map((b) => h('a', { class: `cal-chip booked st-${b.status}`, href: `#/bookings/${b.id}`, title: `${STATUS_LABELS[b.status]} · ${b.packageName}` },
+            `${b.startTime ?? short} ${b.childName || b.parentName} · ${b.city}`));
+        }
+        if (d.blocked || past) return h('span', { class: 'cal-chip closed' }, `${short} –`);
+        if (!s.open) return h('button', { type: 'button', class: 'cal-chip closed', title: 'Klik om dit dagdeel open te zetten', onclick: setSlot(d, s, true) }, `${short} –`);
+        return h('button', { type: 'button', class: `cal-chip ${s.available ? 'free' : 'full'}`, title: 'Klik om dit dagdeel te sluiten', onclick: setSlot(d, s, false) },
+          `${short} ${s.available ? 'vrij' : 'vol'}`);
+      }));
+  };
+  const offset = (new Date(`${cal.month}-01T00:00:00Z`).getUTCDay() + 6) % 7;
+  return h('div', {},
     h('div', { class: 'admin-cal' },
       ['ma', 'di', 'wo', 'do', 'vr', 'za', 'zo'].map((w) => h('div', { class: 'cal-wd' }, w)),
       Array.from({ length: offset }, () => h('div', { class: 'cal-pad' })),
       cal.days.map(dayCell)),
     h('p', { class: 'muted small', style: 'margin-top:10px' },
-      badge('vrij', 'success'), ' te boeken · ', badge('geboekt', 'violet'), ' klik voor details · ', badge('aanvraag', 'warning'), ' nog niet bevestigd · grijs = gesloten'),
-  );
+      'Klik op een dagdeel om het open of dicht te zetten; ⊘ blokkeert de hele dag. ',
+      badge('vrij', 'success'), ' te boeken · ', badge('geboekt', 'violet'), ' klik voor details · ', badge('aanvraag', 'warning'), ' nog niet bevestigd · grijs = gesloten'));
 }
 
 async function packagesView() {

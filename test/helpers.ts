@@ -55,10 +55,11 @@ export async function setupApp(overrides: Partial<Config> = {}, mollie: MollieCl
     mollie,
     mailSource,
     bookkeeping: {
-      ping: async () => {},
+      ping: async () => 'Administratie: test.',
+      nextNumberBase: async () => 'F00015',
       createInvoice: async (invoice) => {
         invoiced.push(invoice);
-        return { id: String(invoiced.length), number: `2026-00${invoiced.length}`, pdfUrl: `https://boekhouding.example/${invoiced.length}.pdf` };
+        return { id: String(invoiced.length), number: invoice.number, pdfUrl: `https://boekhouding.example/${invoiced.length}.pdf` };
       },
     },
     push: async (sub, payload) => {

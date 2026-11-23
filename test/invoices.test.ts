@@ -21,7 +21,7 @@ describe('invoices in the bookkeeping', () => {
   it('makes a deposit invoice with the deposit product', async () => {
     const res = await call('POST', `/bookings/${id}/invoices`, { kind: 'deposit' });
     expect(res.statusCode).toBe(201);
-    expect(res.json()).toMatchObject([{ kind: 'deposit', number: '2026-001', amountCents: 10000, pdfUrl: expect.stringContaining('.pdf') }]);
+    expect(res.json()).toMatchObject([{ kind: 'deposit', number: 'F00015-1', amountCents: 10000, pdfUrl: expect.stringContaining('.pdf') }]);
     const [sent] = ctx.invoiced;
     expect(sent!.customer).toMatchObject({ name: 'Sanne de Vries', email: 'sanne@example.nl', city: 'Utrecht' });
     expect(sent!.customer.code).toMatch(/^GXP-/);
@@ -38,10 +38,11 @@ describe('invoices in the bookkeeping', () => {
     expect(lines.map((l) => [l.productCode ?? '-', l.quantity, l.priceCents])).toEqual([
       ['GE263', 1, 35000], ['GE267', 1, 2500], ['-', 1, 3000], ['GE266', 1, 5000], ['-', 1, 1500], ['-', 1, -10000],
     ]);
-    expect(lines.at(-1)!.description).toBe('Reeds gefactureerde aanbetaling (factuur 2026-001)');
+    expect(lines.at(-1)!.description).toBe('Reeds gefactureerde aanbetaling (factuur F00015-1)');
     const detail = (await call('GET', `/bookings/${id}`)).json();
     expect(detail.invoices.map((i: { kind: string; amountCents: number }) => [i.kind, i.amountCents])).toEqual([['deposit', 10000], ['final', 37000]]);
     expect(detail.priceCents).toBe(47000);
+    expect(detail.invoices.map((i: { number: string }) => i.number)).toEqual(['F00015-1', 'F00015-2']);
   });
 
   it('makes each invoice only once and refuses cancelled bookings', async () => {

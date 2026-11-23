@@ -147,6 +147,7 @@ export async function checkSystem(app: FastifyInstance): Promise<SystemStatus> {
   const { config } = app;
   const off = (key: string, label: string, detail: string): Check => ({ key, label, state: 'off', detail });
 
+  let bookkeepingSeen = '';
   const [database, sending, reading, payments, backups, maintenance, resources, bookkeeping] = await Promise.all([
     probe('database', 'Database', 'Bereikbaar.', () => app.db.query('SELECT 1')),
     app.mailer.verify
@@ -162,7 +163,7 @@ export async function checkSystem(app: FastifyInstance): Promise<SystemStatus> {
     maintenanceCheck(config.REPORTS_DIR),
     resourceChecks(config.BACKUP_DIR),
     app.bookkeeping
-      ? probe('bookkeeping', 'Boekhouding (e-Boekhouden)', 'Verbonden: facturen kunnen vanuit een boeking worden gemaakt.', () => app.bookkeeping!.ping())
+      ? probe('bookkeeping', 'Boekhouding (e-Boekhouden)', 'Verbonden.', () => app.bookkeeping!.ping().then((seen) => void (bookkeepingSeen = seen)))
       : Promise.resolve(off('bookkeeping', 'Boekhouding (e-Boekhouden)', 'Niet ingesteld: facturen maak je nog zelf in e-Boekhouden.')),
   ]);
 
@@ -171,6 +172,8 @@ export async function checkSystem(app: FastifyInstance): Promise<SystemStatus> {
     ` Nu ingesteld: inlognaam "${user}"${/\s/.test(user) ? ' (bevat een spatie of regeleinde!)' : ''}, wachtwoord van ${pass.length} tekens${pass.length === 16 ? '' : ' (een app-wachtwoord heeft er 16)'}.`;
   if (sending.state === 'error') sending.detail += used(config.SMTP_USER, config.SMTP_PASS);
   if (reading.state === 'error') reading.detail += used(config.IMAP_USER, config.IMAP_PASS);
+
+  if (bookkeeping.state === 'ok' && bookkeepingSeen) bookkeeping.detail = `Verbonden. ${bookkeepingSeen}`;
 
   // What the site last sent, so "I didn't get it" can be told apart from "it wasn't sent".
   if (app.mailer.verify && app.mailLog.length) {

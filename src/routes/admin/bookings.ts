@@ -461,6 +461,15 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
     return reply.status(201).send(await createInvoice(app, id, kind, actorOf(req)));
   });
 
+  // Forgets an invoice here (it is not removed from the bookkeeping), so it can be made again.
+  app.delete('/bookings/:id/invoices/:kind', async (req, reply) => {
+    const { id, kind } = z.object({ id: z.uuid(), kind: z.enum(['deposit', 'final']) }).parse(req.params);
+    const { rows } = await app.db.query<{ number: string }>('DELETE FROM invoices WHERE booking_id = $1 AND kind = $2 RETURNING number', [id, kind]);
+    if (!rows[0]) throw new HttpError(404, 'Factuur niet gevonden.', 'not_found');
+    await addEvent(app.db, id, { type: 'payment', message: `Factuur ${rows[0].number} losgekoppeld in de admin`, actor: actorOf(req) });
+    return reply.status(204).send();
+  });
+
   // Agreements.
   app.post('/bookings/:id/agreements', async (req, reply) => {
     const { id } = idParam.parse(req.params);

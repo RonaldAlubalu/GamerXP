@@ -480,7 +480,10 @@ function invoicesBox(b, me) {
     box.append(h('div', { class: 'inline', style: 'margin-bottom:6px' },
       invoice
         ? [h('span', {}, `${label}: factuur `, h('strong', {}, invoice.number), ` · ${fmtEuro(invoice.amountCents)} · ${fmtDate(invoice.createdAt)}`),
-           invoice.pdfUrl && h('a', { class: 'btn small', href: invoice.pdfUrl, target: '_blank', rel: 'noopener' }, 'PDF openen')]
+           invoice.pdfUrl && h('a', { class: 'btn small', href: invoice.pdfUrl, target: '_blank', rel: 'noopener' }, 'PDF openen'),
+           h('button', { class: 'btn small ghost', title: 'Haalt de factuur alleen hier weg, niet uit e-Boekhouden', onclick: action(
+             () => confirm(`Factuur ${invoice.number} loskoppelen?\n\nHij verdwijnt alleen uit de admin, zodat je hem opnieuw kunt maken. In e-Boekhouden verandert niets.`) ? del(`/bookings/${b.id}/invoices/${kind}`) : false,
+             'Factuur losgekoppeld.') }, 'Loskoppelen')]
         : [h('span', { class: 'muted' }, `${label}: nog geen factuur`),
            h('button', { class: 'btn small', onclick: action(
              () => confirm(`Factuur voor ${label.toLowerCase()} aanmaken in e-Boekhouden?\n\nDit maakt een echte factuur met een factuurnummer in je boekhouding.`) ? post(`/bookings/${b.id}/invoices`, { kind }) : false,

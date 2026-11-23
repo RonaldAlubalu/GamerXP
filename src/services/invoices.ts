@@ -79,11 +79,20 @@ export async function createInvoice(app: FastifyInstance, bookingId: string, kin
   const amountCents = lines.reduce((sum, l) => sum + Math.round(l.quantity * l.priceCents), 0);
   if (amountCents <= 0) throw new HttpError(409, 'Er valt niets meer te factureren.', 'nothing_due');
 
+  // The business numbers a party's invoices F000NN-1 (deposit) and F000NN-2 (rest).
+  const base = /^(F\d+)-\d+$/i.exec(deposit?.number ?? '')?.[1];
+  const number = await (base ? Promise.resolve(`${base}-2`) : app.bookkeeping.nextNumberBase().then((b0) => `${b0}-${kind === 'deposit' ? 1 : 2}`)).catch(
+    (err: Error) => {
+      throw new HttpError(502, `Het volgende factuurnummer kon niet worden bepaald. ${err.message}`, 'bookkeeping_failed');
+    },
+  );
+
   const party = `${b.childName ? `Feest van ${b.childName}` : 'Gamer Xperience feest'} op ${formatDutchDate(b.partyDate)}`;
   const created = await app.bookkeeping
     .createInvoice({
       customer: { code: b.reference, name: b.parentName, street: b.street, postalCode: b.postalCode, city: b.city, email: b.email },
       date: today(app.config.TIMEZONE),
+      number,
       termDays: kind === 'deposit' ? 5 : 14,
       reference: b.reference,
       text: `${party}. Referentie ${b.reference}.`,

@@ -17,6 +17,8 @@ export interface NewInvoice {
   date: string;
   // Days the customer has to pay.
   termDays: number;
+  // The invoice number, in the business's own numbering (like F00015-1).
+  number: string;
   reference: string;
   text: string;
   lines: InvoiceLine[];
@@ -30,8 +32,10 @@ export interface CreatedInvoice {
 
 export interface Bookkeeping {
   createInvoice(invoice: NewInvoice): Promise<CreatedInvoice>;
-  // Asks the bookkeeping whether the token is accepted.
-  ping(): Promise<void>;
+  // The next free base number, like F00015. A party's invoices are F00015-1 (deposit) and F00015-2 (rest).
+  nextNumberBase(): Promise<string>;
+  // Asks the bookkeeping whether the token is accepted, and says what it sees there.
+  ping(): Promise<string>;
 }
 
 // How the business is set up in e-Boekhouden: no VAT (kleineondernemersregeling), revenue
@@ -112,9 +116,33 @@ export function createBookkeeping(config: Config): Bookkeeping | null {
     return Number(created.id);
   }
 
+  // Every invoice number in the bookkeeping.
+  async function invoiceNumbers(): Promise<string[]> {
+    const numbers: string[] = [];
+    for (let offset = 0; offset < 20_000; offset += 2000) {
+      const page = list(await call('GET', `/invoice?limit=2000&offset=${offset}`));
+      numbers.push(...page.map((i) => String(i.invoiceNumber ?? '')));
+      if (page.length < 2000) break;
+    }
+    return numbers;
+  }
+
   return {
     async ping() {
       await call('GET', '/ledger?limit=1');
+      // Extra detail for the status page; a failure here does not mean the connection is broken.
+      try {
+        const administrations = list(await call('GET', '/administration?limit=5')).map((a) => String(a.name ?? a.description ?? a.id));
+        const numbers = (await invoiceNumbers()).filter(Boolean);
+        return `Administratie: ${administrations.join(', ') || 'onbekend'}. ${numbers.length} facturen gevonden${numbers.length ? `, waaronder ${numbers.slice(-3).join(', ')}` : ''}.`;
+      } catch (err) {
+        return `Verbonden, maar het overzicht kon niet worden opgehaald: ${(err as Error).message}`;
+      }
+    },
+
+    async nextNumberBase() {
+      const highest = Math.max(0, ...(await invoiceNumbers()).map((n) => Number(/^F(\d+)/i.exec(n)?.[1] ?? 0)));
+      return `F${String(highest + 1).padStart(5, '0')}`;
     },
 
     async createInvoice(invoice) {
@@ -122,6 +150,7 @@ export function createBookkeeping(config: Config): Bookkeeping | null {
       const created = (await call('POST', '/invoice', {
         relationId: relation,
         date: invoice.date,
+        invoiceNumber: invoice.number,
         termOfPayment: invoice.termDays,
         templateId: template,
         // Prices are final amounts; with no VAT there is no difference.
@@ -136,10 +165,13 @@ export function createBookkeeping(config: Config): Bookkeeping | null {
           ledgerId: ledger,
           ...(line.productCode ? { code: line.productCode } : {}),
         })),
-      })) as { id: number; invoiceNumber: string };
-      // The link to the PDF comes with the invoice itself.
-      const full = (await call('GET', `/invoice/${created.id}`).catch(() => ({}))) as { urlPdfFile?: string };
-      return { id: String(created.id), number: String(created.invoiceNumber), pdfUrl: full.urlPdfFile ?? '' };
+      })) as { id?: number; invoiceNumber?: string } | null;
+      if (!created?.id) {
+        throw new Error(`e-Boekhouden gaf geen factuur terug (antwoord: ${JSON.stringify(created).slice(0, 200)}).`);
+      }
+      // Read it back: proof that it exists, and the link to the PDF comes with it.
+      const full = (await call('GET', `/invoice/${created.id}`)) as { invoiceNumber?: string; urlPdfFile?: string };
+      return { id: String(created.id), number: String(full.invoiceNumber ?? created.invoiceNumber ?? invoice.number), pdfUrl: full.urlPdfFile ?? '' };
     },
   };
 }

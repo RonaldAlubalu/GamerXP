@@ -1,4 +1,5 @@
-import { readdir, readFile, stat } from 'node:fs/promises';
+import { readdir, readFile, stat, statfs } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
 
@@ -100,12 +101,37 @@ async function maintenanceCheck(dir: string): Promise<Check> {
   }
 }
 
+// Memory and disk space of the server. Running out of either takes the site down.
+async function resourceChecks(dir: string): Promise<Check[]> {
+  const gb = (bytes: number) => (bytes / 1024 ** 3).toFixed(1).replace('.', ',');
+  const total = os.totalmem();
+  const used = total - os.freemem();
+  const memory: Check = {
+    key: 'memory', label: 'Geheugen van de server',
+    state: used / total > 0.9 ? 'warn' : 'ok',
+    detail: `${gb(used)} GB van ${gb(total)} GB in gebruik.${total < 1.8 * 1024 ** 3 ? ' Deze server heeft weinig geheugen; 2 GB of meer is ruimer.' : ''}`,
+  };
+  try {
+    const disk = await statfs(dir || '/');
+    const free = disk.bavail * disk.bsize;
+    const size = disk.blocks * disk.bsize;
+    const full = 1 - free / size;
+    return [memory, {
+      key: 'disk', label: 'Schijfruimte',
+      state: full > 0.95 ? 'error' : full > 0.85 ? 'warn' : 'ok',
+      detail: `${gb(free)} GB vrij van ${gb(size)} GB.`,
+    }];
+  } catch {
+    return [memory];
+  }
+}
+
 // Tests every outside connection the site depends on.
 export async function checkSystem(app: FastifyInstance): Promise<SystemStatus> {
   const { config } = app;
   const off = (key: string, label: string, detail: string): Check => ({ key, label, state: 'off', detail });
 
-  const [database, sending, reading, payments, backups, maintenance] = await Promise.all([
+  const [database, sending, reading, payments, backups, maintenance, resources] = await Promise.all([
     probe('database', 'Database', 'Bereikbaar.', () => app.db.query('SELECT 1')),
     app.mailer.verify
       ? probe('mail-send', 'E-mail versturen', `Ingelogd bij ${config.SMTP_HOST} als ${config.SMTP_USER || 'anoniem'}.`, () => app.mailer.verify!())
@@ -118,6 +144,7 @@ export async function checkSystem(app: FastifyInstance): Promise<SystemStatus> {
       : Promise.resolve(off('mollie', 'Online betalen (Mollie)', 'Niet ingesteld: klanten kunnen niet online betalen.')),
     backupChecks(config.BACKUP_DIR),
     maintenanceCheck(config.REPORTS_DIR),
+    resourceChecks(config.BACKUP_DIR),
   ]);
 
   // Test mode on the real domain is a mistake worth pointing out.
@@ -129,5 +156,5 @@ export async function checkSystem(app: FastifyInstance): Promise<SystemStatus> {
   const review: Check = config.GOOGLE_REVIEW_URL
     ? { key: 'review', label: 'Google-reviewlink', state: 'ok', detail: 'Ingesteld.' }
     : off('review', 'Google-reviewlink', 'Niet ingesteld: reviewverzoeken bevatten geen directe link.');
-  return { checkedAt: new Date().toISOString(), checks: [database, sending, reading, payments, ...backups, maintenance, whatsapp, review] };
+  return { checkedAt: new Date().toISOString(), checks: [database, ...resources, sending, reading, payments, ...backups, maintenance, whatsapp, review] };
 }

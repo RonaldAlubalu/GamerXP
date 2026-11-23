@@ -6,3 +6,4 @@ coverage/
 backups/
 .demo/
 .claude/settings.local.json
+reports/

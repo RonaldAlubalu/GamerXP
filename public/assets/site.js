@@ -65,10 +65,22 @@ for (const button of document.querySelectorAll('[data-scroll]')) {
   });
 }
 
+// The header lies transparent over the photo at the top of a page and turns solid once you scroll.
+const header = document.querySelector('.site-header');
+if (header) {
+  const setScrolled = () => header.classList.toggle('scrolled', scrollY > 24);
+  addEventListener('scroll', setScrolled, { passive: true });
+  setScrolled();
+}
+
 // Booking button that stays in view on phones, once the visitor scrolls past the first screen.
 const stickyCta = document.querySelector('.sticky-cta');
 if (stickyCta && !/^\/(reserveer|status|betalen)/.test(location.pathname)) {
-  const toggleCta = () => (stickyCta.hidden = scrollY < 500);
+  const toggleCta = () => {
+    stickyCta.hidden = scrollY < 500;
+    // The WhatsApp button moves up to make room.
+    document.body.classList.toggle('cta-visible', !stickyCta.hidden);
+  };
   addEventListener('scroll', toggleCta, { passive: true });
   toggleCta();
 }

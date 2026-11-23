@@ -433,3 +433,41 @@ details.more > summary::-webkit-details-marker { display: none; }
 details.more > summary::after { content: " +"; }
 details.more[open] > summary::after { content: " –"; }
 details.more > .feature { margin-top: 12px; }
+
+/* Header over the hero photo, like the original site --------------------------- */
+:root { --header-h: 92px; }
+body:has(main > .hero:first-child) .site-header {
+  margin-bottom: calc(-1 * var(--header-h)); background: transparent; backdrop-filter: none; border-bottom-color: transparent;
+  transition: background .2s, border-color .2s;
+}
+body:has(main > .hero:first-child) .site-header.scrolled,
+body:has(main > .hero:first-child) .site-header:has(.nav.open) {
+  background: rgba(7, 11, 31, .92); backdrop-filter: blur(10px); border-bottom-color: rgba(82, 204, 24, .25);
+}
+body:has(main > .hero:first-child) main > .hero:first-child { padding-top: calc(var(--header-h) + 56px); }
+body:has(main > .hero:first-child) main > .hero.short:first-child { padding-top: calc(var(--header-h) + 40px); }
+body:has(main > .hero:first-child) main > .hero.compact:first-child { padding-top: calc(var(--header-h) + 16px); }
+
+/* WhatsApp button that floats bottom right */
+.wa-float {
+  position: fixed; right: 16px; bottom: 16px; z-index: 39; width: 58px; height: 58px; border-radius: 50%;
+  display: grid; place-items: center; background: #25d366; box-shadow: 0 6px 22px rgba(0, 0, 0, .45); transition: transform .15s, bottom .2s;
+}
+.wa-float:hover { transform: scale(1.06); }
+body:has(#booking-form) .wa-float, body:has(#status-view) .wa-float { display: none; }
+
+@media (max-width: 640px) {
+  :root { --header-h: 76px; }
+  .logo img { width: 52px; }
+  /* Two thin lines, like the original menu button. */
+  .nav-toggle span { width: 34px; height: 2px; margin: 9px 0; }
+  .nav-toggle span:nth-child(3) { display: none; }
+  .hero { text-align: left; }
+  .hero h1 { font-size: min(8.3vw, 2.5rem); }
+  .hero p { margin-inline: 0; font-size: 1.05rem; }
+  main > .hero:first-child { padding-bottom: 44px; }
+  .stats { display: grid; grid-template-columns: auto auto; gap: 12px 14px; justify-content: start; margin-top: 22px; font-size: .8rem; }
+  .hero .actions { justify-content: flex-start; margin-top: 22px; gap: 10px; }
+  .hero .actions .btn { padding: 12px 20px; font-size: .98rem; }
+  body.cta-visible .wa-float { bottom: 78px; }
+}

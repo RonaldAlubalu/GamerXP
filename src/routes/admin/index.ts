@@ -7,10 +7,11 @@ import { availabilityRoutes } from './availability.js';
 import { bookingRoutes } from './bookings.js';
 import { catalogRoutes } from './catalog.js';
 import { messageRoutes } from './messages.js';
+import { assistantMayCall, userRoutes, type Role } from './users.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
-    admin?: { id: number; email: string };
+    admin?: { id: number; email: string; name: string; role: Role; tokenHash: string };
   }
 }
 
@@ -55,17 +56,25 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     secured.addHook('onRequest', async (req) => {
       const token = bearerToken(req);
       if (!token) throw new HttpError(401, 'Niet ingelogd.', 'unauthenticated');
-      const { rows } = await app.db.query<{ id: number; email: string }>(
-        `SELECT u.id, u.email FROM admin_sessions s JOIN admin_users u ON u.id = s.user_id
+      const tokenHash = hashToken(token);
+      const { rows } = await app.db.query<{ id: number; email: string; name: string; role: Role }>(
+        `SELECT u.id, u.email, u.name, u.role FROM admin_sessions s JOIN admin_users u ON u.id = s.user_id
           WHERE s.token_hash = $1 AND s.expires_at > now()`,
-        [hashToken(token)],
+        [tokenHash],
       );
       if (!rows[0]) throw new HttpError(401, 'Sessie verlopen, log opnieuw in.', 'unauthenticated');
-      req.admin = rows[0];
+      req.admin = { ...rows[0], tokenHash };
+      const path = req.url.split('?')[0]!.replace(/^\/api\/admin/, '');
+      if (req.admin.role === 'assistant' && !assistantMayCall(req.method, path)) {
+        throw new HttpError(403, 'Je hebt geen rechten voor deze actie.', 'forbidden');
+      }
     });
 
     secured.get('/me', async (req) => ({
-      ...req.admin,
+      id: req.admin!.id,
+      email: req.admin!.email,
+      name: req.admin!.name,
+      role: req.admin!.role,
       // Lets the admin page point out missing setup.
       reviewUrlConfigured: Boolean(app.config.GOOGLE_REVIEW_URL),
       emailConfigured: Boolean(app.config.SMTP_HOST),
@@ -93,5 +102,6 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     await secured.register(catalogRoutes);
     await secured.register(availabilityRoutes);
     await secured.register(messageRoutes);
+    await secured.register(userRoutes);
   });
 };

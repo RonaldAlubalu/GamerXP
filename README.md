@@ -48,6 +48,7 @@ Run `sh /opt/gamerxp/deploy/setup-server.sh gamerxp.nl` later to switch to the r
    docker compose exec app npm run create-admin -- ronald@gamerxp.nl
    ```
    Then log in at `https://gamerxp.nl/admin`. Running the command again for the same email resets the password.
+   More logins, for example for an assistant, are added in the admin under *Gebruikers*. An assistant can look at bookings and the calendar and change the availability; messages, prices, payments, packages and users are for owners only.
 5. **Set your availability** in the admin under *Beschikbaarheid*. The starting schedule is a guess: Wednesday afternoon, Friday afternoon and evening, and all day at the weekend.
 
 ### Updating

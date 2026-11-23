@@ -20,16 +20,17 @@
         <a href="#/board" data-route="board"><span class="ico">▦</span> Pipeline</a>
         <a href="#/list" data-route="list"><span class="ico">☰</span> Boekingen</a>
         <a href="#/calendar" data-route="calendar"><span class="ico">▣</span> Agenda</a>
-        <a href="#/messages" data-route="messages"><span class="ico">✉</span> Berichten <span class="count" id="count-messages" hidden></span></a>
-        <a href="#/reviews" data-route="reviews"><span class="ico">★</span> Reviews <span class="count" id="count-reviews" hidden></span></a>
+        <a href="#/messages" data-route="messages" data-owner><span class="ico">✉</span> Berichten <span class="count" id="count-messages" hidden></span></a>
+        <a href="#/reviews" data-route="reviews" data-owner><span class="ico">★</span> Reviews <span class="count" id="count-reviews" hidden></span></a>
         <div class="side-heading">Instellingen</div>
         <a href="#/availability" data-route="availability"><span class="ico">◷</span> Beschikbaarheid</a>
-        <a href="#/packages" data-route="packages"><span class="ico">◈</span> Pakketten</a>
+        <a href="#/packages" data-route="packages" data-owner><span class="ico">◈</span> Pakketten</a>
+        <a href="#/users" data-route="users" data-owner><span class="ico">☺</span> Gebruikers</a>
       </nav>
       <div class="side-footer">
         <a href="/" target="_blank" rel="noopener">Website bekijken ↗</a>
         <button type="button" class="link-btn" id="theme-toggle">Donker thema</button>
-        <span class="muted small" id="me"></span>
+        <a class="muted small" id="me" href="#/account" title="Mijn account en wachtwoord"></a>
         <button type="button" class="btn ghost small" id="logout">Uitloggen</button>
       </div>
     </aside>

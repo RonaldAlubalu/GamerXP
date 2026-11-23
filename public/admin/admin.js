@@ -834,11 +834,73 @@ async function packagesView() {
   );
 }
 
+async function usersView() {
+  const users = await api('/users');
+  setPage('Gebruikers');
+  const ROLES = { owner: 'Eigenaar', assistant: 'Assistent' };
+  const newPassword = (u) => async () => {
+    const password = prompt(`Nieuw wachtwoord voor ${u.email} (minimaal 12 tekens):`);
+    if (!password) return false;
+    await patchJson(`/users/${u.id}`, { password });
+  };
+  const table = card('Wie kan inloggen',
+    h('div', { class: 'table-wrap' }, h('table', {},
+      h('thead', {}, h('tr', {}, h('th', {}, 'Naam'), h('th', {}, 'E-mail'), h('th', {}, 'Rol'), h('th', {}, ''))),
+      h('tbody', {}, users.map((u) => h('tr', {},
+        h('td', {}, u.name || '–'),
+        h('td', {}, u.email, u.id === me.id ? h('span', { class: 'muted small' }, ' (jij)') : null),
+        h('td', {}, h('select', {
+          'aria-label': 'Rol',
+          disabled: u.id === me.id,
+          onchange: action((e) => patchJson(`/users/${u.id}`, { role: e.target.value }), 'Rol gewijzigd.'),
+        }, Object.entries(ROLES).map(([key, label]) => h('option', { value: key, selected: key === u.role }, label)))),
+        h('td', { class: 'inline' },
+          h('button', { class: 'btn small', onclick: action(newPassword(u), 'Wachtwoord gewijzigd. De gebruiker moet opnieuw inloggen.') }, 'Nieuw wachtwoord'),
+          u.id !== me.id && h('button', { class: 'btn small danger', onclick: action(() => confirm(`${u.email} verwijderen?`) ? del(`/users/${u.id}`) : false, 'Gebruiker verwijderd.') }, 'Verwijderen'))))))));
+  const form = h('form', { class: 'card', onsubmit: action(() => post('/users', Object.fromEntries(new FormData(form))), 'Gebruiker toegevoegd.') },
+    h('h2', {}, 'Gebruiker toevoegen'),
+    h('div', { class: 'row' },
+      field('Naam', h('input', { name: 'name', maxlength: 100 })),
+      field('E-mail', h('input', { name: 'email', type: 'email', required: true })),
+      field('Rol', h('select', { name: 'role' }, h('option', { value: 'assistant' }, 'Assistent'), h('option', { value: 'owner' }, 'Eigenaar')))),
+    field('Wachtwoord (minimaal 12 tekens)', h('input', { name: 'password', type: 'password', required: true, minlength: 12, autocomplete: 'new-password' })),
+    h('p', { class: 'muted small' }, 'Geef het wachtwoord persoonlijk door. De gebruiker kan het daarna zelf wijzigen via het e-mailadres linksonder.'),
+    h('button', { class: 'btn primary', type: 'submit' }, 'Toevoegen'));
+  view.replaceChildren(
+    h('p', { class: 'muted' }, 'Een assistent kan boekingen en de agenda bekijken en de beschikbaarheid aanpassen. Berichten, prijzen, betalingen, pakketten en gebruikers zijn alleen voor eigenaren.'),
+    table, form);
+}
+
+function accountView() {
+  setPage('Mijn account');
+  const form = h('form', { class: 'card', style: 'max-width:480px', onsubmit: action(async () => {
+    const d = Object.fromEntries(new FormData(form));
+    if (d.password !== d.repeat) throw new Error('De twee nieuwe wachtwoorden zijn niet gelijk.');
+    await post('/me/password', { current: d.current, password: d.password });
+  }, 'Wachtwoord gewijzigd.') },
+    h('h2', {}, 'Wachtwoord wijzigen'),
+    h('p', { class: 'muted' }, `Ingelogd als ${me.email}.`),
+    field('Huidig wachtwoord', h('input', { name: 'current', type: 'password', required: true, autocomplete: 'current-password' })),
+    field('Nieuw wachtwoord (minimaal 12 tekens)', h('input', { name: 'password', type: 'password', required: true, minlength: 12, autocomplete: 'new-password' })),
+    field('Herhaal nieuw wachtwoord', h('input', { name: 'repeat', type: 'password', required: true, minlength: 12, autocomplete: 'new-password' })),
+    h('button', { class: 'btn primary', type: 'submit' }, 'Opslaan'));
+  view.replaceChildren(form);
+}
+
+// Assistants can look at bookings but not change them: switch the controls off.
+function lockView() {
+  for (const el of [...view.querySelectorAll('button, input, select, textarea'), ...topbarActions.querySelectorAll('button')]) el.disabled = true;
+  view.prepend(h('p', { class: 'muted' }, 'Je kunt boekingen bekijken. Wijzigen kan alleen een eigenaar.'));
+}
+
 // Router -------------------------------------------------------------------------
+
+// The logged-in user: { id, email, name, role, ... }.
+let me = null;
 
 async function updateCounts() {
   try {
-    const [o, me] = await Promise.all([api('/overview'), api('/me')]);
+    const o = await api('/overview');
     const set = (id, n) => {
       const el = document.getElementById(id);
       el.textContent = n;
@@ -846,7 +908,6 @@ async function updateCounts() {
     };
     set('count-messages', o.messagesWaiting);
     set('count-reviews', o.reviewsToRequest);
-    document.getElementById('me').textContent = me.email;
   } catch {}
 }
 
@@ -855,8 +916,18 @@ async function render() {
   sidebar.hidden = false;
   topbar.hidden = false;
   sidebar.classList.remove('open');
+  try {
+    me = await api('/me');
+  } catch (err) {
+    return flash('error', err.message);
+  }
+  const assistant = me.role === 'assistant';
+  document.getElementById('me').textContent = me.name || me.email;
+  for (const el of document.querySelectorAll('[data-owner]')) el.hidden = assistant;
   const [path] = location.hash.slice(1).split('?');
   const parts = (path || '/board').split('/').filter(Boolean);
+  const ownerOnly = ['messages', 'reviews', 'packages', 'users'];
+  if (assistant && ownerOnly.includes(parts[0])) parts[0] = 'board';
   for (const a of document.querySelectorAll('.side-nav a')) {
     a.classList.toggle('active', a.dataset.route === parts[0] || (a.dataset.route === 'list' && parts[0] === 'bookings'));
   }
@@ -869,7 +940,10 @@ async function render() {
     else if (parts[0] === 'reviews') await reviewsView();
     else if (parts[0] === 'availability') await availabilityView();
     else if (parts[0] === 'packages') await packagesView();
+    else if (parts[0] === 'users') await usersView();
+    else if (parts[0] === 'account') accountView();
     else await boardView();
+    if (assistant && !['list', 'calendar', 'availability', 'account'].includes(parts[0])) lockView();
   } catch (err) {
     flash('error', err.message);
   }

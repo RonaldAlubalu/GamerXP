@@ -3,6 +3,7 @@ import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import type { Config } from '../config.js';
 import { logCommunication } from './communications.js';
+import { STAGE_INFO, STATUSES, type Status } from './pipeline.js';
 
 // An email as read from the mailbox.
 export interface IncomingMail {
@@ -24,7 +25,14 @@ export interface MailSource {
   // Emails received since the given date. Only the sender and subject of each email are
   // looked at; the email itself is downloaded only when `relevant` says so.
   fetchSince(since: Date, relevant: (header: MailHeader) => boolean): Promise<IncomingMail[]>;
+  // Puts `label` on the emails with these Message-IDs and takes `others` off (Gmail labels).
+  // Mailboxes without labels leave this out.
+  setLabel?(messageIds: string[], label: string, others: string[]): Promise<void>;
 }
+
+// The label a booking's emails carry in the mailbox: the same stage name as in the admin.
+export const mailLabel = (status: Status) => `GamerXP/${STAGE_INFO[status].label}`;
+const ALL_LABELS = STATUSES.map(mailLabel);
 
 export interface ImportResult {
   imported: number;
@@ -81,6 +89,35 @@ export function createImapSource(config: Config): MailSource | null {
         await client.logout().catch(() => {});
       }
       return mails;
+    },
+
+    async setLabel(messageIds, label, others) {
+      const client = new ImapFlow({
+        host: config.IMAP_HOST,
+        port: config.IMAP_PORT,
+        secure: config.IMAP_SECURE,
+        auth: { user: config.IMAP_USER, pass: config.IMAP_PASS },
+        logger: false,
+      });
+      await client.connect();
+      try {
+        // Labels are a Gmail feature; other mailboxes are left untouched.
+        if (!client.capabilities.has('X-GM-EXT-1')) return;
+        const lock = await client.getMailboxLock(config.IMAP_MAILBOX);
+        try {
+          for (const id of messageIds) {
+            const uids = (await client.search({ header: { 'message-id': id } }, { uid: true })) || [];
+            if (!uids.length) continue;
+            // Changing labels does not mark an email as read.
+            await client.messageFlagsRemove(uids, others, { uid: true, useLabels: true });
+            await client.messageFlagsAdd(uids, [label], { uid: true, useLabels: true });
+          }
+        } finally {
+          lock.release();
+        }
+      } finally {
+        await client.logout().catch(() => {});
+      }
     },
   };
 }
@@ -169,9 +206,34 @@ export async function importMails(app: FastifyInstance, mails: IncomingMail[]): 
       actor: mail.fromName,
     });
     await app.db.query('UPDATE communications SET external_id = $2, created_at = $3 WHERE id = $1', [id, mail.messageId, mail.date]);
+    // The new email still needs its label.
+    if (booking) await app.db.query('UPDATE bookings SET mail_label = NULL WHERE id = $1', [booking.id]);
     result.imported++;
   }
   return result;
+}
+
+// Gives each booking's emails in the mailbox the label of the booking's current stage.
+// Runs with every mailbox check, so a stage change shows up in the mailbox within minutes.
+export async function syncMailLabels(app: FastifyInstance): Promise<number> {
+  const setLabel = app.mailSource?.setLabel?.bind(app.mailSource);
+  if (!setLabel) return 0;
+  const { rows } = await app.db.query<{ id: string; status: Status; mailLabel: string | null; ids: string[] }>(
+    `SELECT b.id, b.status, b.mail_label AS "mailLabel", array_agg(c.external_id) AS ids
+       FROM bookings b JOIN communications c ON c.booking_id = b.id
+      WHERE c.external_id LIKE '<%'
+      GROUP BY b.id`,
+  );
+  let changed = 0;
+  for (const booking of rows) {
+    const label = mailLabel(booking.status);
+    if (booking.mailLabel === label) continue;
+    await setLabel(booking.ids, label, ALL_LABELS.filter((l) => l !== label));
+    // New emails of this booking get labelled on the next check: forget the label when one arrives.
+    await app.db.query('UPDATE bookings SET mail_label = $2 WHERE id = $1', [booking.id, label]);
+    changed++;
+  }
+  return changed;
 }
 
 // Checks the mailbox. The first check looks back IMAP_LOOKBACK_DAYS; later ones from the last import.
@@ -181,5 +243,8 @@ export async function runMailImport(app: FastifyInstance): Promise<ImportResult>
   const lookback = new Date(Date.now() - app.config.IMAP_LOOKBACK_DAYS * 86_400_000);
   // IMAP searches by whole days, so go back one extra day; duplicates are skipped anyway.
   const since = last.rows[0]?.at ? new Date(last.rows[0].at.getTime() - 86_400_000) : lookback;
-  return importMails(app, await app.mailSource.fetchSince(since, await relevanceCheck(app)));
+  const result = await importMails(app, await app.mailSource.fetchSince(since, await relevanceCheck(app)));
+  // A labelling problem must not make the import itself fail.
+  await syncMailLabels(app).catch((err) => app.log.error({ err }, 'Could not update mailbox labels'));
+  return result;
 }

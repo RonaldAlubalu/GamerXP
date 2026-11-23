@@ -17,6 +17,8 @@ export interface TestContext {
   packageId: number;
   // Emails waiting in the fake mailbox.
   inbox: IncomingMail[];
+  // Labels the fake mailbox was asked to set: Message-ID -> label.
+  labels: Map<string, string>;
 }
 
 export async function setupApp(overrides: Partial<Config> = {}, mollie: MollieClient | null = null): Promise<TestContext> {
@@ -31,7 +33,11 @@ export async function setupApp(overrides: Partial<Config> = {}, mollie: MollieCl
   const sent: Mail[] = [];
   const inbox: IncomingMail[] = [];
   // Like the real mailbox: hands over only the emails the import asks for.
-  const mailSource: MailSource = { fetchSince: async (_since, relevant) => inbox.filter((m) => relevant(m)) };
+  const labels = new Map<string, string>();
+  const mailSource: MailSource = {
+    fetchSince: async (_since, relevant) => inbox.filter((m) => relevant(m)),
+    setLabel: async (ids, label) => ids.forEach((id) => labels.set(id, label)),
+  };
   const app = await buildApp({
     config,
     db,
@@ -42,7 +48,7 @@ export async function setupApp(overrides: Partial<Config> = {}, mollie: MollieCl
     mollie,
     mailSource,
   });
-  return { app, db, config, sent, packageId: rows[0]!.id, inbox };
+  return { app, db, config, sent, packageId: rows[0]!.id, inbox, labels };
 }
 
 export async function teardown(ctx: TestContext): Promise<void> {

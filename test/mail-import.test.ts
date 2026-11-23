@@ -88,6 +88,25 @@ describe('email import', () => {
     expect(await runImport()).toEqual({ imported: 0, skipped: 2 });
   });
 
+  it('labels a booking\'s emails with its stage and relabels them when the stage changes', async () => {
+    const booking = await createBooking();
+    const first = mail();
+    ctx.inbox.push(first);
+    await runImport();
+    expect(ctx.labels.get(first.messageId)).toBe('GamerXP/Nieuw');
+
+    await ctx.app.inject({ method: 'PATCH', url: `/api/admin/bookings/${booking.id}`, headers: auth(), payload: { status: 'confirmed' } });
+    const second = mail();
+    ctx.inbox.push(second);
+    await runImport();
+    expect(ctx.labels.get(first.messageId)).toBe('GamerXP/Bevestigd');
+    expect(ctx.labels.get(second.messageId)).toBe('GamerXP/Bevestigd');
+
+    ctx.labels.clear();
+    await runImport();
+    expect(ctx.labels.size).toBe(0);
+  });
+
   it('keeps only what the customer wrote in a reply', () => {
     expect(stripQuotedReply('Prima, tot dan!\n\nOp di 3 nov 2026 om 10:12 schreef Gamer Xperience <contact@gamerxp.nl>:\n> Hoi Sanne,\n> ...')).toBe('Prima, tot dan!');
     expect(stripQuotedReply('Top.\r\n\r\n-----Oorspronkelijk bericht-----\r\nVan: Gamer Xperience')).toBe('Top.');

@@ -53,7 +53,16 @@ Run `sh /opt/gamerxp/deploy/setup-server.sh gamerxp.nl` later to switch to the r
 
 ### Updating
 
-With the repository secrets `DEPLOY_HOST` and `DEPLOY_SSH_KEY` set (see `.github/workflows/deploy.yml`), every push updates the server by itself. By hand:
+Every push updates the server by itself: GitHub builds the site and loads it onto the server over SSH. The deploy also writes these repository secrets into the server's `.env`, so changing one takes effect at the next deploy (Actions → Deploy → Run workflow):
+
+| Secret | What it sets |
+|---|---|
+| `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY` | where and how GitHub logs in to the server |
+| `GOOGLE_LOGIN`, `GOOGLE_PWD` | the Google mailbox: the account's main address and an app password |
+| `MOLLIE_GXP_TEST`, `MOLLIE_GXP_LIVE` | the Mollie API key (the test key is used until go-live) |
+| `BACKUP_VPS_RD`, `BACKUP_PEER_PUBKEY` | the second server for backups, and its public key |
+
+Updating by hand on the server:
 
 ```sh
 git pull && docker compose up -d --build

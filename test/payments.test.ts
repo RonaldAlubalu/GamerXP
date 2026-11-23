@@ -125,6 +125,12 @@ describe('online payments with Mollie', () => {
     expect(res.json()).toEqual({ url: `https://gamerxp.nl/betalen/${t.statusToken}/aanbetaling`, amountCents: 10000 });
     expect(ctx.sent[0]!.subject).toContain('Betaallink');
     expect(ctx.sent[0]!.text).toContain(res.json().url);
+
+    // The same link as a QR code, to scan from the admin's screen.
+    const withQr = await ctx.app.inject({
+      method: 'POST', url: `/api/admin/bookings/${t.booking.id}/payment-link`, headers: t.auth, payload: { kind: 'deposit', qr: true },
+    });
+    expect(withQr.json().qrSvg).toMatch(/^<svg[\s\S]*<\/svg>\s*$/);
   });
 
   it('is switched off without an API key', async () => {

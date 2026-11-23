@@ -348,3 +348,10 @@ details.task-group:not([open]) > summary { color: var(--muted); font-weight: 500
 .stat.quiet .num { font-size: 1rem; }
 .stat.quiet .lbl { margin: 0; }
 .stats.quiet-row { display: flex; flex-wrap: wrap; margin-bottom: 18px; }
+
+/* Payment QR shown to the customer */
+.qr-overlay { position: fixed; inset: 0; z-index: 100; background: rgba(10, 14, 24, .85); display: grid; place-items: center; padding: 16px; }
+.qr-panel { background: #fff; color: #111; border-radius: 14px; padding: 22px; width: min(420px, 100%); text-align: center; }
+.qr-panel h2 { margin: 0 0 2px; color: #111; }
+.qr-panel .muted { color: #555; }
+.qr-code svg { width: 100%; height: auto; max-width: 320px; display: block; margin: 8px auto; }

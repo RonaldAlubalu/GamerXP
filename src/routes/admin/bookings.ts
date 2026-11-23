@@ -1,4 +1,5 @@
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
+import QRCode from 'qrcode';
 import { z } from 'zod';
 import { addDays, today } from '../../lib/dates.js';
 import {
@@ -220,7 +221,9 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
   // A payment link for the customer (deposit or remaining amount), optionally emailed.
   app.post('/bookings/:id/payment-link', async (req) => {
     const { id } = idParam.parse(req.params);
-    const { kind, send } = z.object({ kind: z.enum(['deposit', 'payment']), send: z.boolean().default(false) }).parse(req.body);
+    const { kind, send, qr } = z
+      .object({ kind: z.enum(['deposit', 'payment']), send: z.boolean().default(false), qr: z.boolean().default(false) })
+      .parse(req.body);
     if (!app.mollie) throw new HttpError(422, 'Stel eerst MOLLIE_API_KEY in om online betalen te gebruiken.', 'payments_disabled');
     const booking = await loadDue(app, { id });
     if (!booking) throw new HttpError(404, 'Boeking niet gevonden.', 'not_found');
@@ -242,7 +245,9 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
       }
       await addEvent(app.db, id, { type: 'email', message: `Betaallink verstuurd: ${formatEuro(amount)}`, actor: actorOf(req) });
     }
-    return { url, amountCents: amount };
+    // A QR code of the link, to let the customer scan it from your screen (e.g. at the party).
+    const qrSvg = qr ? await QRCode.toString(url, { type: 'svg', margin: 1, errorCorrectionLevel: 'M' }) : undefined;
+    return { url, amountCents: amount, qrSvg };
   });
 
   // Checks open Mollie payments of this booking (e.g. when a webhook was missed).

@@ -543,7 +543,12 @@ function onlinePayments(b, me) {
           try { await navigator.clipboard.writeText(url); flash('ok', 'Betaallink gekopieerd, plak hem in WhatsApp.'); }
           catch { prompt('Betaallink:', url); }
         } catch (err) { flash('error', err.message); }
-      } }, 'Link kopiëren'));
+      } }, 'Link kopiëren'),
+      h('button', { class: 'btn small', onclick: async () => {
+        try {
+          showPayQr(b, label, await post(`/bookings/${b.id}/payment-link`, { kind, qr: true }));
+        } catch (err) { flash('error', err.message); }
+      } }, 'QR laten scannen'));
   };
   const links = [link('deposit', 'Aanbetaling'), link('payment', 'Restbedrag')].filter(Boolean);
   box.append(...(links.length ? links : [h('p', { class: 'muted small' },
@@ -559,6 +564,30 @@ function onlinePayments(b, me) {
     }
   }
   return box;
+}
+
+// Full-screen QR code of a payment link: hold your phone out and the customer scans and pays.
+function showPayQr(b, label, { url, amountCents, qrSvg }) {
+  const code = h('div', { class: 'qr-code' });
+  // The image is made by our own server from the payment link.
+  code.innerHTML = qrSvg;
+  const overlay = h('div', { class: 'qr-overlay', role: 'dialog', 'aria-label': 'Betalen met QR-code' },
+    h('div', { class: 'qr-panel' },
+      h('h2', {}, `${label}: ${fmtEuro(amountCents)}`),
+      h('p', { class: 'muted' }, `${displayName(b)} · ${b.reference}`),
+      code,
+      h('p', {}, 'Scan met de camera van je telefoon en betaal met iDEAL.'),
+      h('div', { class: 'inline', style: 'justify-content:center' },
+        h('button', { class: 'btn primary', onclick: async () => {
+          try {
+            await post(`/bookings/${b.id}/mollie-sync`);
+            const fresh = await api(`/bookings/${b.id}`);
+            if (fresh.paidCents > b.paidCents) { overlay.remove(); flash('ok', 'Betaling ontvangen! 🎉'); await render(); }
+            else flash('ok', 'Nog niet betaald. Probeer het zo nog eens.');
+          } catch (err) { flash('error', err.message); }
+        } }, 'Is het betaald?'),
+        h('button', { class: 'btn', onclick: () => overlay.remove() }, 'Sluiten'))));
+  document.body.append(overlay);
 }
 
 // Which tab of which booking is open, so it stays open after saving something.

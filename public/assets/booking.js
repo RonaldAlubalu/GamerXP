@@ -8,6 +8,7 @@ const title = document.getElementById('cal-title');
 const slotPicker = document.getElementById('slot-picker');
 const slotButtons = document.getElementById('slot-buttons');
 const EXTRA_STATION_CENTS = 2500;
+const DECORATION_CENTS = 2500;
 const monthName = new Intl.DateTimeFormat('nl-NL', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 
 let packages = [];
@@ -42,8 +43,13 @@ function updatePrice() {
     box.hidden = true;
     return;
   }
+  // Decoration is an extra only where the package doesn't include it.
+  const decorationOption = document.getElementById('decoration-option');
+  decorationOption.hidden = selected.slug === 'ultimate';
+  if (decorationOption.hidden) form.elements.decoration.checked = false;
+  const decoration = form.elements.decoration.checked ? DECORATION_CENTS : 0;
   const evening = form.elements.timeSlot?.value === 'avond' ? 5000 : 0;
-  const total = selected.priceCents + Number(form.elements.extraStations.value) * EXTRA_STATION_CENTS + evening + (travel?.travelCents ?? 0);
+  const total = selected.priceCents + Number(form.elements.extraStations.value) * EXTRA_STATION_CENTS + decoration + evening + (travel?.travelCents ?? 0);
   document.getElementById('price-total').textContent = formatPrice(total);
   document.getElementById('price-travel').textContent = travel?.km
     ? `Inclusief reiskosten ${formatPrice(travel.travelCents)} (${(travel.km * 2).toLocaleString('nl-NL', { maximumFractionDigits: 1 })} km retour)${evening ? ' en avondtoeslag €50' : ''}.`

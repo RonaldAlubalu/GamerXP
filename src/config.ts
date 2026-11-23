@@ -18,6 +18,8 @@ const schema = z.object({
   DEPOSIT_CENTS: z.coerce.number().int().min(0).default(10000),
   // Price per extra game station on top of the package price (in cents).
   EXTRA_STATION_CENTS: z.coerce.number().int().min(0).default(2500),
+  // Price of the decoration extra with the Standaard package (it is included in Ultimate).
+  DECORATION_CENTS: z.coerce.number().int().min(0).default(2500),
   // Optional payment instructions added to the confirmation email, e.g. an IBAN.
   PAYMENT_INFO: z.string().default(''),
   // Travel costs: cents per km of the round trip (so per km one way it is double), with a maximum.
@@ -36,6 +38,8 @@ const schema = z.object({
   MOLLIE_API_URL: z.url().default('https://api.mollie.com/v2'),
   // Link for leaving a Google review (from your Google Business Profile: "Ask for reviews").
   GOOGLE_REVIEW_URL: z.string().default(''),
+  // Days after the party that the review request is emailed by itself. 0 switches it off.
+  AUTO_REVIEW_DAYS: z.coerce.number().int().min(0).max(13).default(2),
 
   // API token of e-Boekhouden.nl (Beheer > API). Leave empty to switch invoicing off.
   EBOEKHOUDEN_TOKEN: z.string().default(''),

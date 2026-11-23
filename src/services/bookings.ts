@@ -10,6 +10,7 @@ import { calculatePrice, type PriceExtra } from './pricing.js';
 export interface NewBooking {
   packageId: number;
   extraStations: number;
+  decoration?: boolean;
   partyDate: string;
   timeSlot: 'ochtend' | 'middag' | 'avond';
   parentName: string;
@@ -24,6 +25,9 @@ export interface NewBooking {
   parking?: '' | 'free' | 'paid' | 'unknown';
   notes: string;
 }
+
+// The decoration extra as it appears in the price lines and on the invoice.
+export const DECORATION_LABEL = 'Thematische decoratie (neon lights, gaming sfeer)';
 
 export async function createBooking(
   db: Db,
@@ -41,8 +45,8 @@ export async function createBooking(
     // Serialize bookings per date so two parents can't grab the last slot at once.
     await client.query("SELECT pg_advisory_xact_lock(hashtext('booking:' || $1))", [input.partyDate]);
 
-    const pkg = await client.query<{ name: string; price_cents: number }>(
-      'SELECT name, price_cents FROM packages WHERE id = $1 AND active',
+    const pkg = await client.query<{ name: string; price_cents: number; slug: string }>(
+      'SELECT name, price_cents, slug FROM packages WHERE id = $1 AND active',
       [input.packageId],
     );
     if (!pkg.rows[0]) throw new HttpError(422, 'Dit pakket bestaat niet (meer).', 'unknown_package');
@@ -59,6 +63,8 @@ export async function createBooking(
     // The package price is fixed at booking time. Travel costs are added once the
     // distance is known; the evening slot ends after 19:30 so it gets the surcharge.
     const eveningSurcharge = input.timeSlot === 'avond';
+    // Decoration is part of Ultimate; with another package it is a paid extra.
+    const extras = input.decoration && pkg.rows[0].slug !== 'ultimate' ? [{ label: DECORATION_LABEL, amountCents: config.DECORATION_CENTS }] : [];
     const priceCents = calculatePrice(
       {
         packageName: pkg.rows[0].name,
@@ -66,7 +72,7 @@ export async function createBooking(
         extraStations: input.extraStations,
         travelKm: null,
         eveningSurcharge,
-        extras: [],
+        extras,
       },
       config,
     ).totalCents;
@@ -80,14 +86,14 @@ export async function createBooking(
         const { rows } = await client.query<{ id: string; status: string }>(
           `INSERT INTO bookings (reference, package_id, extra_stations, party_date, time_slot, parent_name, email,
                                  phone, street, postal_code, city, child_name, child_age, guest_count, notes,
-                                 price_cents, deposit_cents, status_token, evening_surcharge, package_price_cents, parking)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+                                 price_cents, deposit_cents, status_token, evening_surcharge, package_price_cents, parking, price_extras)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
            RETURNING id, status`,
           [
             reference, input.packageId, input.extraStations, input.partyDate, input.timeSlot, input.parentName,
             input.email, input.phone, input.street, input.postalCode, input.city, input.childName,
             input.childAge ?? null, input.guestCount ?? null, input.notes, priceCents, config.DEPOSIT_CENTS,
-            statusToken, eveningSurcharge, pkg.rows[0].price_cents, input.parking ?? '',
+            statusToken, eveningSurcharge, pkg.rows[0].price_cents, input.parking ?? '', JSON.stringify(extras),
           ],
         );
         const booking = rows[0]!;

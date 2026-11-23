@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { addDays, today } from '../src/lib/dates.js';
 import { whatsappUrl } from '../src/lib/emails.js';
+import { sendDueReviewRequests } from '../src/services/reviews.js';
 import { bookingBody, loginAdmin, setupApp, teardown, type TestContext } from './helpers.js';
 
 let ctx: TestContext;
@@ -61,5 +62,35 @@ describe('day-before reminders', () => {
     expect(whatsappUrl('+31 6 12345678', 'Hoi')).toBe('https://wa.me/31612345678?text=Hoi');
     expect(whatsappUrl('0031612345678', 'Hoi')).toBe('https://wa.me/31612345678?text=Hoi');
     expect(whatsappUrl('', 'Hoi')).toBeNull();
+  });
+});
+
+describe('automatic review requests', () => {
+  const partyDaysAgo = async (days: number, status: string, email: string) => {
+    await ctx.app.inject({ method: 'POST', url: '/api/bookings', payload: bookingBody(ctx, { email, partyDate: addDays(today(ctx.config.TIMEZONE), 14 + days) }) });
+    await ctx.db.query('UPDATE bookings SET status = $1, party_date = $2 WHERE email = $3', [status, addDays(today(ctx.config.TIMEZONE), -days), email]);
+  };
+
+  it('asks once, two days after the party, and leaves old or unfinished bookings alone', async () => {
+    const reviewCtx = await setupApp({ GOOGLE_REVIEW_URL: 'https://g.page/r/abc/review' });
+    await teardown(ctx);
+    ctx = reviewCtx;
+    await partyDaysAgo(3, 'party_held', 'op-tijd@example.nl');
+    await partyDaysAgo(1, 'party_held', 'te-vroeg@example.nl');
+    await partyDaysAgo(20, 'completed', 'te-oud@example.nl');
+    await partyDaysAgo(3, 'cancelled', 'geannuleerd@example.nl');
+    ctx.sent.length = 0;
+
+    expect(await sendDueReviewRequests(ctx.app)).toBe(1);
+    expect(ctx.sent.map((m) => m.to)).toEqual(['op-tijd@example.nl']);
+    expect(ctx.sent[0]!.text).toContain('https://g.page/r/abc/review');
+    expect(await sendDueReviewRequests(ctx.app)).toBe(0);
+    const { rows } = await ctx.db.query("SELECT review_status FROM bookings WHERE email = 'op-tijd@example.nl'");
+    expect(rows[0].review_status).toBe('requested');
+  });
+
+  it('does nothing without a review link', async () => {
+    await partyDaysAgo(3, 'party_held', 'op-tijd@example.nl');
+    expect(await sendDueReviewRequests(ctx.app)).toBe(0);
   });
 });

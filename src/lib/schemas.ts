@@ -34,6 +34,8 @@ export const TIME_SLOTS = ['ochtend', 'middag', 'avond'] as const;
 export const bookingRequest = z.object({
   packageId: z.coerce.number().int().positive('Kies je Gamer Party.'),
   extraStations: z.coerce.number().int().min(0).max(2, 'Maximaal 2 extra gamestations.').default(0),
+  // Themed decoration as an extra (only adds to the price where the package doesn't include it).
+  decoration: z.boolean().default(false),
   partyDate: dateString,
   timeSlot: z.enum(TIME_SLOTS, 'Kies een tijdslot.'),
   parentName: requiredText(100, 'Vul je naam in.'),

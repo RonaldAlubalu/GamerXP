@@ -18,6 +18,7 @@ import { adminRoutes } from './routes/admin/index.js';
 import { createBookkeeping, type Bookkeeping } from './services/bookkeeping.js';
 import { syncInvoicePayments } from './services/invoices.js';
 import { createPushSender, type PushSender } from './services/push.js';
+import { sendDueReviewRequests } from './services/reviews.js';
 import { checkSystem, type SystemStatus } from './services/status.js';
 import { registerSite } from './site.js';
 
@@ -112,6 +113,8 @@ export async function buildApp({ config, db, mailer, distance, mollie, mailSourc
         .then((status) => void (app.systemStatus.current = status))
         // In the same round: have invoices been paid (QR code, bank transfer)?
         .then(() => syncInvoicePayments(app))
+        // And ask for a review a few days after a party, when real email is set up.
+        .then(() => (config.SMTP_HOST ? sendDueReviewRequests(app) : 0))
         .catch((err) => app.log.error({ err }, 'System check failed'));
     const timer = setInterval(refresh, 10 * 60_000);
     app.addHook('onReady', async () => void refresh());

@@ -249,6 +249,18 @@ describe('public API', () => {
     expect(bad.statusCode).toBe(400);
   });
 
+  it('adds decoration as a paid extra with Standaard but not with Ultimate', async () => {
+    await ctx.app.inject({ method: 'POST', url: '/api/bookings', payload: bookingBody(ctx, { decoration: true }) });
+    const standaard = (await ctx.db.query('SELECT price_cents, price_extras FROM bookings')).rows[0];
+    expect(standaard.price_cents).toBe(27500 + 3000 + 2500);
+    expect(standaard.price_extras).toEqual([{ label: 'Thematische decoratie (neon lights, gaming sfeer)', amountCents: 2500 }]);
+
+    const ultimate = (await ctx.db.query("SELECT id FROM packages WHERE slug = 'ultimate'")).rows[0].id;
+    await ctx.app.inject({ method: 'POST', url: '/api/bookings', payload: bookingBody(ctx, { packageId: ultimate, decoration: true, email: 'ander@example.nl', partyDate: futureDate(ctx, 21) }) });
+    const included = (await ctx.db.query("SELECT price_cents, price_extras FROM bookings WHERE email = 'ander@example.nl'")).rows[0];
+    expect(included).toEqual({ price_cents: 35000 + 3000, price_extras: [] });
+  });
+
   it('still books when the distance lookup fails', async () => {
     ctx.app.distance.drivingKm = async () => {
       throw new Error('offline');

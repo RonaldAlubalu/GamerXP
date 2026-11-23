@@ -3,7 +3,7 @@ import { daysBetween, formatDutchDate, today } from '../lib/dates.js';
 import { HttpError } from '../lib/errors.js';
 import type { InvoiceLine } from './bookkeeping.js';
 import { formatEuro, statusChangeMail } from '../lib/emails.js';
-import { getBookingMailData, recalculatePaid } from './bookings.js';
+import { DECORATION_LABEL, getBookingMailData, recalculatePaid } from './bookings.js';
 import { sendAndLog } from './communications.js';
 import { addEvent } from './pipeline.js';
 import { notify } from './push.js';
@@ -18,6 +18,7 @@ const PRODUCTS: Record<string, { full: string; deposit: string }> = {
 };
 const EVENING_PRODUCT = 'GE266';
 const STATION_PRODUCT = 'GE267';
+const DECORATION_PRODUCT = 'GE268';
 
 interface BookingForInvoice {
   id: string; reference: string; status: string; slug: string; packageName: string; packagePriceCents: number;
@@ -42,6 +43,7 @@ export function invoiceLines(b: BookingForInvoice, kind: InvoiceKind, depositInv
       if (l.key === 'package') return { description: b.packageName, quantity: 1, priceCents: l.amountCents, productCode: products?.full };
       if (l.key === 'extra_stations') return { description: 'Extra gamestation', quantity: b.extraStations, priceCents: app.config.EXTRA_STATION_CENTS, productCode: STATION_PRODUCT };
       if (l.key === 'evening') return { description: 'Avondtarief (eindtijd na 19:30)', quantity: 1, priceCents: l.amountCents, productCode: EVENING_PRODUCT };
+      if (l.label === DECORATION_LABEL) return { description: 'Decoratie', quantity: 1, priceCents: l.amountCents, productCode: DECORATION_PRODUCT };
       return { description: l.label, quantity: 1, priceCents: l.amountCents };
     });
   if (depositInvoice) {

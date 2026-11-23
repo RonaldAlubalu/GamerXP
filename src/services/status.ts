@@ -163,6 +163,12 @@ export async function checkSystem(app: FastifyInstance): Promise<SystemStatus> {
     resourceChecks(config.BACKUP_DIR),
   ]);
 
+  // When a mailbox login fails, show what was used, so a wrong secret is easy to spot.
+  const used = (user: string, pass: string) =>
+    ` Nu ingesteld: inlognaam "${user}"${/\s/.test(user) ? ' (bevat een spatie of regeleinde!)' : ''}, wachtwoord van ${pass.length} tekens${pass.length === 16 ? '' : ' (een app-wachtwoord heeft er 16)'}.`;
+  if (sending.state === 'error') sending.detail += used(config.SMTP_USER, config.SMTP_PASS);
+  if (reading.state === 'error') reading.detail += used(config.IMAP_USER, config.IMAP_PASS);
+
   // Test mode on the real domain is a mistake worth pointing out.
   if (payments.state === 'ok' && !config.MOLLIE_API_KEY.startsWith('live_')) payments.state = 'warn';
   const whatsapp: Check = {

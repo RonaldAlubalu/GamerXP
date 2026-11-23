@@ -482,3 +482,11 @@ body:has(#booking-form) .wa-float, body:has(#status-view) .wa-float { display: n
 /* Footnote for the 24-hour response time */
 .note-mark { color: inherit; text-decoration: none; margin-left: 1px; }
 .footnote { color: var(--muted); font-size: .88rem; margin-top: 0; margin-bottom: 14px; scroll-margin-top: 120px; }
+
+/* Phone hero: one promise, one proof, one button. The rest follows further down the page. */
+@media (max-width: 640px) {
+  .hero .stats li:nth-child(n+3) { display: none; }
+  .hero .stats { font-size: .92rem; gap: 8px 18px; }
+  .hero .actions .btn.secondary { display: none; }
+  .hero .actions .btn { padding: 14px 28px; font-size: 1.05rem; }
+}

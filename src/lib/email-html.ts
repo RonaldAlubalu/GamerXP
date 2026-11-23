@@ -97,7 +97,7 @@ export function renderEmailHtml(text: string, look: EmailLook): string {
 <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#eef1f6"><tr><td align="center" style="padding:24px 12px">
 <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden">
 <tr><td align="center" style="background:${NAVY};padding:22px 20px;border-bottom:3px solid ${GREEN}">
-<a href="${esc(look.publicUrl)}" style="text-decoration:none"><img src="${esc(look.publicUrl)}/assets/img/logo.png" alt="Gamer Xperience" width="84" style="display:block;border:0;margin:0 auto 6px"></a>
+<a href="${esc(look.publicUrl)}" style="text-decoration:none"><img src="${esc(look.publicUrl)}/assets/img/logo-email.png" alt="Gamer Xperience" width="84" style="display:block;border:0;margin:0 auto 6px"></a>
 <div style="font:700 13px Arial,Helvetica,sans-serif;letter-spacing:.08em;color:${CYAN};text-transform:uppercase">Het ultieme gamefeestje bij jou thuis</div>
 </td></tr>
 <tr><td style="padding:28px 28px 26px;font:16px/1.6 Arial,Helvetica,sans-serif;color:#1c2233">

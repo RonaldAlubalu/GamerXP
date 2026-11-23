@@ -76,4 +76,23 @@ describe('website routes', () => {
 
     expect((await ctx.app.inject('/admin/')).statusCode).toBe(200);
   });
+
+  it('labels pages for search engines', async () => {
+    const data = async (url: string) => {
+      const html = (await ctx.app.inject(url)).body;
+      const json = /<script type="application\/ld\+json">([\s\S]*?)<\/script>/.exec(html)?.[1];
+      return json ? (JSON.parse(json)['@graph'] as { '@type': string; [key: string]: unknown }[]) : [];
+    };
+    const home = await data('/');
+    expect(home.find((x) => x['@type'] === 'LocalBusiness')).toMatchObject({ name: 'Gamer Xperience', telephone: '+31634206753' });
+    const faq = home.find((x) => x['@type'] === 'FAQPage') as unknown as { mainEntity: { name: string; acceptedAnswer: { text: string } }[] };
+    expect(faq.mainEntity.length).toBeGreaterThan(5);
+    expect(faq.mainEntity[0]).toMatchObject({ name: 'Heb ik veel ruimte nodig in huis?' });
+    expect(faq.mainEntity[0]!.acceptedAnswer.text).not.toContain('<');
+
+    const story = await data('/verhalen/help-mijn-kind-wil-een-fortnite-feestje');
+    expect(story.find((x) => x['@type'] === 'BlogPosting')).toMatchObject({ headline: 'Help, mijn kind wil een Fortnite-feestje!', datePublished: '2026-02-12' });
+    // Pages kept out of search engines get no labels.
+    expect(await data('/status')).toEqual([]);
+  });
 });

@@ -36,6 +36,57 @@ const META_RE = /^\s*<!--\s*(\{[\s\S]*?\})\s*-->/;
 const escapeAttr = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+const stripTags = (html: string) =>
+  html.replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+
+// Labels for search engines (schema.org): what the business is, the questions and answers on
+// the page, and for a story its title, date and author.
+function structuredData(html: string, meta: PageMeta, route: string, publicUrl: string, image: string): string {
+  const business = {
+    '@type': 'LocalBusiness',
+    '@id': `${publicUrl}/#bedrijf`,
+    name: 'Gamer Xperience',
+    description: 'Gamefeestjes en gaming-evenementen op locatie: een complete game-arena bij jou thuis, door heel Nederland.',
+    url: publicUrl,
+    image: `${publicUrl}/assets/img/nummer-1-game-feestje.webp`,
+    logo: `${publicUrl}/assets/img/logo.png`,
+    email: 'contact@gamerxp.nl',
+    telephone: '+31634206753',
+    priceRange: '€275 - €350',
+    address: { '@type': 'PostalAddress', addressLocality: 'Eindhoven', addressCountry: 'NL' },
+    areaServed: { '@type': 'Country', name: 'Nederland' },
+    makesOffer: [
+      { '@type': 'Offer', name: 'Standaard Xperience (3 uur, 8 gamestations)', price: '275', priceCurrency: 'EUR', url: `${publicUrl}/reserveer?pakket=standaard` },
+      { '@type': 'Offer', name: 'Ultimate Xperience (4 uur, met Game Master)', price: '350', priceCurrency: 'EUR', url: `${publicUrl}/reserveer?pakket=ultimate` },
+    ],
+  };
+  const graph: object[] = [business];
+
+  const questions = [...html.matchAll(/<details><summary>([\s\S]*?)<\/summary>([\s\S]*?)<\/details>/g)].map((m) => ({
+    '@type': 'Question',
+    name: stripTags(m[1]!),
+    acceptedAnswer: { '@type': 'Answer', text: stripTags(m[2]!) },
+  }));
+  if (questions.length) graph.push({ '@type': 'FAQPage', mainEntity: questions });
+
+  const published = /<time datetime="(\d{4}-\d{2}-\d{2})"/.exec(html)?.[1];
+  if (route.startsWith('/verhalen/') && published) {
+    graph.push({
+      '@type': 'BlogPosting',
+      headline: stripTags(/<h1[^>]*>([\s\S]*?)<\/h1>/.exec(html)?.[1] ?? meta.title),
+      description: meta.description,
+      image,
+      datePublished: published,
+      author: { '@type': 'Person', name: 'Ronald Kers' },
+      publisher: { '@id': `${publicUrl}/#bedrijf` },
+      mainEntityOfPage: `${publicUrl}${route}`,
+    });
+  }
+  // "<" is escaped so text from a page can never end the script block.
+  const json = JSON.stringify({ '@context': 'https://schema.org', '@graph': graph }).replace(/</g, '\\u003c');
+  return `<script type="application/ld+json">${json}</script>`;
+}
+
 async function listHtml(dir: string, prefix = ''): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true });
   const files: string[] = [];
@@ -78,7 +129,8 @@ export async function loadSite(publicUrl: string, dir: string = SITE_DIR): Promi
       year: String(new Date().getFullYear()),
     };
     const html = includePartials(layout.replace('{{content}}', () => body), partials);
-    return html.replace(/\{\{(\w+)\}\}/g, (m, key: string) => vars[key] ?? m);
+    const data = meta.noindex ? '' : structuredData(html, meta, route, publicUrl, vars.image!);
+    return html.replace(/\{\{(\w+)\}\}/g, (m, key: string) => vars[key] ?? m).replace('</head>', () => `  ${data}\n</head>`);
   };
 
   const pages = new Map<string, string>();

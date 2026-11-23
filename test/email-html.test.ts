@@ -28,6 +28,6 @@ describe('email in the look of the website', () => {
     expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt; &amp; co');
     expect(html).not.toContain('<script>');
     expect(html).toContain('Game on!</p>');
-    expect(html).toContain('https://gamerxp.nl/assets/img/logo.png');
+    expect(html).toContain('https://gamerxp.nl/assets/img/logo-email.png');
   });
 });

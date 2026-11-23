@@ -84,3 +84,18 @@ if (stickyCta && !/^\/(reserveer|status|betalen)/.test(location.pathname)) {
   addEventListener('scroll', toggleCta, { passive: true });
   toggleCta();
 }
+
+// The Google score opens a panel with reviews. Without JavaScript the link goes to the reviews page.
+const reviewsPanel = document.getElementById('reviews-panel');
+if (reviewsPanel?.showModal) {
+  for (const opener of document.querySelectorAll('[data-reviews-open]')) {
+    opener.addEventListener('click', (event) => {
+      event.preventDefault();
+      reviewsPanel.showModal();
+    });
+  }
+  reviewsPanel.addEventListener('click', (event) => {
+    // A click on the dark area beside the panel, or on the close button, closes it.
+    if (event.target === reviewsPanel || event.target.closest('[data-reviews-close]')) reviewsPanel.close();
+  });
+}

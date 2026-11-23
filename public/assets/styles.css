@@ -490,3 +490,33 @@ body:has(#booking-form) .wa-float, body:has(#status-view) .wa-float { display: n
   /* No buttons in the photo on a phone: the booking button appears at the bottom once you scroll. */
   main > .hero:first-child .actions:has(a[href="/reserveer"]) { display: none; }
 }
+
+/* Reviews panel: opens from the Google score in the hero. */
+.reviews-open { color: inherit; text-decoration: none; border-bottom: 1px dashed rgba(255, 255, 255, .45); padding-bottom: 2px; }
+.reviews-open:hover, .reviews-open:focus-visible { border-bottom-color: var(--cyan); }
+.reviews-open-hint { color: var(--cyan); }
+.reviews-panel {
+  position: fixed; inset: 0 0 0 auto; margin: 0; width: min(440px, 100vw); height: 100dvh; max-height: none; max-width: none;
+  padding: 0; border: 0; border-left: 1px solid var(--line); background: var(--bg-2); color: var(--text);
+  overflow: hidden;
+}
+.reviews-panel[open] { display: flex; flex-direction: column; animation: reviews-in .22s ease-out; }
+.reviews-panel::backdrop { background: rgba(3, 5, 16, .7); }
+@keyframes reviews-in { from { transform: translateX(100%); } to { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .reviews-panel[open] { animation: none; } }
+.reviews-panel-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 20px 20px 14px; border-bottom: 1px solid var(--line); }
+.reviews-panel-head h2 { margin: 4px 0 0; font-size: 1.25rem; }
+.reviews-panel-score { margin: 0; font-family: var(--font-head); }
+.reviews-panel-score .stars { color: #ffc93c; letter-spacing: 1px; }
+.reviews-panel-close { flex: none; width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line); background: var(--card); color: var(--text); font-size: 1.5rem; line-height: 1; cursor: pointer; }
+.reviews-panel-body { flex: 1; overflow-y: auto; padding: 16px 20px; display: grid; gap: 14px; align-content: start; }
+.reviews-panel-body .review { padding: 18px; gap: 10px; }
+.reviews-panel-body .review p { font-size: 1rem; text-align: left; }
+.reviews-panel-body .review footer { text-align: left; }
+.reviews-panel-foot { display: grid; gap: 10px; padding: 14px 20px calc(14px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
+.reviews-panel-foot .btn { text-align: center; }
+@media (max-width: 640px) {
+  .reviews-open { border-bottom: 0; white-space: nowrap; }
+  .reviews-open-hint { display: block; text-decoration: underline; text-underline-offset: 3px; }
+  .reviews-open-hint .dot { display: none; }
+}

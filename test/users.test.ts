@@ -103,3 +103,53 @@ describe('admin users', () => {
     expect((await call(owner, 'PATCH', `/users/${me.id}`, { role: 'assistant' })).statusCode).toBe(409);
   });
 });
+
+describe('two-step login', () => {
+  const login = (payload: object) => ctx.app.inject({ method: 'POST', url: '/api/admin/login', payload: { email: 'admin@gamerxp.nl', password: 'correct-horse-battery', ...payload } });
+
+  it('asks for a code once it is switched on, accepts each code once, and takes backup codes', async () => {
+    const { codeAt, currentStep } = await import('../src/lib/totp.js');
+    expect((await call(owner, 'GET', '/me')).json().twoFactor).toBe(false);
+    const { secret, qrSvg } = (await call(owner, 'POST', '/me/2fa/setup')).json();
+    expect(qrSvg).toContain('<svg');
+    // Not active until a code proves the app works.
+    expect((await login({})).statusCode).toBe(200);
+    expect((await call(owner, 'POST', '/me/2fa/enable', { code: '000000' })).statusCode).toBe(400);
+    const step = currentStep();
+    const enabled = await call(owner, 'POST', '/me/2fa/enable', { code: codeAt(secret, step) });
+    expect(enabled.json().recoveryCodes).toHaveLength(8);
+
+    const needs = await login({});
+    expect(needs.statusCode).toBe(401);
+    expect(needs.json().code).toBe('two_factor_required');
+    expect((await login({ code: '123456' })).json().code).toBe('invalid_code');
+    // The code used to switch it on can't be used again; the next one works, once.
+    expect((await login({ code: codeAt(secret, step) })).statusCode).toBe(401);
+    expect((await login({ code: codeAt(secret, step + 1) })).statusCode).toBe(200);
+    expect((await login({ code: codeAt(secret, step + 1) })).statusCode).toBe(401);
+
+    const backup = enabled.json().recoveryCodes[0];
+    expect((await login({ code: backup.toUpperCase() })).statusCode).toBe(200);
+    expect((await login({ code: backup })).statusCode).toBe(401);
+    // A wrong password never reveals whether a second step exists.
+    const wrong = await ctx.app.inject({ method: 'POST', url: '/api/admin/login', payload: { email: 'admin@gamerxp.nl', password: 'fout' } });
+    expect(wrong.json().code).toBe('invalid_credentials');
+  });
+
+  it('can be switched off with the password, or reset by an owner', async () => {
+    const { codeAt, currentStep } = await import('../src/lib/totp.js');
+    const { secret } = (await call(owner, 'POST', '/me/2fa/setup')).json();
+    await call(owner, 'POST', '/me/2fa/enable', { code: codeAt(secret, currentStep()) });
+    expect((await call(owner, 'POST', '/me/2fa/disable', { password: 'fout' })).statusCode).toBe(400);
+    expect((await call(owner, 'POST', '/me/2fa/disable', { password: 'correct-horse-battery' })).statusCode).toBe(204);
+    expect((await login({})).statusCode).toBe(200);
+
+    const { user, token } = await addAssistant();
+    const lisa = (await call(token, 'POST', '/me/2fa/setup')).json();
+    await call(token, 'POST', '/me/2fa/enable', { code: codeAt(lisa.secret, currentStep()) });
+    expect((await call(owner, 'GET', '/users')).json().find((u: { id: number }) => u.id === user.id).twoFactor).toBe(true);
+    expect((await call(token, 'POST', `/users/${user.id}/2fa-reset`)).statusCode).toBe(403);
+    expect((await call(owner, 'POST', `/users/${user.id}/2fa-reset`)).statusCode).toBe(204);
+    expect((await ctx.app.inject({ method: 'POST', url: '/api/admin/login', payload: { email: 'lisa@gamerxp.nl', password: 'lisa-wachtwoord-1' } })).statusCode).toBe(200);
+  });
+});

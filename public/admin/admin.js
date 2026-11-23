@@ -87,7 +87,7 @@ async function api(path, options = {}) {
     throw new Error('Sessie verlopen, log opnieuw in.');
   }
   const body = res.status === 204 ? null : await res.json().catch(() => null);
-  if (!res.ok) throw new Error(body?.error || `Fout ${res.status}`);
+  if (!res.ok) throw Object.assign(new Error(body?.error || `Fout ${res.status}`), { code: body?.code });
   return body;
 }
 const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(body ?? {}) });
@@ -188,10 +188,20 @@ function loginView() {
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     try {
-      const { token } = await api('/login', { method: 'POST', body: JSON.stringify(Object.fromEntries(new FormData(form))) });
+      const data = Object.fromEntries(new FormData(form));
+      if (!data.code) delete data.code;
+      const { token } = await api('/login', { method: 'POST', body: JSON.stringify(data) });
       setToken(token);
       render();
     } catch (err) {
+      // Password accepted, second step needed: ask for the code and stay on the form.
+      const codeField = form.querySelector('#l-code-field');
+      if (err.code === 'two_factor_required') {
+        codeField.hidden = false;
+        form.querySelector('#l-code').focus();
+        return;
+      }
+      if (err.code === 'invalid_code') form.querySelector('#l-code').select();
       flash('error', err.message);
     }
   });
@@ -1149,7 +1159,9 @@ async function usersView() {
           onchange: action((e) => patchJson(`/users/${u.id}`, { role: e.target.value }), 'Rol gewijzigd.'),
         }, Object.entries(ROLES).map(([key, label]) => h('option', { value: key, selected: key === u.role }, label)))),
         h('td', { class: 'inline' },
+          u.twoFactor ? badge('2 stappen', 'success') : badge('alleen wachtwoord', 'warning'),
           h('button', { class: 'btn small', onclick: action(newPassword(u), 'Wachtwoord gewijzigd. De gebruiker moet opnieuw inloggen.') }, 'Nieuw wachtwoord'),
+          u.twoFactor && u.id !== me.id && h('button', { class: 'btn small', onclick: action(() => confirm(`Tweestapsverificatie van ${u.email} uitzetten? Doe dit alleen als die persoon de telefoon kwijt is.`) ? post(`/users/${u.id}/2fa-reset`) : false, 'Tweestapsverificatie uitgezet.') }, '2 stappen resetten'),
           u.id !== me.id && h('button', { class: 'btn small danger', onclick: action(() => confirm(`${u.email} verwijderen?`) ? del(`/users/${u.id}`) : false, 'Gebruiker verwijderd.') }, 'Verwijderen'))))))));
   const form = h('form', { class: 'card', onsubmit: action(() => post('/users', Object.fromEntries(new FormData(form))), 'Gebruiker toegevoegd.') },
     h('h2', {}, 'Gebruiker toevoegen'),
@@ -1221,6 +1233,49 @@ async function pushCard() {
   return box;
 }
 
+// Two-step login: set up, show backup codes once, or switch off.
+function twoFactorCard() {
+  const box = h('section', { class: 'card', style: 'max-width:480px' }, h('h2', {}, 'Tweestapsverificatie'));
+  if (me.twoFactor) {
+    const off = h('form', { class: 'inline', onsubmit: action(() => post('/me/2fa/disable', { password: off.elements.password.value }), 'Tweestapsverificatie uitgezet.') },
+      field('Je wachtwoord', h('input', { name: 'password', type: 'password', required: true, autocomplete: 'current-password' })),
+      h('button', { class: 'btn danger', type: 'submit' }, 'Uitzetten'));
+    box.append(h('p', {}, badge('Aan', 'success'), ' Bij het inloggen vraagt de admin om een code uit je authenticator-app.'),
+      h('details', { class: 'collapsible' }, h('summary', {}, 'Uitzetten'), h('div', { style: 'margin-top:10px' }, off)));
+    return box;
+  }
+  const start = h('button', { class: 'btn primary', onclick: async () => {
+    try {
+      const { secret, qrSvg } = await post('/me/2fa/setup');
+      const qr = h('div', { class: 'qr-code', style: 'background:#fff;padding:8px;border-radius:8px;max-width:240px' });
+      qr.innerHTML = qrSvg;
+      const confirmForm = h('form', { class: 'inline', onsubmit: async (e) => {
+        e.preventDefault();
+        try {
+          const { recoveryCodes } = await post('/me/2fa/enable', { code: confirmForm.elements.code.value });
+          box.replaceChildren(h('h2', {}, 'Tweestapsverificatie staat aan'),
+            h('p', {}, h('strong', {}, 'Bewaar deze back-upcodes nu.'), ' Je ziet ze maar één keer. Met elke code kun je één keer inloggen als je je telefoon niet bij de hand hebt.'),
+            h('pre', { class: 'codes' }, recoveryCodes.join('\n')),
+            h('button', { class: 'btn', onclick: async () => { try { await navigator.clipboard.writeText(recoveryCodes.join('\n')); flash('ok', 'Back-upcodes gekopieerd.'); } catch { flash('error', 'Kopiëren lukte niet; schrijf ze over.'); } } }, 'Kopiëren'),
+            h('button', { class: 'btn primary', style: 'margin-left:8px', onclick: () => render() }, 'Ik heb ze bewaard'));
+        } catch (err) { flash('error', err.message); }
+      } },
+        field('Code uit de app', h('input', { name: 'code', required: true, inputmode: 'numeric', autocomplete: 'one-time-code', maxlength: 10, style: 'width:120px' })),
+        h('button', { class: 'btn primary', type: 'submit' }, 'Aanzetten'));
+      box.replaceChildren(h('h2', {}, 'Tweestapsverificatie instellen'),
+        h('ol', {},
+          h('li', {}, 'Open een authenticator-app op je telefoon, bijvoorbeeld Google Authenticator of Microsoft Authenticator.'),
+          h('li', {}, 'Scan deze QR-code met de app.'),
+          h('li', {}, 'Vul hieronder de code van 6 cijfers in die de app toont.')),
+        qr,
+        h('p', { class: 'muted small' }, 'Lukt scannen niet? Typ deze sleutel in de app: ', h('code', {}, secret)),
+        confirmForm);
+    } catch (err) { flash('error', err.message); }
+  } }, 'Instellen');
+  box.append(h('p', { class: 'muted' }, 'Extra beveiliging: naast je wachtwoord vraagt de admin bij het inloggen om een code van je telefoon. Zonder je telefoon komt niemand binnen, ook niet met je wachtwoord.'), start);
+  return box;
+}
+
 async function accountView() {
   setPage('Mijn account');
   const form = h('form', { class: 'card', style: 'max-width:480px', onsubmit: action(async () => {
@@ -1234,7 +1289,7 @@ async function accountView() {
     field('Nieuw wachtwoord (minimaal 12 tekens)', h('input', { name: 'password', type: 'password', required: true, minlength: 12, autocomplete: 'new-password' })),
     field('Herhaal nieuw wachtwoord', h('input', { name: 'repeat', type: 'password', required: true, minlength: 12, autocomplete: 'new-password' })),
     h('button', { class: 'btn primary', type: 'submit' }, 'Opslaan'));
-  view.replaceChildren(await pushCard(), form);
+  view.replaceChildren(twoFactorCard(), await pushCard(), form);
 }
 
 // Assistants can look at bookings but not change them: switch the controls off.

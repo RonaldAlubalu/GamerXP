@@ -56,6 +56,11 @@
       <h1>Gamer Xperience Admin</h1>
       <div class="field"><label for="l-email">E-mail</label><input id="l-email" name="email" type="email" required autocomplete="username"></div>
       <div class="field"><label for="l-pass">Wachtwoord</label><input id="l-pass" name="password" type="password" required autocomplete="current-password"></div>
+      <div class="field" id="l-code-field" hidden>
+        <label for="l-code">Code uit je authenticator-app</label>
+        <input id="l-code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="20" placeholder="123456">
+        <small class="muted">Telefoon kwijt? Vul een van je back-upcodes in.</small>
+      </div>
       <button class="btn primary" type="submit">Inloggen</button>
     </form>
   </template>

@@ -140,6 +140,9 @@ export async function buildApp({ config, db, mailer, distance, mollie, mailSourc
       return reply.status(err.statusCode).send({ error: err.message, code: err.code });
     }
     const status = (err as { statusCode?: number }).statusCode ?? 500;
+    if (status === 429) {
+      return reply.status(429).send({ error: 'Te veel pogingen achter elkaar. Wacht een paar minuten en probeer het opnieuw.', code: 'rate_limited' });
+    }
     if (status >= 500) {
       req.log.error(err);
       return reply.status(500).send({ error: 'Er ging iets mis. Probeer het later opnieuw.', code: 'internal_error' });

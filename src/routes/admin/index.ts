@@ -2,6 +2,7 @@ import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { generateSessionToken, hashToken, verifyPassword } from '../../lib/auth.js';
 import { HttpError } from '../../lib/errors.js';
+import { verifyCode } from '../../lib/totp.js';
 import { runMailImport } from '../../services/mail-import.js';
 import { checkSystem } from '../../services/status.js';
 import { availabilityRoutes } from './availability.js';
@@ -12,7 +13,7 @@ import { assistantMayCall, userRoutes, type Role } from './users.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
-    admin?: { id: number; email: string; name: string; role: Role; tokenHash: string };
+    admin?: { id: number; email: string; name: string; role: Role; twoFactor: boolean; tokenHash: string };
   }
 }
 
@@ -29,16 +30,32 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     '/login',
     { config: { rateLimit: { max: 10, timeWindow: '15 minutes' } } },
     async (req) => {
-      const { email, password } = z
-        .object({ email: z.string().trim().toLowerCase(), password: z.string().min(1) })
+      const { email, password, code } = z
+        .object({ email: z.string().trim().toLowerCase(), password: z.string().min(1), code: z.string().trim().max(20).optional() })
         .parse(req.body);
-      const { rows } = await app.db.query<{ id: number; password_hash: string }>(
-        'SELECT id, password_hash FROM admin_users WHERE email = $1',
+      const { rows } = await app.db.query<{
+        id: number; password_hash: string; totp_enabled: boolean; totp_secret: string | null; totp_last_step: string; recovery_codes: string[];
+      }>(
+        'SELECT id, password_hash, totp_enabled, totp_secret, totp_last_step, recovery_codes FROM admin_users WHERE email = $1',
         [email],
       );
       const user = rows[0];
       const ok = await verifyPassword(password, user?.password_hash ?? DUMMY_HASH);
       if (!user || !ok) throw new HttpError(401, 'Onjuist e-mailadres of wachtwoord.', 'invalid_credentials');
+
+      // Second step: a code from the authenticator app, or a one-time backup code.
+      if (user.totp_enabled && user.totp_secret) {
+        if (!code) throw new HttpError(401, 'Vul de code uit je authenticator-app in.', 'two_factor_required');
+        const step = verifyCode(user.totp_secret, code, Number(user.totp_last_step));
+        const backup = hashToken(code.toLowerCase());
+        if (step !== null) {
+          await app.db.query('UPDATE admin_users SET totp_last_step = $2 WHERE id = $1', [user.id, step]);
+        } else if (user.recovery_codes.includes(backup)) {
+          await app.db.query('UPDATE admin_users SET recovery_codes = array_remove(recovery_codes, $2) WHERE id = $1', [user.id, backup]);
+        } else {
+          throw new HttpError(401, 'Deze code klopt niet of is al gebruikt. Probeer de volgende code.', 'invalid_code');
+        }
+      }
 
       const token = generateSessionToken();
       const expires = await app.db.query<{ expires_at: Date }>(
@@ -58,8 +75,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       const token = bearerToken(req);
       if (!token) throw new HttpError(401, 'Niet ingelogd.', 'unauthenticated');
       const tokenHash = hashToken(token);
-      const { rows } = await app.db.query<{ id: number; email: string; name: string; role: Role }>(
-        `SELECT u.id, u.email, u.name, u.role FROM admin_sessions s JOIN admin_users u ON u.id = s.user_id
+      const { rows } = await app.db.query<{ id: number; email: string; name: string; role: Role; twoFactor: boolean }>(
+        `SELECT u.id, u.email, u.name, u.role, u.totp_enabled AS "twoFactor" FROM admin_sessions s JOIN admin_users u ON u.id = s.user_id
           WHERE s.token_hash = $1 AND s.expires_at > now()`,
         [tokenHash],
       );
@@ -76,6 +93,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       email: req.admin!.email,
       name: req.admin!.name,
       role: req.admin!.role,
+      twoFactor: req.admin!.twoFactor,
       // Lets the admin page point out missing setup.
       reviewUrlConfigured: Boolean(app.config.GOOGLE_REVIEW_URL),
       emailConfigured: Boolean(app.config.SMTP_HOST),

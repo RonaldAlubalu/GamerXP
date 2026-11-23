@@ -72,6 +72,10 @@ jobs:
             echo "::error::Logged in as ${DEPLOY_USER:-root}, but that user cannot run admin commands without a password (sudo)."
             exit 1
           fi
+          # Send the files of this version over SSH, so the server needs no access to GitHub
+          # (the repository can be private).
+          git archive HEAD | gzip | $SSH "$TARGET" \
+            'if [ "$(id -u)" = 0 ]; then S=""; else S="sudo -n"; fi; $S mkdir -p /opt/gamerxp && $S tar xzf - -C /opt/gamerxp'
           # Hand the built image to the server. A brand-new server has no Docker yet and builds once itself.
           LOADED=0
           if $SSH "$TARGET" 'command -v docker >/dev/null'; then
@@ -90,12 +94,7 @@ jobs:
           printf "export EBOEKHOUDEN_TOKEN='%s'\n" "$(clean "$EBOEKHOUDEN_TOKEN")"
           cat <<'REMOTE'
           set -e
-          if [ -d /opt/gamerxp/.git ]; then
-            git -C /opt/gamerxp pull --ff-only
-          else
-            command -v git >/dev/null || { apt-get update -q && apt-get install -y -q git; }
-            git clone https://github.com/RonaldAlubalu/GamerXP.git /opt/gamerxp
-          fi
+          export FILES_DELIVERED=1
           sh /opt/gamerxp/deploy/setup-server.sh
           REMOTE
           } | $SSH "$TARGET" 'if [ "$(id -u)" = 0 ]; then sh -s; else sudo -n sh -s; fi'

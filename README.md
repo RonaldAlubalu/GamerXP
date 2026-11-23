@@ -53,7 +53,7 @@ Run `sh /opt/gamerxp/deploy/setup-server.sh gamerxp.nl` later to switch to the r
 
 ### Updating
 
-Every push updates the server by itself: GitHub builds the site and loads it onto the server over SSH. The deploy also writes these repository secrets into the server's `.env`, so changing one takes effect at the next deploy (Actions → Deploy → Run workflow):
+Every push updates the server by itself: GitHub builds the site and sends it, with the files it needs, to the server over SSH. The server never reads from GitHub, so the repository can be private. The deploy also writes these repository secrets into the server's `.env`, so changing one takes effect at the next deploy (Actions → Deploy → Run workflow):
 
 | Secret | What it sets |
 |---|---|

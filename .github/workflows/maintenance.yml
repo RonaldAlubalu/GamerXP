@@ -42,7 +42,6 @@ jobs:
 
           status=0
           $SSH "$TARGET" "$AS_ROOT" > report/output.txt 2> report/errors.txt <<'REMOTE' || status=$?
-          git -C /opt/gamerxp pull --ff-only >/dev/null 2>&1
           sh /opt/gamerxp/deploy/maintenance.sh
           REMOTE
           grep -v '^LATEST_BACKUP=' report/output.txt > report/report.md || true

@@ -49,10 +49,14 @@ ufw allow 80 >/dev/null
 ufw allow 443 >/dev/null
 ufw --force enable >/dev/null
 
-echo "==> Getting the code"
-if [ -d "$DIR/.git" ]; then
+# The deploy from GitHub delivers the files itself; run by hand, this fetches them.
+if [ "${FILES_DELIVERED:-}" = 1 ]; then
+  echo "==> Using the files delivered by the deploy"
+elif [ -d "$DIR/.git" ]; then
+  echo "==> Getting the code"
   git -C "$DIR" pull --ff-only
 else
+  echo "==> Getting the code"
   git clone "$REPO" "$DIR"
 fi
 cd "$DIR"

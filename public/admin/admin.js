@@ -288,22 +288,23 @@ async function listView() {
 }
 
 // Ready-made messages, grouped by the moment you need them. {placeholders} are filled from the booking.
-// They work for email and for WhatsApp; the subject is only used for email.
+// They work for email and for WhatsApp; the subject is only used for email. A template with a
+// `status` also moves the booking on to that stage when the message is sent.
 const TEMPLATES = [
-  { group: 'Na de aanvraag', label: 'Vraag naar details',
+  { group: 'Na de aanvraag', label: 'Vraag naar details', status: 'contacted',
     subject: 'Je aanvraag bij Gamer Xperience ({ref})',
     body: 'Hoi {naam},\n\nBedankt voor je aanvraag voor {datum}! Om alles goed voor te bereiden heb ik nog een paar vragen:\n\n- Hoeveel kinderen komen er ongeveer?\n- In welke ruimte vindt het feest plaats, en is er een grote tafel?\n- Zijn er favoriete games?\n\nLaat het me weten, dan zet ik je datum vast.' },
-  { group: 'Na de aanvraag', label: 'Prijsopgave',
+  { group: 'Na de aanvraag', label: 'Prijsopgave', status: 'contacted',
     subject: 'Prijsopgave voor je feest ({ref})',
     body: 'Hoi {naam},\n\nHierbij de prijsopgave voor {datum}:\n\n{prijsregels}\n\nTotaal: {totaal}\n\nOm de datum vast te zetten vragen we een aanbetaling van {aanbetaling}. Laat je weten of je akkoord bent?' },
-  { group: 'Na de aanvraag', label: 'Datum niet beschikbaar, andere datum?',
+  { group: 'Na de aanvraag', label: 'Datum niet beschikbaar, andere datum?', status: 'contacted',
     subject: 'Over je aanvraag voor {datum}',
     body: 'Hoi {naam},\n\nHelaas zijn we op {datum} al volgeboekt. Zou een andere datum ook kunnen? Op gamerxp.nl/reserveer zie je welke dagen nog vrij zijn. Je mag me ook een paar data doorgeven, dan kijk ik met je mee.' },
   { group: 'Na de aanvraag', label: 'Het duurt iets langer',
     subject: 'Je aanvraag bij Gamer Xperience ({ref})',
     body: 'Hoi {naam},\n\nBedankt voor je geduld! Het is op dit moment erg druk, waardoor het iets langer duurt dan je van ons gewend bent. Je aanvraag voor {datum} staat genoteerd en je hoort uiterlijk morgen van mij.' },
 
-  { group: 'Bevestigen en betalen', label: 'Datum is vrij, aanbetaling gevraagd',
+  { group: 'Bevestigen en betalen', label: 'Datum is vrij, aanbetaling gevraagd', status: 'confirmed',
     subject: 'Goed nieuws: je datum is vrij ({ref})',
     body: 'Hoi {naam},\n\nGoed nieuws: {datum} is vrij en ik heb {feest} voor je vastgezet!\n\nDe prijs komt op {totaal}. Om de datum definitief te maken vragen we een aanbetaling van {aanbetaling}, binnen 5 dagen. Betalen en de voortgang volgen kan via deze link:\n{statuslink}\n\nHeb je nog vragen, stel ze gerust.' },
   { group: 'Bevestigen en betalen', label: 'Herinnering aanbetaling',
@@ -413,11 +414,22 @@ function composer({ booking, contact, onSubmit, emailConfigured }) {
       if (t && (!body.value.trim() || confirm('Je getypte bericht vervangen door dit sjabloon?'))) {
         subject.value = fillTemplate(t.subject, booking ?? contact);
         body.value = fillTemplate(t.body, booking ?? contact);
+        // Only ever forwards, and not for finished or cancelled bookings.
+        const ahead = booking && t.status && STAGES.indexOf(booking.status) >= 0 && STAGES.indexOf(t.status) > STAGES.indexOf(booking.status);
+        moveBox.hidden = !ahead;
+        moveCheck.checked = Boolean(ahead);
+        moveCheck.value = ahead ? t.status : '';
+        moveLabel.textContent = ahead ? ` Na versturen de boeking op "${STATUS_LABELS[t.status]}" zetten (ook zichtbaar voor de klant)` : '';
       }
       e.target.value = '';
     },
   }, h('option', { value: '' }, 'Kies een sjabloon…'),
     groups.map((g) => h('optgroup', { label: g }, templates.map((t, i) => t.group === g && h('option', { value: i }, t.label)))));
+  // Sending some templates moves the booking to the next stage, so the admin and the customer's page stay in step.
+  const moveCheck = h('input', { type: 'checkbox' });
+  const moveLabel = h('span', {});
+  const moveBox = h('label', { class: 'check', hidden: true, style: 'margin:8px 0' }, moveCheck, moveLabel);
+  const moveTo = () => (!moveBox.hidden && moveCheck.checked ? moveCheck.value : undefined);
   const templateRow = templateSelect && h('div', { class: 'field template-row' }, h('label', {}, 'Sjabloon'), templateSelect);
 
   const emailFields = h('div', { class: 'field', style: 'margin-bottom:8px' }, subject);
@@ -430,7 +442,7 @@ function composer({ booking, contact, onSubmit, emailConfigured }) {
     onclick: (e) => {
       if (!body.value.trim()) return flash('error', 'Typ eerst je bericht.');
       window.open(`https://wa.me/${digits}?text=${encodeURIComponent(body.value.trim())}`, '_blank', 'noopener');
-      action(() => onSubmit({ direction: 'out', channel: 'whatsapp', body: body.value, send: false }))(e);
+      action(() => onSubmit({ direction: 'out', channel: 'whatsapp', body: body.value, send: false }, moveTo()))(e);
     },
   }, 'Via WhatsApp sturen');
   const tabButtons = [
@@ -448,9 +460,9 @@ function composer({ booking, contact, onSubmit, emailConfigured }) {
   return h('form', {
     onsubmit: action(() => onSubmit(mode === 'email'
       ? { direction: 'out', channel: 'email', subject: subject.value, body: body.value, send: true }
-      : { direction: direction.value, channel: channel.value, body: body.value, send: false })),
+      : { direction: direction.value, channel: channel.value, body: body.value, send: false }, mode === 'email' ? moveTo() : undefined)),
   },
-    h('div', { class: 'tabs' }, tabButtons), templateRow, emailFields, logFields, h('div', { class: 'field' }, body),
+    h('div', { class: 'tabs' }, tabButtons), templateRow, emailFields, logFields, h('div', { class: 'field' }, body), moveBox,
     !emailConfigured && h('p', { class: 'muted small' }, 'Let op: e-mail (SMTP) is nog niet ingesteld. Berichten worden gelogd maar niet echt verstuurd.'),
     h('div', { class: 'inline' }, submit, whatsapp));
 }
@@ -640,9 +652,11 @@ async function bookingDetailView(id) {
     composer({
       booking: b,
       emailConfigured: me.emailConfigured,
-      onSubmit: async (msg) => {
+      onSubmit: async (msg, status) => {
         await post(`/bookings/${id}/messages`, msg);
-        flash('ok', msg.send ? 'E-mail verstuurd.' : 'Bericht opgeslagen.');
+        // Your own message is the notification, so no second automatic email.
+        if (status) await patchJson(`/bookings/${id}`, { status, notifyCustomer: false });
+        flash('ok', `${msg.send ? 'E-mail verstuurd.' : 'Bericht opgeslagen.'}${status ? ` Boeking staat nu op "${STATUS_LABELS[status]}".` : ''}`);
       },
     }),
     messageThread(b.communications));

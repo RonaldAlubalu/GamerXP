@@ -417,3 +417,11 @@ dl.summary dd { margin: 0; }
 .posts.two { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin-top: 16px; }
 .posts.two .post-card h3 { color: var(--cyan); font-size: 1.1rem; margin: 6px 0 0; }
 @media (max-width: 640px) { .article-cta .btn { width: 100%; text-align: center; } }
+
+/* Other audiences: LAN parties, tournaments, events */
+.audience-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); gap: 24px; margin: 36px auto 24px; }
+.more-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px; margin-top: 28px; }
+.more-cards a.card { text-decoration: none; color: var(--text); transition: transform .15s, border-color .15s; }
+.more-cards a.card:hover { transform: translateY(-3px); border-color: var(--green); }
+.more-cards h3 { color: var(--cyan); margin-top: 0; }
+.more-cards p { color: var(--muted); margin: 0; }

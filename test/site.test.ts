@@ -13,7 +13,7 @@ describe('website pages', async () => {
     for (const route of [
       '/', '/pakketten-prijzen', '/reserveer', '/about', '/contact', '/ervaringen', '/gaming-evenement-op-locatie',
       '/game-kinderfeestje-in-eindhoven', '/game-kinderfeestje-in-utrecht', '/gaming-birthday-party-netherlands',
-      '/verhalen', '/algemene-voorwaarden',
+      '/verhalen', '/algemene-voorwaarden', '/lan-party-toernooien',
       '/verhalen/30-kids-op-een-evenement-zo-vermaken-wij-grote-groepen-zonder-chaos-',
       '/verhalen/game-kinderfeestje-thuis-vs-trampolinepark-vs-gamestate-wat-past-bij-jouw-kind',
       '/verhalen/gamefeestje-voor-alle-leeftijden-hoe-cht-iedereen-mee-kan-doen',

@@ -307,6 +307,12 @@ const TEMPLATES = [
   { group: 'Bevestigen en betalen', label: 'Datum is vrij, aanbetaling gevraagd', status: 'confirmed',
     subject: 'Goed nieuws: je datum is vrij ({ref})',
     body: 'Hoi {naam},\n\nGoed nieuws: {datum} is vrij en ik heb {feest} voor je vastgezet!\n\nDe prijs komt op {totaal}. Om de datum definitief te maken vragen we een aanbetaling van {aanbetaling}, binnen 5 dagen. Betalen en de voortgang volgen kan via deze link:\n{statuslink}\n\nHeb je nog vragen, stel ze gerust.' },
+  { group: 'Bevestigen en betalen', label: 'Datum is vrij, met factuur aanbetaling', status: 'confirmed', invoice: 'deposit',
+    subject: 'Goed nieuws: je datum is vrij ({ref})',
+    body: 'Hoi {naam},\n\nGoed nieuws: {datum} is vrij en ik heb {feest} voor je vastgezet!\n\nDe prijs komt op {totaal}. Om de datum definitief te maken vragen we een aanbetaling van {aanbetaling}, binnen 5 dagen. De factuur zit in de bijlage; betalen gaat het makkelijkst met de QR-code op de factuur.\n\nDe voortgang van je feest volg je hier:\n{statuslink}\n\nHeb je nog vragen, stel ze gerust.' },
+  { group: 'Bevestigen en betalen', label: 'Factuur restbedrag', invoice: 'final',
+    subject: 'Factuur voor je feest ({ref})',
+    body: 'Hoi {naam},\n\nIn de bijlage vind je de factuur voor het restbedrag van {feest} op {datum}. De aanbetaling is er al af. Betalen kan tot en met de dag van het feest; het makkelijkst gaat dat met de QR-code op de factuur.\n\nTot snel!' },
   { group: 'Bevestigen en betalen', label: 'Herinnering aanbetaling',
     subject: 'Herinnering aanbetaling ({ref})',
     body: 'Hoi {naam},\n\nWe hebben je aanbetaling van {aanbetaling} voor {datum} nog niet ontvangen. Zou je die binnen een paar dagen willen voldoen? Dat kan via {statuslink} of per overboeking onder vermelding van {ref}. Daarna staat je feest definitief vast.' },
@@ -398,14 +404,15 @@ function messageThread(items) {
 }
 
 // Send an email, or log a WhatsApp message, call or email received elsewhere.
-function composer({ booking, contact, onSubmit, emailConfigured }) {
+function composer({ booking, contact, onSubmit, emailConfigured, invoicing }) {
   let mode = 'email';
   const subject = h('input', { name: 'subject', maxlength: 200, placeholder: 'Onderwerp' });
   const body = h('textarea', { name: 'body', required: true, rows: 7, placeholder: 'Typ je bericht… (je ondertekening wordt bij e-mails automatisch toegevoegd)' });
   const direction = h('select', { name: 'direction' }, h('option', { value: 'in' }, 'Ontvangen van klant'), h('option', { value: 'out' }, 'Verstuurd aan klant'));
   const channel = h('select', { name: 'channel' }, ['whatsapp', 'phone', 'email', 'in_person', 'other'].map((c) => h('option', { value: c }, CHANNELS[c])));
   // Templates fill the message for email and WhatsApp alike.
-  const templates = booking ? TEMPLATES : contact ? CONTACT_TEMPLATES : [];
+  // Templates that send an invoice along need the bookkeeping to be connected.
+  const templates = booking ? TEMPLATES.filter((t) => !t.invoice || invoicing) : contact ? CONTACT_TEMPLATES : [];
   const groups = [...new Set(templates.map((t) => t.group))];
   const templateSelect = templates.length > 0 && h('select', {
     'aria-label': 'Sjabloon',
@@ -419,6 +426,14 @@ function composer({ booking, contact, onSubmit, emailConfigured }) {
         moveBox.hidden = !ahead;
         moveCheck.checked = Boolean(ahead);
         moveCheck.value = ahead ? t.status : '';
+        const INVOICE = { deposit: 'aanbetaling', final: 'restbedrag' };
+        const has = t.invoice && booking.invoices.find((i) => i.kind === t.invoice);
+        invoiceBox.hidden = !t.invoice;
+        invoiceCheck.checked = Boolean(t.invoice);
+        invoiceCheck.value = t.invoice ?? '';
+        invoiceLabel.textContent = t.invoice
+          ? ` Factuur ${INVOICE[t.invoice]} als pdf meesturen (${has ? `factuur ${has.number}` : 'wordt nu aangemaakt in e-Boekhouden'})`
+          : '';
         moveLabel.textContent = ahead ? ` Na versturen de boeking op "${STATUS_LABELS[t.status]}" zetten (ook zichtbaar voor de klant)` : '';
       }
       e.target.value = '';
@@ -429,6 +444,10 @@ function composer({ booking, contact, onSubmit, emailConfigured }) {
   const moveCheck = h('input', { type: 'checkbox' });
   const moveLabel = h('span', {});
   const moveBox = h('label', { class: 'check', hidden: true, style: 'margin:8px 0' }, moveCheck, moveLabel);
+  const invoiceCheck = h('input', { type: 'checkbox' });
+  const invoiceLabel = h('span', {});
+  const invoiceBox = h('label', { class: 'check', hidden: true, style: 'margin:8px 0' }, invoiceCheck, invoiceLabel);
+  const attachInvoice = () => (!invoiceBox.hidden && invoiceCheck.checked ? invoiceCheck.value : undefined);
   const moveTo = () => (!moveBox.hidden && moveCheck.checked ? moveCheck.value : undefined);
   const templateRow = templateSelect && h('div', { class: 'field template-row' }, h('label', {}, 'Sjabloon'), templateSelect);
 
@@ -459,10 +478,10 @@ function composer({ booking, contact, onSubmit, emailConfigured }) {
   }
   return h('form', {
     onsubmit: action(() => onSubmit(mode === 'email'
-      ? { direction: 'out', channel: 'email', subject: subject.value, body: body.value, send: true }
+      ? { direction: 'out', channel: 'email', subject: subject.value, body: body.value, send: true, attachInvoice: attachInvoice() }
       : { direction: direction.value, channel: channel.value, body: body.value, send: false }, mode === 'email' ? moveTo() : undefined)),
   },
-    h('div', { class: 'tabs' }, tabButtons), templateRow, emailFields, logFields, h('div', { class: 'field' }, body), moveBox,
+    h('div', { class: 'tabs' }, tabButtons), templateRow, emailFields, logFields, h('div', { class: 'field' }, body), invoiceBox, moveBox,
     !emailConfigured && h('p', { class: 'muted small' }, 'Let op: e-mail (SMTP) is nog niet ingesteld. Berichten worden gelogd maar niet echt verstuurd.'),
     h('div', { class: 'inline' }, submit, whatsapp));
 }
@@ -678,6 +697,7 @@ async function bookingDetailView(id) {
   const commCard = card(cardHead('Communicatie', isOpen(b) && waitingBadge(b.waitingOn)),
     composer({
       booking: b,
+      invoicing: me.bookkeepingConfigured,
       emailConfigured: me.emailConfigured,
       onSubmit: async (msg, status) => {
         await post(`/bookings/${id}/messages`, msg);

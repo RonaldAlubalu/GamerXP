@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { formatDutchDate, today } from '../lib/dates.js';
+import { daysBetween, formatDutchDate, today } from '../lib/dates.js';
 import { HttpError } from '../lib/errors.js';
 import type { InvoiceLine } from './bookkeeping.js';
 import { addEvent } from './pipeline.js';
@@ -93,7 +93,8 @@ export async function createInvoice(app: FastifyInstance, bookingId: string, kin
       customer: { code: b.reference, name: b.parentName, street: b.street, postalCode: b.postalCode, city: b.city, email: b.email },
       date: today(app.config.TIMEZONE),
       number,
-      termDays: kind === 'deposit' ? 5 : 14,
+      // The deposit is due within 5 days; the rest on the day of the party.
+      termDays: kind === 'deposit' ? 5 : Math.max(0, daysBetween(today(app.config.TIMEZONE), b.partyDate)),
       reference: b.reference,
       text: `${party}. Referentie ${b.reference}.`,
       lines,

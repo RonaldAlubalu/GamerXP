@@ -76,7 +76,7 @@ export async function sendAndLog(
     direction: 'out',
     channel: 'email',
     subject: mail.subject,
-    body: mail.text,
+    body: mail.attachments?.length ? `${mail.text}\n\n[Bijlage: ${mail.attachments.map((a) => a.filename).join(', ')}]` : mail.text,
     delivery,
     actor,
     keepTurn: options.keepTurn,

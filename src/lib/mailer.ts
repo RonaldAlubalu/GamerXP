@@ -7,6 +7,8 @@ export interface Mail {
   subject: string;
   text: string;
   replyTo?: string;
+  // Files to send along, fetched from their link (the invoice PDF).
+  attachments?: { filename: string; path: string }[];
   // Notifications to the owner stay plain; emails to customers get the look of the website.
   plain?: boolean;
 }

@@ -38,11 +38,26 @@ describe('invoices in the bookkeeping', () => {
     expect(lines.map((l) => [l.productCode ?? '-', l.quantity, l.priceCents])).toEqual([
       ['GE263', 1, 35000], ['GE267', 1, 2500], ['-', 1, 3000], ['GE266', 1, 5000], ['-', 1, 1500], ['-', 1, -10000],
     ]);
+    // Due on the day of the party (the test booking is 14 days ahead).
+    expect(ctx.invoiced[1]!.termDays).toBe(14);
     expect(lines.at(-1)!.description).toBe('Reeds gefactureerde aanbetaling (factuur F00015-1)');
     const detail = (await call('GET', `/bookings/${id}`)).json();
     expect(detail.invoices.map((i: { kind: string; amountCents: number }) => [i.kind, i.amountCents])).toEqual([['deposit', 10000], ['final', 37000]]);
     expect(detail.priceCents).toBe(47000);
     expect(detail.invoices.map((i: { number: string }) => i.number)).toEqual(['F00015-1', 'F00015-2']);
+  });
+
+  it('sends the invoice along with an email, making it first when needed', async () => {
+    ctx.sent.length = 0;
+    const msg = { direction: 'out', channel: 'email', subject: 'Je datum is vrij', body: 'Hoi Sanne, de factuur zit in de bijlage.', send: true, attachInvoice: 'deposit' };
+    expect((await call('POST', `/bookings/${id}/messages`, msg)).statusCode).toBe(201);
+    expect(ctx.invoiced).toHaveLength(1);
+    expect(ctx.sent[0]!.attachments).toEqual([{ filename: 'Factuur F00015-1.pdf', path: 'https://boekhouding.example/1.pdf' }]);
+    // A second email reuses the invoice.
+    await call('POST', `/bookings/${id}/messages`, msg);
+    expect(ctx.invoiced).toHaveLength(1);
+    const detail = (await call('GET', `/bookings/${id}`)).json();
+    expect(detail.communications[0].body).toContain('[Bijlage: Factuur F00015-1.pdf]');
   });
 
   it('makes each invoice only once and refuses cancelled bookings', async () => {

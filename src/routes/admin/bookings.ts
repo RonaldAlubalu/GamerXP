@@ -49,6 +49,8 @@ export const messageInput = z.object({
   body: z.string().trim().min(1, 'Bericht is leeg.').max(20000),
   // For outgoing email: actually send it (otherwise it's only logged).
   send: z.boolean().default(false),
+  // For outgoing email on a booking: send this invoice along as a PDF, making it first if needed.
+  attachInvoice: z.enum(['deposit', 'final']).optional(),
 });
 
 const PAYMENT_KINDS = {
@@ -382,15 +384,25 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
     const b = await loadBooking(id);
     const by = actorOf(req);
     if (m.direction === 'out' && m.channel === 'email' && m.send) {
+      let attachments: { filename: string; path: string }[] | undefined;
+      if (m.attachInvoice) {
+        const invoices = await listInvoices(app, id);
+        const invoice =
+          invoices.find((i) => i.kind === m.attachInvoice) ??
+          (await createInvoice(app, id, m.attachInvoice, by)).find((i) => i.kind === m.attachInvoice)!;
+        if (!invoice.pdfUrl) throw new HttpError(502, `Factuur ${invoice.number} is gemaakt, maar e-Boekhouden gaf geen pdf-link. De e-mail is niet verstuurd.`, 'no_pdf');
+        attachments = [{ filename: `Factuur ${invoice.number}.pdf`, path: invoice.pdfUrl }];
+      }
       const sent = await sendAndLog(
         app,
         { bookingId: id },
-        { to: b.email, subject: m.subject || `Je aanvraag bij Gamer Xperience (${b.reference})`, text: withSignature(m.body) },
+        { to: b.email, subject: m.subject || `Je aanvraag bij Gamer Xperience (${b.reference})`, text: withSignature(m.body), attachments },
         by,
       );
       if (!sent) throw new HttpError(502, 'De e-mail kon niet worden verstuurd. Hij staat wel in het logboek.', 'send_failed');
     } else {
-      await logCommunication(app, { bookingId: id, ...m, actor: m.direction === 'in' ? b.parentName : by });
+      const { attachInvoice: _unused, ...message } = m;
+      await logCommunication(app, { bookingId: id, ...message, actor: m.direction === 'in' ? b.parentName : by });
     }
     await addEvent(app.db, id, {
       type: 'message',

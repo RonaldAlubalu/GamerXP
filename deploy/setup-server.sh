@@ -71,6 +71,21 @@ if [ -n "${MOLLIE_API_KEY:-}" ]; then
   echo "==> Online payments: Mollie key set (${MOLLIE_API_KEY%%_*} mode)"
   set_env MOLLIE_API_KEY "$MOLLIE_API_KEY"
 fi
+if [ -n "${GMAIL_USER:-}" ] && [ -n "${GMAIL_APP_PASSWORD:-}" ]; then
+  echo "==> Email: sending and reading through the Google mailbox $GMAIL_USER"
+  set_env SMTP_HOST smtp.gmail.com
+  set_env SMTP_PORT 587
+  set_env SMTP_SECURE false
+  set_env SMTP_USER "$GMAIL_USER"
+  set_env SMTP_PASS "$GMAIL_APP_PASSWORD"
+  set_env MAIL_FROM "Gamer Xperience <$GMAIL_USER>"
+  set_env OWNER_EMAIL "$GMAIL_USER"
+  set_env IMAP_HOST imap.gmail.com
+  set_env IMAP_PORT 993
+  set_env IMAP_SECURE true
+  set_env IMAP_USER "$GMAIL_USER"
+  set_env IMAP_PASS "$GMAIL_APP_PASSWORD"
+fi
 
 echo "==> Building and starting the site (the first time takes a few minutes)"
 docker compose up -d --build

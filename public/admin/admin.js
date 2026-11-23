@@ -202,6 +202,22 @@ async function boardView() {
   const [columns, o] = await Promise.all([api('/pipeline'), api('/overview')]);
   setPage('Pipeline', h('a', { class: 'btn', href: '#/calendar' }, 'Agenda'));
 
+  // Parties that are tomorrow: one click opens WhatsApp with the message ready, you press send.
+  const reminders = o.remindersDue && me.role === 'owner' ? await api('/reminders') : [];
+  const remind = (r, channel) => action(() => post(`/bookings/${r.id}/reminder`, { channel }),
+    channel === 'email' ? 'Herinnering gemaild.' : 'Herinnering vastgelegd. Vergeet niet in WhatsApp op verzenden te drukken.');
+  const reminderCard = reminders.length && card('Morgen is het zover: stuur een herinnering',
+    reminders.map((r) => h('div', { class: 'reminder-row' },
+      h('div', {},
+        h('a', { href: `#/bookings/${r.id}` }, h('strong', {}, r.childName ? `${r.childName} (${r.parentName})` : r.parentName)),
+        h('div', { class: 'muted small' }, `${r.startTime ? `${r.startTime} uur` : SLOT_LABELS[r.timeSlot]} · ${r.city}`),
+        h('div', { class: 'muted small reminder-text' }, r.text)),
+      h('div', { class: 'inline' },
+        r.whatsappUrl
+          ? h('a', { class: 'btn small primary', href: r.whatsappUrl, target: '_blank', rel: 'noopener', onclick: () => { remind(r, 'whatsapp')(); } }, 'WhatsApp openen')
+          : h('span', { class: 'muted small' }, 'Geen telefoonnummer'),
+        h('button', { class: 'btn small', onclick: remind(r, 'email') }, 'Per e-mail')))));
+
   const stat = (num, label, href, tone) =>
     h('a', { class: `stat ${num && num !== fmtEuro(0) ? tone : ''}`, href }, h('div', { class: 'num' }, num), h('div', { class: 'lbl' }, label));
   const bookingCard = (b, column) => {
@@ -217,6 +233,7 @@ async function boardView() {
   };
 
   view.replaceChildren(
+    ...(reminderCard ? [reminderCard] : []),
     h('div', { class: 'stats' },
       stat(o.waitingOnMe, 'Boekingen: jouw beurt', '#/list?waitingOn=me', 'alert'),
       stat(o.messagesWaiting, 'Berichten te beantwoorden', '#/messages', 'alert'),
@@ -350,6 +367,16 @@ function composer({ booking, onSubmit, emailConfigured }) {
   const emailFields = h('div', { class: 'inline', style: 'margin-bottom:8px' }, h('div', { class: 'field', style: 'flex:1' }, subject), templateSelect && h('div', { class: 'field' }, templateSelect));
   const logFields = h('div', { class: 'row', hidden: true }, field('Richting', direction), field('Kanaal', channel));
   const submit = h('button', { class: 'btn primary', type: 'submit' }, 'E-mail versturen');
+  // Opens WhatsApp with the typed message ready to send, and keeps a copy in the log.
+  const digits = (booking?.phone ?? '').replace(/\D/g, '').replace(/^00/, '').replace(/^0/, '31');
+  const whatsapp = digits.length >= 9 && h('button', {
+    type: 'button', class: 'btn',
+    onclick: (e) => {
+      if (!body.value.trim()) return flash('error', 'Typ eerst je bericht.');
+      window.open(`https://wa.me/${digits}?text=${encodeURIComponent(body.value.trim())}`, '_blank', 'noopener');
+      action(() => onSubmit({ direction: 'out', channel: 'whatsapp', body: body.value, send: false }))(e);
+    },
+  }, 'Via WhatsApp sturen');
   const tabButtons = [
     h('button', { type: 'button', class: 'on', onclick: () => setMode('email') }, '✉ E-mail sturen'),
     h('button', { type: 'button', onclick: () => setMode('log') }, '✎ WhatsApp / telefoon vastleggen'),
@@ -369,7 +396,7 @@ function composer({ booking, onSubmit, emailConfigured }) {
   },
     h('div', { class: 'tabs' }, tabButtons), emailFields, logFields, h('div', { class: 'field' }, body),
     !emailConfigured && h('p', { class: 'muted small' }, 'Let op: e-mail (SMTP) is nog niet ingesteld. Berichten worden gelogd maar niet echt verstuurd.'),
-    submit);
+    h('div', { class: 'inline' }, submit, whatsapp));
 }
 
 // Mollie: payment links for the customer and the status of online payments.

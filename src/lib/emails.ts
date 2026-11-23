@@ -174,6 +174,28 @@ export function statusChangeMail(status: Status, b: BookingMailData, ctx: MailCo
   }
 }
 
+// The day-before reminder. The same text is used for WhatsApp and for email.
+export function reminderText(b: BookingMailData): string {
+  const party = b.childName ? `het feest van ${b.childName}` : 'jullie Gamer Xperience feest';
+  const time = b.startTime
+    ? `Het feest begint om ${b.startTime}; wij komen ongeveer een uur eerder om alles op te bouwen.`
+    : `We zijn er in de ${(TIME_SLOT_LABELS[b.timeSlot] ?? b.timeSlot).toLowerCase()} en komen ruim op tijd om alles op te bouwen.`;
+  return (
+    `Hoi ${b.parentName.split(' ')[0]}! Morgen is het zover: ${party} 🎮 ${time} ` +
+    `Zorg je voor een vrije tafel en een stopcontact in de buurt? We kijken ernaar uit!\n\nGroetjes, Ronald – Gamer Xperience`
+  );
+}
+
+export function reminderMail(b: BookingMailData): Mail {
+  return { to: b.email, subject: `Morgen is het zover! (${b.reference})`, text: reminderText(b) };
+}
+
+// Link that opens WhatsApp with a message ready to send. Dutch numbers like 06… become 316….
+export function whatsappUrl(phone: string, text: string): string | null {
+  const digits = phone.replace(/\D/g, '').replace(/^00/, '').replace(/^0/, '31');
+  return digits.length >= 9 ? `https://wa.me/${digits}?text=${encodeURIComponent(text)}` : null;
+}
+
 const reviewAsk = (ctx: MailContext) =>
   `Zou je ons willen helpen met een korte review op Google? Daar helpen we andere ouders enorm mee. ` +
   (ctx.reviewUrl ? `Het kost maar een minuutje: ${ctx.reviewUrl}` : `Zoek op "Gamer Xperience" in Google en klik op "Review schrijven".`);

@@ -1,7 +1,9 @@
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { addDays, today } from '../../lib/dates.js';
-import { formatEuro, paymentLinkMail, reviewRequestMail, statusChangeMail, withSignature } from '../../lib/emails.js';
+import {
+  formatEuro, paymentLinkMail, reminderMail, reminderText, reviewRequestMail, statusChangeMail, whatsappUrl, withSignature,
+} from '../../lib/emails.js';
 import { HttpError } from '../../lib/errors.js';
 import { bookingStatus, dateString, TIME_SLOTS, timeString } from '../../lib/schemas.js';
 import { getBookingMailData, recalculatePaid, recalculatePrice } from '../../services/bookings.js';
@@ -90,9 +92,10 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
          count(*) FILTER (WHERE status = 'confirmed' AND paid_cents < deposit_cents)::int AS "depositOpen",
          coalesce(sum(greatest(price_cents - paid_cents, 0)) FILTER (WHERE status NOT IN ('cancelled')), 0)::int AS "outstandingCents",
          count(*) FILTER (WHERE status NOT IN ('cancelled') AND party_date BETWEEN $1 AND $2)::int AS "nextSevenDays",
-         count(*) FILTER (WHERE status IN ('party_held', 'completed') AND review_status = 'none')::int AS "reviewsToRequest"
+         count(*) FILTER (WHERE status IN ('party_held', 'completed') AND review_status = 'none')::int AS "reviewsToRequest",
+         count(*) FILTER (WHERE status IN ('deposit_paid', 'scheduled') AND party_date = $3 AND reminder_sent_at IS NULL)::int AS "remindersDue"
        FROM bookings`,
-      [t, addDays(t, 7)],
+      [t, addDays(t, 7), addDays(t, 1)],
     );
     const messages = await app.db.query<{ count: number }>(
       "SELECT count(*)::int AS count FROM contact_messages WHERE waiting_on = 'me' AND NOT handled",
@@ -404,6 +407,46 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
     if (!sent) throw new HttpError(502, 'De e-mail kon niet worden verstuurd.', 'send_failed');
     await app.db.query("UPDATE bookings SET review_status = 'requested', review_requested_at = now() WHERE id = $1", [id]);
     await addEvent(app.db, id, { type: 'review', message: 'Reviewverzoek verstuurd', actor: actorOf(req) });
+    return loadBooking(id);
+  });
+
+  // Definite parties that are tomorrow and haven't had their reminder yet.
+  app.get('/reminders', async () => {
+    const { rows } = await app.db.query<{ id: string }>(
+      `SELECT id FROM bookings
+        WHERE status IN ('deposit_paid', 'scheduled') AND party_date = $1 AND reminder_sent_at IS NULL
+        ORDER BY start_time NULLS LAST, created_at`,
+      [addDays(today(app.config.TIMEZONE), 1)],
+    );
+    return Promise.all(
+      rows.map(async ({ id }) => {
+        const b = (await getBookingMailData(app.db, id))!;
+        const text = reminderText(b);
+        return {
+          id, reference: b.reference, parentName: b.parentName, childName: b.childName, city: b.city, phone: b.phone,
+          partyDate: b.partyDate, timeSlot: b.timeSlot, startTime: b.startTime, text, whatsappUrl: whatsappUrl(b.phone, text),
+        };
+      }),
+    );
+  });
+
+  // Records the reminder. By email it is sent here; by WhatsApp you send it yourself and this logs it.
+  app.post('/bookings/:id/reminder', async (req) => {
+    const { id } = idParam.parse(req.params);
+    const { channel } = z.object({ channel: z.enum(['whatsapp', 'email']) }).parse(req.body);
+    const data = await getBookingMailData(app.db, id);
+    if (!data) throw new HttpError(404, 'Boeking niet gevonden.', 'not_found');
+    if (channel === 'email') {
+      const sent = await sendAndLog(app, { bookingId: id }, reminderMail(data), actorOf(req), { keepTurn: true });
+      if (!sent) throw new HttpError(502, 'De e-mail kon niet worden verstuurd.', 'send_failed');
+    } else {
+      await logCommunication(app, {
+        bookingId: id, direction: 'out', channel: 'whatsapp', subject: 'Herinnering: morgen is het zover',
+        body: reminderText(data), actor: actorOf(req), keepTurn: true,
+      });
+    }
+    await app.db.query('UPDATE bookings SET reminder_sent_at = now() WHERE id = $1', [id]);
+    await addEvent(app.db, id, { type: 'update', message: `Herinnering verstuurd via ${channel === 'email' ? 'e-mail' : 'WhatsApp'}`, actor: actorOf(req) });
     return loadBooking(id);
   });
 

@@ -2,7 +2,7 @@
 # report. Run it by hand from the Actions tab with "Run workflow".
 # Uses the same secrets as the deploy (DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY).
 # To also copy the backup to a second server, add:
-#   BACKUP_HOST     that server's IP address or hostname
+#   BACKUP_VPS_RD   that server's IP address or hostname (BACKUP_HOST works too)
 #   BACKUP_USER     the login name there
 #   BACKUP_SSH_KEY  a private key that server accepts (default: DEPLOY_SSH_KEY)
 name: Weekly maintenance
@@ -29,7 +29,7 @@ jobs:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          BACKUP_HOST: ${{ secrets.BACKUP_HOST }}
+          BACKUP_HOST: ${{ secrets.BACKUP_VPS_RD || secrets.BACKUP_HOST }}
           BACKUP_USER: ${{ secrets.BACKUP_USER }}
           BACKUP_SSH_KEY: ${{ secrets.BACKUP_SSH_KEY }}
         run: |

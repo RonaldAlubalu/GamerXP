@@ -77,7 +77,7 @@ The mailbox is only read: nothing is marked as read, moved or deleted. Quoted ea
 
 ### Weekly maintenance
 
-Every Monday night GitHub runs `.github/workflows/maintenance.yml`: a database backup, system updates, fresh containers, a health check and a report. The report is on the run's page in the Actions tab (and as a download for 90 days), and on the server in `/opt/gamerxp/reports`. With the secrets `BACKUP_HOST` and `BACKUP_USER` set, the backup is also copied to a second server (`~/backups/gamerxp`, the last 13 are kept).
+Every Monday night GitHub runs `.github/workflows/maintenance.yml`: a database backup, system updates, fresh containers, a health check and a report. The report is on the run's page in the Actions tab (and as a download for 90 days), and on the server in `/opt/gamerxp/reports`. With the secrets `BACKUP_VPS_RD` (the address) and `BACKUP_USER` set, the backup is also copied to a second server (`~/backups/gamerxp`, the last 13 are kept).
 
 ### Backups
 

@@ -75,6 +75,10 @@ Set `IMAP_HOST`, `IMAP_USER` and `IMAP_PASS` to the mailbox customers reply to (
 
 All other email is never downloaded or stored. The mailbox is only read: nothing is marked as read, moved or deleted. Quoted earlier messages are cut from replies, each email is imported once, and the booking switches to "jouw beurt". The first check looks back `IMAP_LOOKBACK_DAYS`. *Berichten → E-mail ophalen* checks right away. Without IMAP, log important replies by hand on the booking ("WhatsApp / telefoon vastleggen", channel *E-mail*).
 
+### Status page
+
+*Systeem* in the admin shows whether every connection works: database, sending and reading email, Mollie, the newest backup, the copy on the second server and the last weekly maintenance. The checks run every ten minutes; a broken connection also shows up as a red tile on the dashboard.
+
 ### Weekly maintenance
 
 Every Monday night GitHub runs `.github/workflows/maintenance.yml`: a database backup, system updates, fresh containers, a health check and a report. The report is on the run's page in the Actions tab (and as a download for 90 days), and on the server in `/opt/gamerxp/reports`. A second server can keep a copy of the backups, and store its own here: see [docs/backup-between-servers.md](docs/backup-between-servers.md).

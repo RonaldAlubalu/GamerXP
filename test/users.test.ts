@@ -56,6 +56,7 @@ describe('admin users', () => {
       ['GET', '/users'],
       ['POST', '/users', { email: 'x@gamerxp.nl', role: 'owner', password: 'heel-lang-wachtwoord' }],
       ['POST', '/mail-import'],
+      ['GET', '/status'],
     ];
     for (const [method, url, payload] of denied) {
       expect((await call(token, method, url, payload)).statusCode, `${method} ${url}`).toBe(403);
@@ -79,6 +80,13 @@ describe('admin users', () => {
     const fresh = await login('lisa@gamerxp.nl', 'door-eigenaar-gezet-1');
     expect((await call(owner, 'DELETE', `/users/${user.id}`)).statusCode).toBe(204);
     expect((await call(fresh, 'GET', '/me')).statusCode).toBe(401);
+  });
+
+  it('shows the owner which connections work', async () => {
+    const status = (await call(owner, 'GET', '/status')).json();
+    const state = Object.fromEntries(status.checks.map((c: { key: string; state: string }) => [c.key, c.state]));
+    expect(state).toMatchObject({ database: 'ok', 'mail-send': 'off', 'mail-read': 'off', mollie: 'off', whatsapp: 'ok' });
+    expect((await call(owner, 'GET', '/overview')).json().systemProblems).toBe(0);
   });
 
   it('always keeps an owner', async () => {

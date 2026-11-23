@@ -241,7 +241,8 @@ async function boardView() {
       stat(fmtEuro(o.outstandingCents), 'Nog te ontvangen', '#/list?payment=outstanding', ''),
       stat(o.nextSevenDays, 'Feestjes komende 7 dagen', '#/calendar', ''),
       stat(o.reviewsToRequest, 'Reviews te vragen', '#/reviews', 'warn'),
-      stat(o.waitingOnCustomer, 'Wachten op klant', '#/list?waitingOn=customer', '')),
+      stat(o.waitingOnCustomer, 'Wachten op klant', '#/list?waitingOn=customer', ''),
+      me.role === 'owner' && o.systemProblems > 0 && stat(o.systemProblems, 'Storing in een koppeling', '#/system', 'alert')),
     h('div', { class: 'board' },
       columns.map((c) => h('section', { class: 'board-col' },
         h('header', {}, h('span', {}, c.label), h('span', { class: 'count' }, c.bookings.length)),
@@ -938,6 +939,17 @@ async function usersView() {
     table, form);
 }
 
+async function systemView(fresh) {
+  const status = await api(fresh ? '/status?fresh=1' : '/status');
+  setPage('Systeem', h('button', { class: 'btn', onclick: async () => { flash('ok', 'Bezig met controleren…'); await systemView(true); updateCounts(); } }, '↻ Opnieuw controleren'));
+  const TONE = { ok: ['Werkt', 'success'], warn: ['Let op', 'warning'], error: ['Storing', 'danger'], off: ['Niet ingesteld', ''] };
+  view.replaceChildren(
+    h('p', { class: 'muted' }, `Laatst gecontroleerd: ${fmtDateTime(status.checkedAt)}. De controle draait elke tien minuten vanzelf.`),
+    card('Verbindingen', status.checks.map((c) => h('div', { class: 'status-row' },
+      h('div', {}, h('strong', {}, c.label), h('div', { class: 'muted small' }, c.detail)),
+      badge(TONE[c.state][0], TONE[c.state][1])))));
+}
+
 function accountView() {
   setPage('Mijn account');
   const form = h('form', { class: 'card', style: 'max-width:480px', onsubmit: action(async () => {
@@ -975,6 +987,7 @@ async function updateCounts() {
     };
     set('count-messages', o.messagesWaiting);
     set('count-reviews', o.reviewsToRequest);
+    set('count-system', o.systemProblems);
   } catch {}
 }
 
@@ -993,7 +1006,7 @@ async function render() {
   for (const el of document.querySelectorAll('[data-owner]')) el.hidden = assistant;
   const [path] = location.hash.slice(1).split('?');
   const parts = (path || '/board').split('/').filter(Boolean);
-  const ownerOnly = ['messages', 'reviews', 'packages', 'users'];
+  const ownerOnly = ['messages', 'reviews', 'packages', 'users', 'system'];
   if (assistant && ownerOnly.includes(parts[0])) parts[0] = 'board';
   for (const a of document.querySelectorAll('.side-nav a')) {
     a.classList.toggle('active', a.dataset.route === parts[0] || (a.dataset.route === 'list' && parts[0] === 'bookings'));
@@ -1008,6 +1021,7 @@ async function render() {
     else if (parts[0] === 'availability') await availabilityView();
     else if (parts[0] === 'packages') await packagesView();
     else if (parts[0] === 'users') await usersView();
+    else if (parts[0] === 'system') await systemView();
     else if (parts[0] === 'account') accountView();
     else await boardView();
     if (assistant && !['list', 'calendar', 'availability', 'account'].includes(parts[0])) lockView();

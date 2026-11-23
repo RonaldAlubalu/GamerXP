@@ -326,3 +326,7 @@ details.collapsible summary { cursor: pointer; font-weight: 600; }
 button.cal-chip { border: 0; width: 100%; text-align: left; cursor: pointer; font-family: inherit; }
 button.cal-chip.closed { background: none; border: 1px dashed var(--border); opacity: .8; }
 button.cal-chip:hover { outline: 2px solid var(--primary); outline-offset: -1px; opacity: 1; }
+
+/* System status */
+.status-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.status-row:last-child { border-bottom: 0; }

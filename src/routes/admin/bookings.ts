@@ -100,7 +100,9 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
     const messages = await app.db.query<{ count: number }>(
       "SELECT count(*)::int AS count FROM contact_messages WHERE waiting_on = 'me' AND NOT handled",
     );
-    return { ...rows[0], messagesWaiting: messages.rows[0]!.count };
+    // Broken connections (mail, payments, backups), from the latest background check.
+    const systemProblems = app.systemStatus.current?.checks.filter((c) => c.state === 'error').length ?? 0;
+    return { ...rows[0], messagesWaiting: messages.rows[0]!.count, systemProblems };
   });
 
   // Board view: every open booking, plus recently finished or cancelled ones.

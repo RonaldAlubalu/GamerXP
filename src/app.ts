@@ -15,6 +15,7 @@ import { createMollieClient, type MollieClient } from './services/mollie.js';
 import { paymentRoutes } from './routes/payments.js';
 import { publicRoutes } from './routes/public.js';
 import { adminRoutes } from './routes/admin/index.js';
+import { checkSystem, type SystemStatus } from './services/status.js';
 import { registerSite } from './site.js';
 
 declare module 'fastify' {
@@ -25,6 +26,8 @@ declare module 'fastify' {
     distance: DistanceService;
     mollie: MollieClient | null;
     mailSource: MailSource | null;
+    // Latest result of the connection checks, refreshed in the background.
+    systemStatus: { current: SystemStatus | null };
   }
 }
 
@@ -68,6 +71,18 @@ export async function buildApp({ config, db, mailer, distance, mollie, mailSourc
         .catch((err) => app.log.error({ err }, 'Email import failed'));
     const timer = setInterval(check, config.IMAP_POLL_MINUTES * 60_000);
     app.addHook('onReady', async () => void check());
+    app.addHook('onClose', async () => clearInterval(timer));
+  }
+
+  // Test the outside connections every ten minutes, so the dashboard can warn without waiting.
+  app.decorate('systemStatus', { current: null });
+  if (config.NODE_ENV !== 'test') {
+    const refresh = () =>
+      checkSystem(app)
+        .then((status) => void (app.systemStatus.current = status))
+        .catch((err) => app.log.error({ err }, 'System check failed'));
+    const timer = setInterval(refresh, 10 * 60_000);
+    app.addHook('onReady', async () => void refresh());
     app.addHook('onClose', async () => clearInterval(timer));
   }
 

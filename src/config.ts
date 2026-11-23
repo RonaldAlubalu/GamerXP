@@ -37,6 +37,10 @@ const schema = z.object({
   // Link for leaving a Google review (from your Google Business Profile: "Ask for reviews").
   GOOGLE_REVIEW_URL: z.string().default(''),
 
+  // Folders with the database backups and the weekly maintenance reports, for the status page.
+  BACKUP_DIR: z.string().default(''),
+  REPORTS_DIR: z.string().default(''),
+
   SESSION_TTL_HOURS: z.coerce.number().int().positive().default(12),
 
   // When SMTP_HOST is empty, emails are logged instead of sent.

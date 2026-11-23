@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { generateSessionToken, hashToken, verifyPassword } from '../../lib/auth.js';
 import { HttpError } from '../../lib/errors.js';
 import { runMailImport } from '../../services/mail-import.js';
+import { checkSystem } from '../../services/status.js';
 import { availabilityRoutes } from './availability.js';
 import { bookingRoutes } from './bookings.js';
 import { catalogRoutes } from './catalog.js';
@@ -91,6 +92,14 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         app.log.error({ err }, 'Email import failed');
         throw new HttpError(502, 'De mailbox kon niet worden gelezen. Controleer de IMAP-instellingen.', 'import_failed');
       }
+    });
+
+    // Connection status of everything the site depends on. ?fresh=1 tests again right now.
+    secured.get('/status', async (req) => {
+      if (req.admin!.role !== 'owner') throw new HttpError(403, 'Je hebt geen rechten voor deze actie.', 'forbidden');
+      const { fresh } = z.object({ fresh: z.string().optional() }).parse(req.query);
+      if (fresh || !app.systemStatus.current) app.systemStatus.current = await checkSystem(app);
+      return app.systemStatus.current;
     });
 
     secured.post('/logout', async (req, reply) => {

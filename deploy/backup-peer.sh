@@ -91,10 +91,17 @@ case "${1:-}" in
     # The three newest files; ones the other server already has are skipped quickly.
     FILES=$(find "$DIR" -maxdepth 1 -type f -name "$PATTERN" -printf '%T@ %p\n' | sort -rn | head -n 3 | cut -d' ' -f2-)
     [ -n "$FILES" ] || { echo "$(date '+%F %T') no backup files in $DIR" >&2; exit 1; }
+    # The outcome is kept next to the backups, for whoever wants to show it (a status page).
+    STATUS="$DIR/.backup-peer-status"
     echo "$FILES" | while IFS= read -r file; do
-      rsync -t -e "ssh -i $KEY -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20" "$file" "$DROP_USER@$HOST:"
+      if ! ERROR=$(rsync -t -e "ssh -i $KEY -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20" "$file" "$DROP_USER@$HOST:" 2>&1); then
+        echo "fail $(date +%s) $HOST $(echo "$ERROR" | tail -n 1)" > "$STATUS"
+        echo "$(date '+%F %T') could not send $(basename "$file") to $HOST: $ERROR" >&2
+        exit 1
+      fi
       echo "$(date '+%F %T') sent $(basename "$file") to $HOST"
     done
+    echo "ok $(date +%s) $HOST" > "$STATUS"
     ;;
 
   *)

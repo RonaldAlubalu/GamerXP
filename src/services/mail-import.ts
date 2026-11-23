@@ -28,6 +28,8 @@ export interface MailSource {
   // Puts `label` on the emails with these Message-IDs and takes `others` off (Gmail labels).
   // Mailboxes without labels leave this out.
   setLabel?(messageIds: string[], label: string, others: string[]): Promise<void>;
+  // Logs in and opens the mailbox, without reading anything.
+  check?(): Promise<void>;
 }
 
 // The label a booking's emails carry in the mailbox: the same stage name as in the admin.
@@ -89,6 +91,22 @@ export function createImapSource(config: Config): MailSource | null {
         await client.logout().catch(() => {});
       }
       return mails;
+    },
+
+    async check() {
+      const client = new ImapFlow({
+        host: config.IMAP_HOST,
+        port: config.IMAP_PORT,
+        secure: config.IMAP_SECURE,
+        auth: { user: config.IMAP_USER, pass: config.IMAP_PASS },
+        logger: false,
+      });
+      await client.connect();
+      try {
+        (await client.getMailboxLock(config.IMAP_MAILBOX, { readOnly: true })).release();
+      } finally {
+        await client.logout().catch(() => {});
+      }
     },
 
     async setLabel(messageIds, label, others) {

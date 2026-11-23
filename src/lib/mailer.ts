@@ -10,6 +10,8 @@ export interface Mail {
 
 export interface Mailer {
   send(mail: Mail): Promise<void>;
+  // Logs in to the mail server without sending anything. Missing when email is switched off.
+  verify?(): Promise<void>;
 }
 
 export function createMailer(config: Config, log: (msg: string) => void): Mailer {
@@ -31,6 +33,9 @@ export function createMailer(config: Config, log: (msg: string) => void): Mailer
   return {
     async send(mail) {
       await transport.sendMail({ from: config.MAIL_FROM, ...mail });
+    },
+    async verify() {
+      await transport.verify();
     },
   };
 }

@@ -22,6 +22,8 @@ export interface CreatePaymentInput {
 export interface MollieClient {
   createPayment(input: CreatePaymentInput): Promise<MolliePayment>;
   getPayment(id: string): Promise<MolliePayment>;
+  // Asks Mollie whether the API key is accepted.
+  ping?(): Promise<void>;
 }
 
 export const centsToValue = (cents: number) => (cents / 100).toFixed(2);
@@ -76,6 +78,9 @@ export function createMollieClient(config: Config): MollieClient | null {
     },
     async getPayment(id) {
       return fromRaw(await request(`/payments/${encodeURIComponent(id)}`));
+    },
+    async ping() {
+      await request('/methods');
     },
   };
 }

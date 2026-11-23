@@ -56,9 +56,9 @@ if [ "$PROBLEMS" -eq 0 ]; then
   fi
   note ""
 
-  # 3. The site's own containers: newer database and web server images, and a fresh build.
+  # 3. Newer database and web server images. The site itself is updated by the deploys.
   note "## Site"
-  if docker compose pull -q db caddy backup >/dev/null 2>&1 && docker compose up -d --build >/dev/null 2>&1; then
+  if docker compose pull -q db caddy backup >/dev/null 2>&1 && docker compose up -d >/dev/null 2>&1; then
     note "- Containers refreshed"
   else
     problem "refreshing the site's containers failed."

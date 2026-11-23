@@ -28,7 +28,7 @@ export const STAGE_INFO: Record<Status, StageInfo> = {
   new: {
     label: 'Nieuw',
     customerLabel: 'Aanvraag ontvangen',
-    customerText: 'We hebben je aanvraag ontvangen. Binnen 24 uur laten we weten of jouw datum nog vrij is.',
+    customerText: 'We hebben je aanvraag ontvangen. We streven ernaar je binnen 24 uur te laten weten of jouw datum nog vrij is. Bij drukte kan het iets langer duren, maar we doen altijd ons best.',
     tasks: ['Aanvraag bekeken', 'Binnen 24 uur gereageerd'],
   },
   contacted: {

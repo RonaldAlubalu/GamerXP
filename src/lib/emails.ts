@@ -85,8 +85,8 @@ export function bookingReceivedMail(b: BookingMailData, ctx: MailContext): Mail 
     subject: `We hebben je aanvraag ontvangen (${b.reference})`,
     text:
       `Hoi ${b.parentName},\n\n` +
-      `Bedankt voor je aanvraag! Wij duiken in onze agenda en laten je binnen 24 uur weten ` +
-      `of jouw datum nog vrij is. Je zit nog nergens aan vast.\n\n${summary(b)}` +
+      `Bedankt voor je aanvraag! Wij duiken in onze agenda en streven ernaar je binnen 24 uur te laten weten ` +
+      `of jouw datum nog vrij is. Bij drukte kan het iets langer duren, maar we doen altijd ons best. Je zit nog nergens aan vast.\n\n${summary(b)}` +
       (b.notes ? `\nDetails: ${b.notes}` : '') +
       `\n\nDe prijs is een indicatie. De definitieve prijs kan afwijken door de berekening van de reiskosten ` +
       `(altijd op basis van retour) en eventuele parkeerkosten. Je hoort het exacte bedrag bij onze bevestiging.` +

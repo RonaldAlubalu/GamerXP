@@ -32,6 +32,17 @@ else
   fi
 fi
 
+# A small server needs swap space, or a busy moment can freeze it.
+if [ -z "$(swapon --show --noheadings 2>/dev/null)" ] && [ ! -f /swapfile ]; then
+  echo "==> Adding 2 GB of swap space"
+  if fallocate -l 2G /swapfile 2>/dev/null && chmod 600 /swapfile && mkswap /swapfile >/dev/null && swapon /swapfile; then
+    echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  else
+    rm -f /swapfile
+    echo "    (could not add swap; continuing without)"
+  fi
+fi
+
 echo "==> Firewall: only SSH and the website are reachable"
 ufw allow OpenSSH >/dev/null
 ufw allow 80 >/dev/null
@@ -104,8 +115,15 @@ if [ -n "${BACKUP_PEER_HOST:-}${BACKUP_PEER_PUBKEY:-}" ]; then
   echo "::notice title=Backup key of this server::$(sh deploy/backup-peer.sh key || echo 'could not be made')"
 fi
 
-echo "==> Building and starting the site (the first time takes a few minutes)"
-docker compose up -d --build
+if [ "${APP_IMAGE_LOADED:-}" = 1 ]; then
+  echo "==> Starting the site with the version built by the deploy"
+  docker compose up -d --no-build
+else
+  echo "==> Building and starting the site (this takes a few minutes)"
+  docker compose up -d --build
+fi
+# Old versions of the site would otherwise fill the disk.
+docker image prune -f >/dev/null 2>&1 || true
 
 DOMAIN=$(grep '^DOMAIN=' .env | cut -d= -f2)
 cat <<DONE

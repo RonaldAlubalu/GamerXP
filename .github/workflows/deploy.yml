@@ -29,6 +29,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      - uses: actions/checkout@v4
+
+      # Building here keeps the load off the server, which is too small to build and serve at once.
+      - name: Build the site
+        run: docker build -t gamerxp-app .
+
       - name: Update the server
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
@@ -59,10 +65,16 @@ jobs:
             echo "::error::Logged in as ${DEPLOY_USER:-root}, but that user cannot run admin commands without a password (sudo)."
             exit 1
           fi
+          # Hand the built image to the server. A brand-new server has no Docker yet and builds once itself.
+          LOADED=0
+          if $SSH "$TARGET" 'command -v docker >/dev/null'; then
+            docker save gamerxp-app | gzip | $SSH "$TARGET" 'if [ "$(id -u)" = 0 ]; then docker load; else sudo -n docker load; fi'
+            LOADED=1
+          fi
           # Installs everything on a fresh server; on later runs it updates and restarts the site.
           # The key travels inside the script over SSH, so it never shows up in a command line.
           {
-          printf "export MOLLIE_API_KEY='%s'\n" "$MOLLIE_API_KEY"
+          printf "export MOLLIE_API_KEY='%s' APP_IMAGE_LOADED='%s'\n" "$MOLLIE_API_KEY" "$LOADED"
           printf "export BACKUP_PEER_HOST='%s' BACKUP_PEER_PUBKEY='%s'\n" "$BACKUP_PEER_HOST" "$BACKUP_PEER_PUBKEY"
           # Google shows app passwords with spaces; they work without.
           printf "export GMAIL_USER='%s' GMAIL_APP_PASSWORD='%s'\n" "$GMAIL_USER" "$(printf %s "$GMAIL_APP_PASSWORD" | tr -d ' ')"

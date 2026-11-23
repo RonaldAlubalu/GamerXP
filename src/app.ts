@@ -28,6 +28,8 @@ declare module 'fastify' {
     mailSource: MailSource | null;
     // Latest result of the connection checks, refreshed in the background.
     systemStatus: { current: SystemStatus | null };
+    // The most recent emails the site tried to send, newest first, for the status page.
+    mailLog: { at: string; to: string; subject: string; error?: string }[];
   }
 }
 
@@ -58,7 +60,23 @@ export async function buildApp({ config, db, mailer, distance, mollie, mailSourc
 
   app.decorate('config', config);
   app.decorate('db', db);
-  app.decorate('mailer', mailer ?? createMailer(config, (msg) => app.log.info(msg)));
+  // Remember the last few emails and whether the mail server accepted them.
+  const realMailer = mailer ?? createMailer(config, (msg) => app.log.info(msg));
+  app.decorate('mailLog', []);
+  app.decorate('mailer', {
+    ...realMailer,
+    async send(mail) {
+      const entry: FastifyInstance['mailLog'][number] = { at: new Date().toISOString(), to: mail.to, subject: mail.subject };
+      app.mailLog.unshift(entry);
+      app.mailLog.length = Math.min(app.mailLog.length, 5);
+      try {
+        await realMailer.send(mail);
+      } catch (err) {
+        entry.error = (err as Error).message;
+        throw err;
+      }
+    },
+  });
   app.decorate('distance', distance ?? createDistanceService(config, (msg, err) => app.log.warn({ err }, msg)));
   app.decorate('mollie', mollie === undefined ? createMollieClient(config) : mollie);
   app.decorate('mailSource', mailSource === undefined ? createImapSource(config) : mailSource);

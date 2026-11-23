@@ -169,6 +169,18 @@ export async function checkSystem(app: FastifyInstance): Promise<SystemStatus> {
   if (sending.state === 'error') sending.detail += used(config.SMTP_USER, config.SMTP_PASS);
   if (reading.state === 'error') reading.detail += used(config.IMAP_USER, config.IMAP_PASS);
 
+  // What the site last sent, so "I didn't get it" can be told apart from "it wasn't sent".
+  if (app.mailer.verify && app.mailLog.length) {
+    const time = new Intl.DateTimeFormat('nl-NL', { dateStyle: 'short', timeStyle: 'short', timeZone: config.TIMEZONE });
+    sending.detail +=
+      ' Laatst verstuurd: ' +
+      app.mailLog
+        .map((m) => `${time.format(new Date(m.at))} aan ${m.to} ("${m.subject.slice(0, 50)}"): ${m.error ? `MISLUKT, ${explain(new Error(m.error))}` : 'geaccepteerd door Google'}`)
+        .join('; ') +
+      '.';
+    if (sending.state === 'ok' && app.mailLog[0]!.error) sending.state = 'warn';
+  }
+
   // Test mode on the real domain is a mistake worth pointing out.
   if (payments.state === 'ok' && !config.MOLLIE_API_KEY.startsWith('live_')) payments.state = 'warn';
   const whatsapp: Check = {

@@ -487,6 +487,6 @@ body:has(#booking-form) .wa-float, body:has(#status-view) .wa-float { display: n
 @media (max-width: 640px) {
   .hero .stats li:nth-child(n+3) { display: none; }
   .hero .stats { font-size: .92rem; gap: 8px 18px; }
-  .hero .actions .btn.secondary { display: none; }
-  .hero .actions .btn { padding: 14px 28px; font-size: 1.05rem; }
+  /* No buttons in the photo on a phone: the booking button appears at the bottom once you scroll. */
+  main > .hero:first-child .actions:has(a[href="/reserveer"]) { display: none; }
 }

@@ -77,7 +77,7 @@ if (header) {
 const stickyCta = document.querySelector('.sticky-cta');
 if (stickyCta && !/^\/(reserveer|status|betalen)/.test(location.pathname)) {
   const toggleCta = () => {
-    stickyCta.hidden = scrollY < 500;
+    stickyCta.hidden = scrollY < 220;
     // The WhatsApp button moves up to make room.
     document.body.classList.toggle('cta-visible', !stickyCta.hidden);
   };

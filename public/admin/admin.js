@@ -287,46 +287,96 @@ async function listView() {
   );
 }
 
-// Email templates for quick replies. {placeholders} are filled from the booking.
-const TEMPLATES = {
-  details: {
-    label: 'Vraag naar details',
+// Ready-made messages, grouped by the moment you need them. {placeholders} are filled from the booking.
+// They work for email and for WhatsApp; the subject is only used for email.
+const TEMPLATES = [
+  { group: 'Na de aanvraag', label: 'Vraag naar details',
     subject: 'Je aanvraag bij Gamer Xperience ({ref})',
-    body: 'Hoi {naam},\n\nBedankt voor je aanvraag voor {datum}! Om alles goed voor te bereiden heb ik nog een paar vragen:\n\n- Hoeveel kinderen komen er ongeveer?\n- In welke ruimte vindt het feest plaats (en is er een grote tafel)?\n- Zijn er favoriete games?\n\nLaat het me weten, dan zet ik je datum vast.',
-  },
-  quote: {
-    label: 'Prijsopgave',
+    body: 'Hoi {naam},\n\nBedankt voor je aanvraag voor {datum}! Om alles goed voor te bereiden heb ik nog een paar vragen:\n\n- Hoeveel kinderen komen er ongeveer?\n- In welke ruimte vindt het feest plaats, en is er een grote tafel?\n- Zijn er favoriete games?\n\nLaat het me weten, dan zet ik je datum vast.' },
+  { group: 'Na de aanvraag', label: 'Prijsopgave',
     subject: 'Prijsopgave voor je feest ({ref})',
-    body: 'Hoi {naam},\n\nHierbij de prijsopgave voor {datum}:\n\n{prijsregels}\n\nTotaal: {totaal}\n\nOm de datum vast te zetten vragen we een aanbetaling van {aanbetaling}. Laat je weten of je akkoord bent?',
-  },
-  unavailable: {
-    label: 'Datum niet beschikbaar',
+    body: 'Hoi {naam},\n\nHierbij de prijsopgave voor {datum}:\n\n{prijsregels}\n\nTotaal: {totaal}\n\nOm de datum vast te zetten vragen we een aanbetaling van {aanbetaling}. Laat je weten of je akkoord bent?' },
+  { group: 'Na de aanvraag', label: 'Datum niet beschikbaar, andere datum?',
     subject: 'Over je aanvraag voor {datum}',
-    body: 'Hoi {naam},\n\nHelaas zijn we op {datum} al volgeboekt. Zou een andere datum ook kunnen? Op gamerxp.nl/reserveer zie je welke dagen nog vrij zijn.',
-  },
-  deposit: {
-    label: 'Herinnering aanbetaling',
+    body: 'Hoi {naam},\n\nHelaas zijn we op {datum} al volgeboekt. Zou een andere datum ook kunnen? Op gamerxp.nl/reserveer zie je welke dagen nog vrij zijn. Je mag me ook een paar data doorgeven, dan kijk ik met je mee.' },
+  { group: 'Na de aanvraag', label: 'Het duurt iets langer',
+    subject: 'Je aanvraag bij Gamer Xperience ({ref})',
+    body: 'Hoi {naam},\n\nBedankt voor je geduld! Het is op dit moment erg druk, waardoor het iets langer duurt dan je van ons gewend bent. Je aanvraag voor {datum} staat genoteerd en je hoort uiterlijk morgen van mij.' },
+
+  { group: 'Bevestigen en betalen', label: 'Datum is vrij, aanbetaling gevraagd',
+    subject: 'Goed nieuws: je datum is vrij ({ref})',
+    body: 'Hoi {naam},\n\nGoed nieuws: {datum} is vrij en ik heb {feest} voor je vastgezet!\n\nDe prijs komt op {totaal}. Om de datum definitief te maken vragen we een aanbetaling van {aanbetaling}, binnen 5 dagen. Betalen en de voortgang volgen kan via deze link:\n{statuslink}\n\nHeb je nog vragen, stel ze gerust.' },
+  { group: 'Bevestigen en betalen', label: 'Herinnering aanbetaling',
     subject: 'Herinnering aanbetaling ({ref})',
-    body: 'Hoi {naam},\n\nWe hebben je aanbetaling van {aanbetaling} voor {datum} nog niet ontvangen. Zou je die binnen een paar dagen willen overmaken onder vermelding van {ref}? Daarna staat je feest definitief vast.',
-  },
-  final: {
-    label: 'Laatste details voor het feest',
+    body: 'Hoi {naam},\n\nWe hebben je aanbetaling van {aanbetaling} voor {datum} nog niet ontvangen. Zou je die binnen een paar dagen willen voldoen? Dat kan via {statuslink} of per overboeking onder vermelding van {ref}. Daarna staat je feest definitief vast.' },
+  { group: 'Bevestigen en betalen', label: 'Aanbetaling ontvangen',
+    subject: 'Aanbetaling ontvangen: je feest staat vast! ({ref})',
+    body: 'Hoi {naam},\n\nBedankt, je aanbetaling is binnen. {Feest} op {datum} staat definitief in onze agenda! Vlak voor het feest neem ik contact op over de laatste details.' },
+  { group: 'Bevestigen en betalen', label: 'Restbedrag nog open',
+    subject: 'Restbedrag voor je feest ({ref})',
+    body: 'Hoi {naam},\n\nVoor {datum} staat nog {openstaand} open. Je kunt dit vooraf betalen via {statuslink} of per overboeking, of contant op de dag zelf. Laat je even weten wat je voorkeur heeft?' },
+
+  { group: 'Voorbereiding', label: 'Starttijd afstemmen',
+    subject: 'Hoe laat begint het feest? ({ref})',
+    body: 'Hoi {naam},\n\nHet feest op {datum} komt dichterbij! Hoe laat wil je dat de kinderen beginnen met gamen? Ik kom ongeveer een uur eerder om alles op te bouwen.' },
+  { group: 'Voorbereiding', label: 'Laatste details (week ervoor)',
     subject: 'Bijna zover: je feest op {datum}',
-    body: 'Hoi {naam},\n\nNog even en dan is het feest! Ik kom {aankomst} om alles op te bouwen (ongeveer 60 minuten).\n\nNog te betalen: {openstaand}. Dat kan vooraf via overboeking of contant op de dag zelf.\n\nTot snel!',
-  },
-};
+    body: 'Hoi {naam},\n\nNog even en dan is het feest! Een paar dingen om af te stemmen:\n\n- Ik kom {aankomst} om alles op te bouwen (ongeveer 60 minuten).\n- Ik heb een grote tafel nodig en een stopcontact in de buurt.\n- Welke games staan bovenaan het lijstje van {kind}?\n\nNog te betalen: {openstaand}. Dat kan vooraf via overboeking of contant op de dag zelf.\n\nTot snel!' },
+  { group: 'Voorbereiding', label: 'Vraag over parkeren',
+    subject: 'Parkeren bij jullie ({ref})',
+    body: 'Hoi {naam},\n\nIk kom met een bus vol apparatuur naar {adres}. Kan ik bij jullie voor de deur of op eigen terrein parkeren om uit te laden? Als er betaald parkeren geldt: parkeerkosten tot €10 nemen wij voor onze rekening, daarboven berekenen we ze door. Een bezoekersvergunning voorkomt dat.' },
+  { group: 'Voorbereiding', label: 'Morgen is het zover',
+    subject: 'Morgen is het zover! ({ref})',
+    body: 'Hoi {naam}! Morgen is het zover: {feest} 🎮 Ik kom {aankomst} om alles op te bouwen. Zorg je voor een vrije tafel en een stopcontact in de buurt? We kijken ernaar uit!' },
+
+  { group: 'Na het feest', label: 'Bedankt en vraag om review',
+    subject: 'Bedankt voor het feest! ({ref})',
+    body: 'Hoi {naam},\n\nBedankt dat we {feest} mochten verzorgen, wat een leuke groep! Ik hoop dat jullie er net zo van genoten hebben als wij.\n\nZou je ons willen helpen met een korte review op Google? Daar help je andere ouders enorm mee.' },
+
+  { group: 'Wijzigen en annuleren', label: 'Wijziging bevestigd',
+    subject: 'Je feest is aangepast ({ref})',
+    body: 'Hoi {naam},\n\nIk heb je boeking aangepast. Het feest staat nu op {datum}. De actuele gegevens en de prijs vind je altijd op {statuslink}. Klopt er iets niet, laat het me dan weten.' },
+  { group: 'Wijzigen en annuleren', label: 'Annulering bevestigd',
+    subject: 'Je boeking is geannuleerd ({ref})',
+    body: 'Hoi {naam},\n\nJammer dat het feest op {datum} niet doorgaat. Ik heb de boeking geannuleerd. Wil je later een nieuwe datum plannen, dan hoor ik het graag.' },
+];
+
+// For conversations from the contact form, where there is no booking yet.
+const CONTACT_TEMPLATES = [
+  { group: 'Antwoorden', label: 'Bedankt, verwijs naar reserveren',
+    subject: 'Re: je bericht aan Gamer Xperience',
+    body: 'Hoi {naam},\n\nBedankt voor je bericht! Leuk dat je aan een Gamer Xperience feest denkt. Op gamerxp.nl/reserveer zie je direct welke data vrij zijn en wat het voor jouw adres kost. Een aanvraag is vrijblijvend; daarna neem ik contact met je op.' },
+  { group: 'Antwoorden', label: 'Prijzen en reiskosten',
+    subject: 'Re: je bericht aan Gamer Xperience',
+    body: 'Hoi {naam},\n\nBedankt voor je vraag! De Standaard Xperience (3 uur) kost €275 en de Ultimate Xperience (4 uur, met Game Master) €350. Daar komen alleen reiskosten bij: €0,50 per km heen en terug vanaf Eindhoven, met een maximum van €100. Op gamerxp.nl/reserveer zie je de prijs voor jouw adres.' },
+  { group: 'Antwoorden', label: 'Komen jullie ook bij ons?',
+    subject: 'Re: je bericht aan Gamer Xperience',
+    body: 'Hoi {naam},\n\nJa, we komen door heel Nederland! De reiskosten zijn €0,50 per km heen en terug vanaf Eindhoven, met een maximum van €100. Vul op gamerxp.nl/reserveer je adres in, dan zie je meteen het totaal.' },
+  { group: 'Antwoorden', label: 'Zakelijk of groot evenement',
+    subject: 'Re: je bericht aan Gamer Xperience',
+    body: 'Hoi {naam},\n\nBedankt voor je bericht! Voor een evenement maak ik graag een voorstel op maat. Kun je me laten weten:\n\n- de datum en de locatie;\n- hoeveel deelnemers je verwacht en welke leeftijd;\n- hoe lang het evenement duurt?\n\nDan hoor je snel van mij.' },
+  { group: 'Antwoorden', label: 'Leeftijd en games',
+    subject: 'Re: je bericht aan Gamer Xperience',
+    body: 'Hoi {naam},\n\nGoede vraag! Onze feestjes zijn geschikt voor kinderen van ongeveer 6 tot 14 jaar. We hebben onder andere Fortnite, Minecraft, Roblox, Rocket League en Mario Kart, en voor de jongsten rustigere games. De kinderen mogen zelf kiezen; ik stem het aanbod af op de groep.' },
+];
 
 function fillTemplate(text, b) {
-  const vars = {
+  const party = b.childName ? `het feest van ${b.childName}` : 'jullie feest';
+  const vars = b.reference ? {
     naam: b.parentName.split(' ')[0],
     ref: b.reference,
+    kind: b.childName || 'de jarige',
+    feest: party,
+    Feest: party.charAt(0).toUpperCase() + party.slice(1),
     datum: `${fmtLongDate(b.partyDate)} (${(b.startTime ?? SLOT_LABELS[b.timeSlot]).toLowerCase()})`,
+    adres: `${b.street}, ${b.city}`,
     prijsregels: b.priceLines.map((l) => `- ${l.label}: ${fmtEuro(l.amountCents)}`).join('\n'),
     totaal: fmtEuro(b.priceCents),
     aanbetaling: fmtEuro(b.depositCents),
     openstaand: fmtEuro(b.outstandingCents),
     aankomst: b.startTime ? `een uur voor ${b.startTime}` : 'een uur voor de start',
-  };
+    statuslink: `${location.origin}/status?t=${encodeURIComponent(b.statusToken)}`,
+  } : { naam: (b.name ?? '').split(' ')[0] };
   return text.replace(/\{(\w+)\}/g, (m, k) => vars[k] ?? m);
 }
 
@@ -347,25 +397,30 @@ function messageThread(items) {
 }
 
 // Send an email, or log a WhatsApp message, call or email received elsewhere.
-function composer({ booking, onSubmit, emailConfigured }) {
+function composer({ booking, contact, onSubmit, emailConfigured }) {
   let mode = 'email';
   const subject = h('input', { name: 'subject', maxlength: 200, placeholder: 'Onderwerp' });
   const body = h('textarea', { name: 'body', required: true, rows: 7, placeholder: 'Typ je bericht… (je ondertekening wordt bij e-mails automatisch toegevoegd)' });
   const direction = h('select', { name: 'direction' }, h('option', { value: 'in' }, 'Ontvangen van klant'), h('option', { value: 'out' }, 'Verstuurd aan klant'));
   const channel = h('select', { name: 'channel' }, ['whatsapp', 'phone', 'email', 'in_person', 'other'].map((c) => h('option', { value: c }, CHANNELS[c])));
-  const templateSelect = booking && h('select', {
+  // Templates fill the message for email and WhatsApp alike.
+  const templates = booking ? TEMPLATES : contact ? CONTACT_TEMPLATES : [];
+  const groups = [...new Set(templates.map((t) => t.group))];
+  const templateSelect = templates.length > 0 && h('select', {
     'aria-label': 'Sjabloon',
     onchange: (e) => {
-      const t = TEMPLATES[e.target.value];
-      if (t) {
-        subject.value = fillTemplate(t.subject, booking);
-        body.value = fillTemplate(t.body, booking);
+      const t = templates[Number(e.target.value)];
+      if (t && (!body.value.trim() || confirm('Je getypte bericht vervangen door dit sjabloon?'))) {
+        subject.value = fillTemplate(t.subject, booking ?? contact);
+        body.value = fillTemplate(t.body, booking ?? contact);
       }
       e.target.value = '';
     },
-  }, h('option', { value: '' }, 'Sjabloon…'), Object.entries(TEMPLATES).map(([k, t]) => h('option', { value: k }, t.label)));
+  }, h('option', { value: '' }, 'Kies een sjabloon…'),
+    groups.map((g) => h('optgroup', { label: g }, templates.map((t, i) => t.group === g && h('option', { value: i }, t.label)))));
+  const templateRow = templateSelect && h('div', { class: 'field template-row' }, h('label', {}, 'Sjabloon'), templateSelect);
 
-  const emailFields = h('div', { class: 'inline', style: 'margin-bottom:8px' }, h('div', { class: 'field', style: 'flex:1' }, subject), templateSelect && h('div', { class: 'field' }, templateSelect));
+  const emailFields = h('div', { class: 'field', style: 'margin-bottom:8px' }, subject);
   const logFields = h('div', { class: 'row', hidden: true }, field('Richting', direction), field('Kanaal', channel));
   const submit = h('button', { class: 'btn primary', type: 'submit' }, 'E-mail versturen');
   // Opens WhatsApp with the typed message ready to send, and keeps a copy in the log.
@@ -395,7 +450,7 @@ function composer({ booking, onSubmit, emailConfigured }) {
       ? { direction: 'out', channel: 'email', subject: subject.value, body: body.value, send: true }
       : { direction: direction.value, channel: channel.value, body: body.value, send: false })),
   },
-    h('div', { class: 'tabs' }, tabButtons), emailFields, logFields, h('div', { class: 'field' }, body),
+    h('div', { class: 'tabs' }, tabButtons), templateRow, emailFields, logFields, h('div', { class: 'field' }, body),
     !emailConfigured && h('p', { class: 'muted small' }, 'Let op: e-mail (SMTP) is nog niet ingesteld. Berichten worden gelogd maar niet echt verstuurd.'),
     h('div', { class: 'inline' }, submit, whatsapp));
 }
@@ -679,6 +734,7 @@ async function messagesView(selectedId) {
           h('button', { class: 'btn small', onclick: action(() => patchJson(`/messages/${selected.id}`, { handled: !selected.handled }), selected.handled ? 'Weer geopend.' : 'Afgehandeld.') },
             selected.handled ? 'Heropenen' : '✓ Afgehandeld'))),
         composer({
+          contact: selected,
           emailConfigured: me.emailConfigured,
           onSubmit: async (msg) => {
             await post(`/messages/${selected.id}/replies`, msg);

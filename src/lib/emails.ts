@@ -98,6 +98,7 @@ export function bookingReceivedMail(b: BookingMailData, ctx: MailContext): Mail 
 export function bookingOwnerNotification(b: BookingMailData, to: string, adminUrl: string): Mail {
   return {
     to,
+    plain: true,
     replyTo: b.email,
     subject: `Nieuwe aanvraag: ${formatDutchDate(b.partyDate)} – ${b.packageName} in ${b.city} (${b.reference})`,
     text:
@@ -232,6 +233,7 @@ export function contactOwnerNotification(
 ): Mail {
   return {
     to,
+    plain: true,
     replyTo: m.email,
     subject: `Contactformulier: ${m.name}`,
     text: `Naam: ${m.name}\nE-mail: ${m.email}\nTelefoon: ${m.phone || '-'}\n\n${m.message}`,

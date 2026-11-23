@@ -1,11 +1,14 @@
 import nodemailer from 'nodemailer';
 import type { Config } from '../config.js';
+import { renderEmailHtml } from './email-html.js';
 
 export interface Mail {
   to: string;
   subject: string;
   text: string;
   replyTo?: string;
+  // Notifications to the owner stay plain; emails to customers get the look of the website.
+  plain?: boolean;
 }
 
 export interface Mailer {
@@ -31,8 +34,11 @@ export function createMailer(config: Config, log: (msg: string) => void): Mailer
   });
 
   return {
-    async send(mail) {
-      await transport.sendMail({ from: config.MAIL_FROM, ...mail });
+    async send({ plain, ...mail }) {
+      const html = plain
+        ? undefined
+        : renderEmailHtml(mail.text, { publicUrl: config.PUBLIC_URL, reviewUrl: config.GOOGLE_REVIEW_URL || undefined });
+      await transport.sendMail({ from: config.MAIL_FROM, ...mail, html });
     },
     async verify() {
       await transport.verify();

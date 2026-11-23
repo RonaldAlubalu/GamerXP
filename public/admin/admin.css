@@ -330,3 +330,6 @@ button.cal-chip:hover { outline: 2px solid var(--primary); outline-offset: -1px;
 /* System status */
 .status-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .status-row:last-child { border-bottom: 0; }
+
+.template-row { margin-bottom: 8px; }
+.template-row select { width: 100%; }

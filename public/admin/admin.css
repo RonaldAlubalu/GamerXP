@@ -333,3 +333,18 @@ button.cal-chip:hover { outline: 2px solid var(--primary); outline-offset: -1px;
 
 .template-row { margin-bottom: 8px; }
 .template-row select { width: 100%; }
+
+/* Booking page: next step, tabs, calmer dashboard */
+.board-card { cursor: pointer; }
+.board-card:hover { border-color: var(--primary); }
+.next-step { display: flex; align-items: center; justify-content: space-between; gap: 12px 20px; flex-wrap: wrap; margin-top: 16px; padding: 12px 16px; background: var(--surface); border: 1px solid var(--primary); border-left-width: 4px; border-radius: 8px; }
+.page-tabs { margin: 18px 0 16px; flex-wrap: wrap; }
+.page-tabs button { font-size: 1rem; padding: 8px 14px; }
+.page-tabs .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--danger); margin-left: 6px; vertical-align: middle; }
+details.task-group > summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
+details.task-group:not([open]) > summary { color: var(--muted); font-weight: 500; }
+.stats.quiet-row { margin-top: -6px; gap: 8px; }
+.stat.quiet { display: inline-flex; align-items: baseline; gap: 6px; padding: 6px 12px; box-shadow: none; background: none; border-style: dashed; min-width: 0; flex: none; }
+.stat.quiet .num { font-size: 1rem; }
+.stat.quiet .lbl { margin: 0; }
+.stats.quiet-row { display: flex; flex-wrap: wrap; margin-bottom: 18px; }

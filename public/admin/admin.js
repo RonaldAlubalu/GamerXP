@@ -219,11 +219,15 @@ async function boardView() {
         h('button', { class: 'btn small', onclick: remind(r, 'email') }, 'Per e-mail')))));
 
   const stat = (num, label, href, tone) =>
-    h('a', { class: `stat ${num && num !== fmtEuro(0) ? tone : ''}`, href }, h('div', { class: 'num' }, num), h('div', { class: 'lbl' }, label));
+    h('a', { class: `stat ${tone === 'quiet' ? 'quiet' : num && num !== fmtEuro(0) ? tone : ''}`, href }, h('div', { class: 'num' }, num), h('div', { class: 'lbl' }, label));
   const bookingCard = (b, column) => {
     const i = STAGES.indexOf(column.key);
     const next = i >= 0 && i < STAGES.length - 1 ? STAGES[i + 1] : null;
-    return h('article', { class: `board-card ${b.waitingOn === 'me' && isOpen(b) ? 'me' : ''}` },
+    return h('article', {
+      class: `board-card ${b.waitingOn === 'me' && isOpen(b) ? 'me' : ''}`,
+      // Anywhere on the card opens the booking; the button below keeps its own job.
+      onclick: (e) => { if (!e.target.closest('button, a')) location.hash = `#/bookings/${b.id}`; },
+    },
       h('a', { class: 'title', href: `#/bookings/${b.id}` }, displayName(b)),
       h('div', { class: 'meta' }, when(b)),
       h('div', { class: 'meta' }, `${b.city} · ${b.packageName}${b.extraStations ? ` +${b.extraStations}` : ''} · ${fmtEuro(b.priceCents)}`),
@@ -238,11 +242,12 @@ async function boardView() {
       stat(o.waitingOnMe, 'Boekingen: jouw beurt', '#/list?waitingOn=me', 'alert'),
       stat(o.messagesWaiting, 'Berichten te beantwoorden', '#/messages', 'alert'),
       stat(o.depositOpen, 'Aanbetaling nog open', '#/list?payment=deposit_open', 'warn'),
-      stat(fmtEuro(o.outstandingCents), 'Nog te ontvangen', '#/list?payment=outstanding', ''),
-      stat(o.nextSevenDays, 'Feestjes komende 7 dagen', '#/calendar', ''),
       stat(o.reviewsToRequest, 'Reviews te vragen', '#/reviews', 'warn'),
-      stat(o.waitingOnCustomer, 'Wachten op klant', '#/list?waitingOn=customer', ''),
       me.role === 'owner' && o.systemProblems > 0 && stat(o.systemProblems, 'Storing in een koppeling', '#/system', 'alert')),
+    h('div', { class: 'stats quiet-row' },
+      stat(o.nextSevenDays, 'feestjes komende 7 dagen', '#/calendar', 'quiet'),
+      stat(o.waitingOnCustomer, 'wachten op klant', '#/list?waitingOn=customer', 'quiet'),
+      stat(fmtEuro(o.outstandingCents), 'nog te ontvangen', '#/list?payment=outstanding', 'quiet')),
     h('div', { class: 'board' },
       columns.map((c) => h('section', { class: 'board-col' },
         h('header', {}, h('span', {}, c.label), h('span', { class: 'count' }, c.bookings.length)),
@@ -556,6 +561,9 @@ function onlinePayments(b, me) {
   return box;
 }
 
+// Which tab of which booking is open, so it stays open after saving something.
+let detailTab = { id: null, tab: 'overview' };
+
 async function bookingDetailView(id) {
   const [b, me] = await Promise.all([api(`/bookings/${id}`), api('/me')]);
   const patch = (body, message) => action(() => patchJson(`/bookings/${id}`, body), message);
@@ -682,11 +690,14 @@ async function bookingDetailView(id) {
           h('span', {}, h('strong', {}, PAYMENT_KINDS[p.kind]), ` ${fmtEuro(p.amountCents)} · ${PAYMENT_METHODS[p.method]} · ${fmtDate(p.paidOn)}`, p.note && h('span', { class: 'muted' }, ` – ${p.note}`)),
           h('button', { class: 'icon-btn', title: 'Verwijderen', onclick: action(() => confirm('Deze betaling verwijderen?') ? del(`/bookings/${id}/payments/${p.id}`) : false, 'Betaling verwijderd.') }, '✕'))))
       : h('p', { class: 'muted' }, 'Nog geen betalingen.'),
-    h('div', { style: 'margin-top:12px' }, payForm),
     b.depositPaid && ['new', 'contacted', 'confirmed'].includes(b.status) &&
       h('p', {}, h('button', { class: 'btn success', onclick: action(() => moveBooking(id, 'deposit_paid')) }, 'Aanbetaling is binnen → zet op "Aanbetaling ontvangen"')),
-    onlinePayments(b, me),
-    invoicesBox(b, me));
+    me.bookkeepingConfigured && invoicesBox(b, me),
+    // With invoices as the way to pay, the site's own payment links only show when they are switched on.
+    (me.onlinePayments || !me.bookkeepingConfigured) && onlinePayments(b, me),
+    h('details', { class: 'collapsible', style: 'margin-top:14px', open: !me.bookkeepingConfigured },
+      h('summary', {}, 'Betaling met de hand noteren'),
+      h('div', { style: 'margin-top:10px' }, payForm)));
 
   // Agreements.
   const agreementForm = h('form', { class: 'inline', onsubmit: action(() => post(`/bookings/${id}/agreements`, { text: agreementForm.elements.text.value }), 'Afspraak toegevoegd.') },
@@ -723,12 +734,16 @@ async function bookingDetailView(id) {
     h('button', { class: 'btn', type: 'submit' }, 'Toevoegen'));
   const checklist = card(cardHead('Checklist', h('span', { class: 'muted' }, `${b.tasksDone}/${b.tasksTotal}`)),
     progressBar(b.tasksDone, b.tasksTotal),
-    tasksByStage.map((g) => h('div', { class: `task-group ${g.stage === b.status ? 'active' : ''}` },
-      h('h3', {}, STATUS_LABELS[g.stage]),
-      g.tasks.map((t) => h('label', { class: `task ${t.done ? 'is-done' : ''}` },
-        h('input', { type: 'checkbox', checked: t.done, onchange: action(() => patchJson(`/bookings/${id}/tasks/${t.id}`, { done: !t.done })) }),
-        h('span', {}, t.label),
-        t.doneAt && h('small', {}, fmtDateTime(t.doneAt)))))),
+    tasksByStage.map((g) => {
+      const done = g.tasks.filter((t) => t.done).length;
+      // The stage the booking is in stays open; the others fold away.
+      return h('details', { class: `task-group ${g.stage === b.status ? 'active' : ''}`, open: g.stage === b.status },
+        h('summary', {}, STATUS_LABELS[g.stage], h('span', { class: 'muted small' }, ` ${done}/${g.tasks.length}`)),
+        g.tasks.map((t) => h('label', { class: `task ${t.done ? 'is-done' : ''}` },
+          h('input', { type: 'checkbox', checked: t.done, onchange: action(() => patchJson(`/bookings/${id}/tasks/${t.id}`, { done: !t.done })) }),
+          h('span', {}, t.label),
+          t.doneAt && h('small', {}, fmtDateTime(t.doneAt)))));
+    }),
     newTask);
 
   // Review.
@@ -761,12 +776,54 @@ async function bookingDetailView(id) {
         h('span', { class: 'ev-icon' }, EVENT_ICONS[e.type] ?? '•'),
         h('div', {}, h('div', { class: 'pre' }, eventText(e)), h('div', { class: 'muted small' }, `${fmtDateTime(e.createdAt)} · ${e.actor}`))))));
 
+  // One page per subject instead of everything underneath each other.
+  const TABS = [
+    ['overview', 'Overzicht', [customer, agreementsCard]],
+    ['messages', 'Berichten', [commCard, reviewCard]],
+    ['money', 'Geld', [priceCard, paymentsCard]],
+    ['progress', 'Checklist en tijdlijn', [checklist, timeline]],
+  ];
+  if (detailTab.id !== id) detailTab = { id, tab: 'overview' };
+  const panels = TABS.map(([key, , blocks]) => h('div', { class: 'stack', hidden: key !== detailTab.tab }, blocks));
+  const tabButtons = TABS.map(([key, label]) => h('button', { type: 'button', class: key === detailTab.tab ? 'on' : '', onclick: () => showTab(key) }, label,
+    key === 'messages' && isOpen(b) && b.waitingOn === 'me' ? h('span', { class: 'dot' }) : null));
+  function showTab(key) {
+    detailTab.tab = key;
+    TABS.forEach(([k], i) => {
+      panels[i].hidden = k !== key;
+      tabButtons[i].classList.toggle('on', k === key);
+    });
+  }
+
+  // What to do next, depending on the stage.
+  const depositInvoice = b.invoices.find((i) => i.kind === 'deposit');
+  const go = (label, tab) => h('button', { class: 'btn primary', onclick: () => showTab(tab) }, label);
+  const move = (status) => h('button', { class: 'btn primary', onclick: action(() => moveBooking(id, status)) }, `→ ${STATUS_LABELS[status]}`);
+  const NEXT = {
+    new: ['Nieuwe aanvraag: laat de klant weten of de datum vrij is.', go('Beantwoorden', 'messages')],
+    contacted: b.waitingOn === 'me'
+      ? ['De klant wacht op jou. Is alles duidelijk, bevestig dan de datum.', go('Bevestigen', 'messages')]
+      : ['Je hebt gereageerd; je wacht op de klant. Is alles rond, bevestig dan de datum.', go('Bevestigen', 'messages')],
+    confirmed: b.depositPaid
+      ? ['De aanbetaling is binnen.', move('deposit_paid')]
+      : depositInvoice
+        ? [`Wacht op de aanbetaling: factuur ${depositInvoice.number} staat open.`, go('Naar geld', 'money')]
+        : ['Bevestigd, maar er is nog geen factuur voor de aanbetaling.', go('Factuur maken', 'money')],
+    deposit_paid: ['Het feest staat vast. Stem de starttijd en de games af en plan het in.', move('scheduled')],
+    scheduled: [`Ingepland voor ${fmtLongDate(b.partyDate)}. Zet het daarna op "Feest geweest".`, move('party_held')],
+    party_held: [b.outstandingCents ? `Feest geweest. Er staat nog ${fmtEuro(b.outstandingCents)} open.` : 'Feest geweest en alles is betaald. Vraag om een review en rond af.',
+      b.outstandingCents ? go('Naar geld', 'money') : move('completed')],
+  };
+  const next = NEXT[b.status] && me.role === 'owner'
+    ? h('div', { class: 'next-step' }, h('div', {}, h('strong', {}, 'Volgende stap: '), NEXT[b.status][0]), NEXT[b.status][1])
+    : null;
+
   view.replaceChildren(
     head,
     card(null, stepper),
-    h('div', { class: 'detail-grid', style: 'margin-top:16px' },
-      h('div', { class: 'stack' }, customer, priceCard, paymentsCard, agreementsCard),
-      h('div', { class: 'stack' }, commCard, reviewCard, checklist, timeline)),
+    ...(next ? [next] : []),
+    h('div', { class: 'tabs page-tabs' }, tabButtons),
+    ...panels,
   );
 }
 
@@ -1137,7 +1194,8 @@ async function accountView() {
 
 // Assistants can look at bookings but not change them: switch the controls off.
 function lockView() {
-  for (const el of [...view.querySelectorAll('button, input, select, textarea'), ...topbarActions.querySelectorAll('button')]) el.disabled = true;
+  // The tabs stay usable: looking around is allowed.
+  for (const el of [...view.querySelectorAll('button:not(.page-tabs button), input, select, textarea'), ...topbarActions.querySelectorAll('button')]) el.disabled = true;
   view.prepend(h('p', { class: 'muted' }, 'Je kunt boekingen bekijken. Wijzigen kan alleen een eigenaar.'));
 }
 

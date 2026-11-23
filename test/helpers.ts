@@ -30,7 +30,8 @@ export async function setupApp(overrides: Partial<Config> = {}, mollie: MollieCl
   const { rows } = await db.query<{ id: number }>("SELECT id FROM packages WHERE slug = 'standaard'");
   const sent: Mail[] = [];
   const inbox: IncomingMail[] = [];
-  const mailSource: MailSource = { fetchSince: async () => inbox };
+  // Like the real mailbox: hands over only the emails the import asks for.
+  const mailSource: MailSource = { fetchSince: async (_since, relevant) => inbox.filter((m) => relevant(m)) };
   const app = await buildApp({
     config,
     db,

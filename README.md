@@ -67,13 +67,13 @@ Emails you send from the admin come from `MAIL_FROM`. Customers' replies land in
 
 ### Importing customer emails
 
-Set `IMAP_HOST`, `IMAP_USER` and `IMAP_PASS` to the mailbox customers reply to (usually the one behind contact@gamerxp.nl). Every few minutes (`IMAP_POLL_MINUTES`) new emails are read and added to the conversation they belong to, and the booking switches to "jouw beurt":
+Set `IMAP_HOST`, `IMAP_USER` and `IMAP_PASS` to the mailbox customers reply to (usually the one behind contact@gamerxp.nl). Every few minutes (`IMAP_POLL_MINUTES`) the site looks at the sender and subject of new emails, and downloads only the ones that belong to a customer:
 
-- an email with a booking reference (`GXP-…`) in the subject or text goes to that booking;
-- otherwise it goes to the sender's current booking, matched on email address;
-- otherwise to their open conversation under *Berichten*, or it starts a new one there.
+- the subject contains a booking reference (`GXP-…`): the email goes to that booking;
+- the sender's address has a booking: it goes to their current booking;
+- the sender wrote through the contact form: it goes to their conversation under *Berichten*.
 
-The mailbox is only read: nothing is marked as read, moved or deleted. Quoted earlier messages are cut from replies, and each email is imported once. The first check looks back `IMAP_LOOKBACK_DAYS`. *Berichten → E-mail ophalen* checks right away. Without IMAP, log important replies by hand on the booking ("WhatsApp / telefoon vastleggen", channel *E-mail*).
+All other email is never downloaded or stored. The mailbox is only read: nothing is marked as read, moved or deleted. Quoted earlier messages are cut from replies, each email is imported once, and the booking switches to "jouw beurt". The first check looks back `IMAP_LOOKBACK_DAYS`. *Berichten → E-mail ophalen* checks right away. Without IMAP, log important replies by hand on the booking ("WhatsApp / telefoon vastleggen", channel *E-mail*).
 
 ### Weekly maintenance
 

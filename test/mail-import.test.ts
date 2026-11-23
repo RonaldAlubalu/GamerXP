@@ -35,7 +35,7 @@ describe('email import', () => {
     const booking = await createBooking();
     await ctx.app.inject({ method: 'PATCH', url: `/api/admin/bookings/${booking.id}`, headers: auth(), payload: { waitingOn: 'customer' } });
     ctx.inbox.push(mail());
-    expect(await runImport()).toEqual({ imported: 1, newConversations: 0, skipped: 0 });
+    expect(await runImport()).toEqual({ imported: 1, skipped: 0 });
 
     const after = await detail(booking.id);
     expect(after.waitingOn).toBe('me');
@@ -46,7 +46,7 @@ describe('email import', () => {
     await createBooking();
     ctx.inbox.push(mail());
     await runImport();
-    expect(await runImport()).toEqual({ imported: 0, newConversations: 0, skipped: 1 });
+    expect(await runImport()).toEqual({ imported: 0, skipped: 1 });
   });
 
   it('follows the booking reference when the email comes from another address', async () => {
@@ -56,22 +56,36 @@ describe('email import', () => {
     expect((await detail(booking.id)).communications[0]).toMatchObject({ actor: 'Peter', channel: 'email' });
   });
 
-  it('starts a conversation under Berichten for an unknown sender and continues it', async () => {
-    ctx.inbox.push(mail({ fromName: 'Nieuwe Klant', fromEmail: 'nieuw@example.nl', subject: 'Vraag', text: 'Komen jullie ook in Breda?' }));
-    expect(await runImport()).toMatchObject({ imported: 1, newConversations: 1 });
-    ctx.inbox.push(mail({ fromName: 'Nieuwe Klant', fromEmail: 'nieuw@example.nl', text: 'Nog een vraag.' }));
-    expect(await runImport()).toMatchObject({ imported: 1, newConversations: 0 });
+  it('never downloads email from unknown senders', async () => {
+    await createBooking();
+    ctx.inbox.push(
+      mail({ fromName: 'Nieuwsbrief', fromEmail: 'news@webshop.nl', subject: 'Black Friday!', text: 'Koop nu' }),
+      mail({ fromName: 'Privé', fromEmail: 'vriend@example.nl', subject: 'Zaterdag eten?', text: 'Noem GXP-ABC123 even in de tekst' }),
+    );
+    expect(await runImport()).toEqual({ imported: 0, skipped: 0 });
+    expect((await ctx.app.inject({ url: '/api/admin/messages', headers: auth() })).json()).toHaveLength(0);
+    expect((await ctx.db.query("SELECT count(*)::int AS n FROM communications WHERE channel = 'email' AND direction = 'in'")).rows[0].n).toBe(0);
+  });
 
-    const messages = (await ctx.app.inject({ url: '/api/admin/messages', headers: auth() })).json();
-    expect(messages).toHaveLength(1);
-    expect(messages[0]).toMatchObject({ name: 'Nieuwe Klant', email: 'nieuw@example.nl', message: 'Komen jullie ook in Breda?', waitingOn: 'me' });
-    const thread = (await ctx.app.inject({ url: `/api/admin/messages/${messages[0].id}`, headers: auth() })).json();
-    expect(thread.communications).toHaveLength(2);
+  it('skips an email whose reference matches no booking', async () => {
+    ctx.inbox.push(mail({ fromEmail: 'iemand@example.nl', subject: 'Vraag over GXP-ZZZZZZ' }));
+    expect(await runImport()).toEqual({ imported: 0, skipped: 1 });
+  });
+
+  it('adds a reply to the conversation of someone who used the contact form', async () => {
+    await ctx.app.inject({ method: 'POST', url: '/api/contact', payload: { name: 'Nieuwe Klant', email: 'nieuw@example.nl', message: 'Komen jullie ook in Breda?' } });
+    ctx.inbox.push(mail({ fromName: 'Nieuwe Klant', fromEmail: 'Nieuw@Example.nl', subject: 'Re: je bericht', text: 'Nog een vraag.' }));
+    expect(await runImport()).toEqual({ imported: 1, skipped: 0 });
+    const [message] = (await ctx.app.inject({ url: '/api/admin/messages', headers: auth() })).json();
+    expect(message.waitingOn).toBe('me');
+    const thread = (await ctx.app.inject({ url: `/api/admin/messages/${message.id}`, headers: auth() })).json();
+    expect(thread.communications[0]).toMatchObject({ direction: 'in', channel: 'email', body: 'Nog een vraag.' });
   });
 
   it('skips our own emails and bounces', async () => {
-    ctx.inbox.push(mail({ fromEmail: 'owner@gamerxp.nl' }), mail({ fromEmail: 'MAILER-DAEMON@mail.example.nl' }));
-    expect(await runImport()).toEqual({ imported: 0, newConversations: 0, skipped: 2 });
+    await createBooking();
+    ctx.inbox.push(mail({ fromEmail: 'owner@gamerxp.nl', subject: 'Fwd: GXP-AAAAAA' }), mail({ fromEmail: 'MAILER-DAEMON@mail.example.nl', subject: 'Undelivered: GXP-AAAAAA' }));
+    expect(await runImport()).toEqual({ imported: 0, skipped: 2 });
   });
 
   it('keeps only what the customer wrote in a reply', () => {

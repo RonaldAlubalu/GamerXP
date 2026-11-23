@@ -14,15 +14,20 @@ export interface IncomingMail {
   date: Date;
 }
 
+// What is known about an email before it is downloaded.
+export interface MailHeader {
+  fromEmail: string;
+  subject: string;
+}
+
 export interface MailSource {
-  // Emails received since the given date (the import skips ones it already has).
-  fetchSince(since: Date): Promise<IncomingMail[]>;
+  // Emails received since the given date. Only the sender and subject of each email are
+  // looked at; the email itself is downloaded only when `relevant` says so.
+  fetchSince(since: Date, relevant: (header: MailHeader) => boolean): Promise<IncomingMail[]>;
 }
 
 export interface ImportResult {
   imported: number;
-  // Emails that started a new conversation under Berichten.
-  newConversations: number;
   skipped: number;
 }
 
@@ -30,7 +35,7 @@ export interface ImportResult {
 export function createImapSource(config: Config): MailSource | null {
   if (!config.IMAP_HOST) return null;
   return {
-    async fetchSince(since) {
+    async fetchSince(since, relevant) {
       const client = new ImapFlow({
         host: config.IMAP_HOST,
         port: config.IMAP_PORT,
@@ -44,7 +49,15 @@ export function createImapSource(config: Config): MailSource | null {
         // Read-only: importing never marks emails as read or moves them.
         const lock = await client.getMailboxLock(config.IMAP_MAILBOX, { readOnly: true });
         try {
-          const uids = (await client.search({ since }, { uid: true })) || [];
+          const found = (await client.search({ since }, { uid: true })) || [];
+          // First pass: sender and subject only. Everything else in the mailbox is left alone.
+          const uids: number[] = [];
+          if (found.length) {
+            for await (const message of client.fetch(found, { envelope: true }, { uid: true })) {
+              const fromEmail = message.envelope?.from?.[0]?.address ?? '';
+              if (fromEmail && relevant({ fromEmail, subject: message.envelope?.subject ?? '' })) uids.push(message.uid);
+            }
+          }
           if (uids.length) {
             for await (const message of client.fetch(uids, { source: true }, { uid: true })) {
               if (!message.source) continue;
@@ -89,10 +102,21 @@ export function stripQuotedReply(text: string): string {
   return kept.join('\n').trim() || text.trim();
 }
 
+// Decides from sender and subject alone whether an email belongs to a customer:
+// the subject carries a booking reference, or the sender has a booking or a
+// conversation under Berichten. Other email is never downloaded.
+export async function relevanceCheck(app: FastifyInstance): Promise<(header: MailHeader) => boolean> {
+  const { rows } = await app.db.query<{ email: string }>(
+    'SELECT lower(email) AS email FROM bookings UNION SELECT lower(email) FROM contact_messages',
+  );
+  const known = new Set(rows.map((r) => r.email));
+  return ({ fromEmail, subject }) => REFERENCE.test(subject) || known.has(fromEmail.trim().toLowerCase());
+}
+
 // Files each email under the right booking (by reference, else by the sender's
-// email address), under an open contact conversation, or as a new conversation.
+// email address) or under the sender's conversation in Berichten.
 export async function importMails(app: FastifyInstance, mails: IncomingMail[]): Promise<ImportResult> {
-  const result: ImportResult = { imported: 0, newConversations: 0, skipped: 0 };
+  const result: ImportResult = { imported: 0, skipped: 0 };
   const own = new Set(
     [app.config.MAIL_FROM, app.config.OWNER_EMAIL, app.config.IMAP_USER, app.config.SMTP_USER].filter(Boolean).map(emailOf),
   );
@@ -122,21 +146,18 @@ export async function importMails(app: FastifyInstance, mails: IncomingMail[]): 
     let contactMessageId: number | undefined;
     if (!booking) {
       const open = await app.db.query<{ id: number }>(
-        'SELECT id FROM contact_messages WHERE lower(email) = $1 AND NOT handled ORDER BY created_at DESC LIMIT 1',
+        'SELECT id FROM contact_messages WHERE lower(email) = $1 ORDER BY handled, created_at DESC LIMIT 1',
         [from],
       );
       contactMessageId = open.rows[0]?.id;
     }
 
-    const body = stripQuotedReply(mail.text) || '(leeg bericht)';
+    // Not from a customer we know and no existing booking reference: leave it in the mailbox.
     if (!booking && !contactMessageId) {
-      const created = await app.db.query<{ id: number }>(
-        'INSERT INTO contact_messages (name, email, message, created_at) VALUES ($1, $2, $3, $4) RETURNING id',
-        [mail.fromName, from, body, mail.date],
-      );
-      contactMessageId = created.rows[0]!.id;
-      result.newConversations++;
+      result.skipped++;
+      continue;
     }
+    const body = stripQuotedReply(mail.text) || '(leeg bericht)';
 
     const id = await logCommunication(app, {
       bookingId: booking?.id,
@@ -155,10 +176,10 @@ export async function importMails(app: FastifyInstance, mails: IncomingMail[]): 
 
 // Checks the mailbox. The first check looks back IMAP_LOOKBACK_DAYS; later ones from the last import.
 export async function runMailImport(app: FastifyInstance): Promise<ImportResult> {
-  if (!app.mailSource) return { imported: 0, newConversations: 0, skipped: 0 };
+  if (!app.mailSource) return { imported: 0, skipped: 0 };
   const last = await app.db.query<{ at: Date | null }>('SELECT max(created_at) AS at FROM communications WHERE external_id IS NOT NULL');
   const lookback = new Date(Date.now() - app.config.IMAP_LOOKBACK_DAYS * 86_400_000);
   // IMAP searches by whole days, so go back one extra day; duplicates are skipped anyway.
   const since = last.rows[0]?.at ? new Date(last.rows[0].at.getTime() - 86_400_000) : lookback;
-  return importMails(app, await app.mailSource.fetchSince(since));
+  return importMails(app, await app.mailSource.fetchSince(since, await relevanceCheck(app)));
 }

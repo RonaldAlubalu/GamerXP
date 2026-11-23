@@ -248,6 +248,24 @@ describe('admin API', () => {
     ]);
   });
 
+  it('moves a new request to "contact made" at your first reply, also on the customer page', async () => {
+    const booking = await createBooking();
+    const { rows } = await ctx.db.query('SELECT status_token FROM bookings WHERE id = $1', [booking.id]);
+    const customerPage = async () => (await ctx.app.inject(`/api/status/${rows[0].status_token}`)).json();
+    expect((await customerPage()).status).toBe('new');
+    // A message from the customer changes nothing.
+    await ctx.app.inject({ method: 'POST', url: `/api/admin/bookings/${booking.id}/messages`, headers: auth(), payload: { direction: 'in', channel: 'whatsapp', body: 'Hoi!' } });
+    expect((await customerPage()).status).toBe('new');
+    await ctx.app.inject({ method: 'POST', url: `/api/admin/bookings/${booking.id}/messages`, headers: auth(), payload: { direction: 'out', channel: 'email', body: 'Bedankt voor je aanvraag!', send: true } });
+    const page = await customerPage();
+    expect(page.status).toBe('contacted');
+    expect(page.steps.filter((s: { state: string }) => s.state === 'done')).toHaveLength(1);
+    // A later reply does not move a booking that is already further along.
+    await ctx.app.inject({ method: 'PATCH', url: `/api/admin/bookings/${booking.id}`, headers: auth(), payload: { status: 'confirmed' } });
+    await ctx.app.inject({ method: 'POST', url: `/api/admin/bookings/${booking.id}/messages`, headers: auth(), payload: { direction: 'out', channel: 'whatsapp', body: 'Tot dan!' } });
+    expect((await customerPage()).status).toBe('confirmed');
+  });
+
   it('keeps a list of agreements', async () => {
     const booking = await createBooking();
     const added = await ctx.app.inject({

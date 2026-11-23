@@ -409,6 +409,11 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
       message: `${m.direction === 'in' ? 'Bericht ontvangen' : m.send ? 'E-mail verstuurd' : 'Bericht gelogd'} (${m.channel})${m.subject ? `: ${m.subject}` : ''}`,
       actor: by,
     });
+    // Your first reply to a new request is "contact made": the customer's page moves on with it.
+    if (m.direction === 'out' && b.status === 'new') {
+      await app.db.query("UPDATE bookings SET status = 'contacted', updated_at = now() WHERE id = $1 AND status = 'new'", [id]);
+      await addEvent(app.db, id, { type: 'status', fromStatus: 'new', toStatus: 'contacted', actor: by });
+    }
     return reply.status(201).send(await loadBooking(id));
   });
 

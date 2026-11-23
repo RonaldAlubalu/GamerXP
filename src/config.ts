@@ -27,6 +27,9 @@ const schema = z.object({
   TRAVEL_MAX_CENTS: z.coerce.number().int().min(0).default(10000),
   // Surcharge when the party ends after 19:30.
   EVENING_SURCHARGE_CENTS: z.coerce.number().int().min(0).default(5000),
+  // Time needed on location before and after a party, for the day planning.
+  SETUP_MINUTES: z.coerce.number().int().min(0).max(240).default(60),
+  TEARDOWN_MINUTES: z.coerce.number().int().min(0).max(240).default(45),
   // Where the bus leaves from, used to calculate travel distance (a postcode or address).
   BASE_LOCATION: z.string().default('5611AB Eindhoven'),
   // Address lookup (PDOK Locatieserver, free) and driving distance (OSRM).

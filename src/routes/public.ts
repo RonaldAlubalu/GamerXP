@@ -8,6 +8,7 @@ import { bookingRequest, contactRequest, dateString } from '../lib/schemas.js';
 import { availableSlots, bookingWindow, getTimeSlots } from '../services/availability.js';
 import { createBooking, recalculatePrice } from '../services/bookings.js';
 import { sendAndLog } from '../services/communications.js';
+import { estimateTravelMinutes } from '../lib/schedule.js';
 import { notify } from '../services/push.js';
 import { travelCents } from '../services/pricing.js';
 import { amountsDue, paymentLink } from '../services/online-payments.js';
@@ -57,7 +58,8 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
       // never holds up the booking: the distance can be filled in from the admin page.
       const lookup = app.distance.drivingKm(input.postalCode, input.city).then(async (km) => {
         if (km === null) return;
-        await app.db.query('UPDATE bookings SET travel_km = $2 WHERE id = $1 AND travel_km IS NULL', [booking.id, km]);
+        const minutes = app.distance.drivingMinutes?.(input.postalCode, input.city) ?? estimateTravelMinutes(km);
+        await app.db.query('UPDATE bookings SET travel_km = $2, travel_minutes = $3 WHERE id = $1 AND travel_km IS NULL', [booking.id, km, minutes]);
         await recalculatePrice(app.db, app.config, booking.id);
       });
       await Promise.race([lookup, new Promise((r) => setTimeout(r, 4000))]).catch((err) =>

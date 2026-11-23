@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
+import { daySchedule } from '../../lib/schedule.js';
 import { addDays } from '../../lib/dates.js';
 import { HttpError } from '../../lib/errors.js';
 import { dateString, timeString } from '../../lib/schemas.js';
@@ -103,10 +104,12 @@ export const availabilityRoutes: FastifyPluginAsync = async (app) => {
 
     const [days, bookings] = await Promise.all([
       getAvailability(app.db, app.config, from, to),
-      app.db.query<{ partyDate: string }>(
+      app.db.query<{ partyDate: string; startTime: string | null; slotStart: string; durationHours: number; travelMinutes: number | null }>(
         `SELECT b.id, b.reference, b.party_date AS "partyDate", b.time_slot AS "timeSlot",
                 to_char(b.start_time, 'HH24:MI') AS "startTime", b.status, b.parent_name AS "parentName",
-                b.child_name AS "childName", b.city, p.name AS "packageName"
+                b.child_name AS "childName", b.city, p.name AS "packageName",
+                b.travel_minutes AS "travelMinutes", p.duration_hours::float AS "durationHours",
+                (SELECT to_char(ts.start_time, 'HH24:MI') FROM time_slots ts WHERE ts.key = b.time_slot) AS "slotStart"
            FROM bookings b JOIN packages p ON p.id = b.package_id
           WHERE b.party_date BETWEEN $1 AND $2 AND b.status <> 'cancelled'
           ORDER BY b.party_date, array_position(ARRAY['ochtend', 'middag', 'avond'], b.time_slot)`,
@@ -116,7 +119,13 @@ export const availabilityRoutes: FastifyPluginAsync = async (app) => {
     return {
       month,
       slots: await getTimeSlots(app.db),
-      days: days.map((d) => ({ ...d, bookings: bookings.rows.filter((b) => b.partyDate === d.date) })),
+      days: days.map((d) => ({
+        ...d,
+        // With each party the whole block of the day: from leaving to being home again.
+        bookings: bookings.rows
+          .filter((b) => b.partyDate === d.date)
+          .map((b) => ({ ...b, schedule: daySchedule(b, { setupMinutes: app.config.SETUP_MINUTES, teardownMinutes: app.config.TEARDOWN_MINUTES }) })),
+      })),
     };
   });
 };

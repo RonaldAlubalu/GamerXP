@@ -266,6 +266,26 @@ describe('admin API', () => {
     expect((await customerPage()).status).toBe('confirmed');
   });
 
+  it('plans the whole day around a party, with the drive there and back', async () => {
+    const booking = await createBooking();
+    // 30 km in the tests: estimated at 30 minutes. Standaard lasts 3 hours; the middag slot starts at 13:00.
+    const first = (await ctx.app.inject({ url: `/api/admin/bookings/${booking.id}`, headers: auth() })).json();
+    expect(first.travelMinutes).toBe(30);
+    expect(first.schedule).toEqual({ leave: '11:30', setupStart: '12:00', start: '13:00', end: '16:00', teardownEnd: '16:45', home: '17:15', travelKnown: true, startAssumed: true });
+
+    await ctx.app.inject({ method: 'PATCH', url: `/api/admin/bookings/${booking.id}`, headers: auth(), payload: { startTime: '14:30', travelMinutes: 50 } });
+    const planned = (await ctx.app.inject({ url: `/api/admin/bookings/${booking.id}`, headers: auth() })).json();
+    expect(planned.schedule).toMatchObject({ leave: '12:40', start: '14:30', end: '17:30', home: '19:05', startAssumed: false });
+    // Saving the price again with the same distance keeps the driving time you set.
+    await ctx.app.inject({ method: 'PATCH', url: `/api/admin/bookings/${booking.id}`, headers: auth(), payload: { travelKm: 30, depositCents: 10000 } });
+    expect((await ctx.app.inject({ url: `/api/admin/bookings/${booking.id}`, headers: auth() })).json().travelMinutes).toBe(50);
+
+    const month = planned.partyDate.slice(0, 7);
+    const calendar = (await ctx.app.inject({ url: `/api/admin/calendar?month=${month}`, headers: auth() })).json();
+    const day = calendar.days.find((d: { date: string }) => d.date === planned.partyDate);
+    expect(day.bookings[0].schedule).toMatchObject({ leave: '12:40', home: '19:05' });
+  });
+
   it('keeps a list of agreements', async () => {
     const booking = await createBooking();
     const added = await ctx.app.inject({

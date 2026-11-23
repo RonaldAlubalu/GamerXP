@@ -3,6 +3,9 @@ import type { Config } from '../config.js';
 export interface DistanceService {
   // One-way driving distance in km from the base location, or null when the address can't be found.
   drivingKm(postalCode: string, city: string): Promise<number | null>;
+  // One-way driving time in minutes for an address looked up before with drivingKm, when the
+  // route planner gave one.
+  drivingMinutes?(postalCode: string, city: string): number | null;
 }
 
 type Point = { lon: number; lat: number };
@@ -38,13 +41,18 @@ export function createDistanceService(config: Config, log: (msg: string, err?: u
     return point;
   }
 
-  async function routeKm(from: Point, to: Point): Promise<number> {
+  const minutesFor = new Map<string, number>();
+  const addressKey = (postalCode: string, city: string) => `${postalCode} ${city}`.toLowerCase().replace(/\s+/g, ' ').trim();
+
+  async function routeKm(from: Point, to: Point, key: string): Promise<number> {
     const url = `${config.ROUTING_URL}/route/v1/driving/${from.lon},${from.lat};${to.lon},${to.lat}?overview=false`;
     const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
     if (!res.ok) throw new Error(`Router answered ${res.status}`);
-    const body = (await res.json()) as { routes?: { distance: number }[] };
+    const body = (await res.json()) as { routes?: { distance: number; duration?: number }[] };
     const meters = body.routes?.[0]?.distance;
     if (meters === undefined) throw new Error('No route found');
+    const seconds = body.routes?.[0]?.duration;
+    if (seconds !== undefined) minutesFor.set(key, Math.round(seconds / 60));
     return meters / 1000;
   }
 
@@ -55,7 +63,7 @@ export function createDistanceService(config: Config, log: (msg: string, err?: u
         if (!base || !target) return null;
         let km: number;
         try {
-          km = await routeKm(base, target);
+          km = await routeKm(base, target, addressKey(postalCode, city));
         } catch (err) {
           // Routing service unavailable: estimate from the straight-line distance.
           log('Routing failed, estimating distance', err);
@@ -66,6 +74,9 @@ export function createDistanceService(config: Config, log: (msg: string, err?: u
         log('Distance lookup failed', err);
         return null;
       }
+    },
+    drivingMinutes(postalCode, city) {
+      return minutesFor.get(addressKey(postalCode, city)) ?? null;
     },
   };
 }

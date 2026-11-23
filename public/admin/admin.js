@@ -624,11 +624,15 @@ async function bookingDetailView(id) {
   // Customer and party.
   const planForm = h('form', { class: 'inline', onsubmit: action(() => {
     const f = planForm.elements;
-    return patchJson(`/bookings/${id}`, { partyDate: f.partyDate.value, timeSlot: f.timeSlot.value, startTime: f.startTime.value || null });
+    return patchJson(`/bookings/${id}`, {
+      partyDate: f.partyDate.value, timeSlot: f.timeSlot.value, startTime: f.startTime.value || null,
+      travelMinutes: f.travelMinutes.value === '' ? null : Number(f.travelMinutes.value),
+    });
   }, 'Planning opgeslagen.') },
     field('Datum', h('input', { type: 'date', name: 'partyDate', value: b.partyDate, required: true })),
     field('Dagdeel', h('select', { name: 'timeSlot' }, Object.entries(SLOT_LABELS).map(([k, l]) => h('option', { value: k, selected: k === b.timeSlot }, l)))),
     field('Starttijd', h('input', { type: 'time', name: 'startTime', value: b.startTime ?? '' })),
+    field('Reistijd enkele reis (min)', h('input', { type: 'number', name: 'travelMinutes', min: 0, max: 600, value: b.travelMinutes ?? '', style: 'width:110px' })),
     h('button', { class: 'btn', type: 'submit' }, 'Opslaan'));
   const phoneDigits = b.phone.replace(/\D/g, '').replace(/^0/, '31');
   const customer = card('Klant en feest',
@@ -648,6 +652,13 @@ async function bookingDetailView(id) {
       h('dt', {}, 'Parkeren'), h('dd', {}, { free: 'Gratis parkeren', paid: 'Betaald parkeren: parkeerkosten boven €10 doorberekenen', unknown: 'Weet de klant niet: navragen' }[b.parking] ?? 'Niet opgegeven'),
       h('dt', {}, 'Details'), h('dd', {}, b.notes || '–'),
       h('dt', {}, 'Aangevraagd'), h('dd', {}, fmtDateTime(b.createdAt))),
+    h('h3', { style: 'margin-top:16px' }, 'Dagplanning'),
+    h('ol', { class: 'day-plan' },
+      h('li', {}, h('strong', {}, b.schedule.leave), ` vertrek${b.schedule.travelKnown ? ` (${b.travelMinutes} min rijden)` : ' (reistijd nog niet bekend)'}`),
+      h('li', {}, h('strong', {}, b.schedule.setupStart), ' opbouwen'),
+      h('li', { class: 'party' }, h('strong', {}, `${b.schedule.start}–${b.schedule.end}`), ` feest${b.schedule.startAssumed ? ' (starttijd nog niet afgestemd)' : ''}`),
+      h('li', {}, h('strong', {}, b.schedule.teardownEnd), ' afgebouwd'),
+      h('li', {}, h('strong', {}, b.schedule.home), ' weer thuis')),
     h('h3', { style: 'margin-top:16px' }, 'Planning'),
     planForm);
 
@@ -1060,8 +1071,13 @@ function calendarGrid(cal) {
         const bookings = d.bookings.filter((b) => b.timeSlot === s.key);
         const short = SLOT_LABELS[s.key].slice(0, 3);
         if (bookings.length) {
-          return bookings.map((b) => h('a', { class: `cal-chip booked st-${b.status}`, href: `#/bookings/${b.id}`, title: `${STATUS_LABELS[b.status]} · ${b.packageName}` },
-            `${b.startTime ?? short} ${b.childName || b.parentName} · ${b.city}`));
+          return bookings.map((b) => h('a', {
+            class: `cal-chip booked st-${b.status}`, href: `#/bookings/${b.id}`,
+            title: `${STATUS_LABELS[b.status]} · ${b.packageName} · weg ${b.schedule.leave}, feest ${b.schedule.start}–${b.schedule.end}, thuis ${b.schedule.home}${b.schedule.travelKnown ? '' : ' (zonder reistijd)'}`,
+          },
+            `${b.startTime ?? short} ${b.childName || b.parentName} · ${b.city}`,
+            // The whole block of the day, including the drive there and back.
+            h('span', { class: 'cal-block' }, `${b.schedule.leave}–${b.schedule.home}${b.schedule.travelKnown ? '' : ' *'}`)));
         }
         if (d.blocked || past) return h('span', { class: 'cal-chip closed' }, `${short} –`);
         if (!s.open) return h('button', { type: 'button', class: 'cal-chip closed', title: 'Klik om dit dagdeel open te zetten', onclick: setSlot(d, s, true) }, `${short} –`);
@@ -1076,7 +1092,7 @@ function calendarGrid(cal) {
       Array.from({ length: offset }, () => h('div', { class: 'cal-pad' })),
       cal.days.map(dayCell)),
     h('p', { class: 'muted small', style: 'margin-top:10px' },
-      'Klik op een dagdeel om het open of dicht te zetten; ⊘ blokkeert de hele dag. ',
+      'Klik op een dagdeel om het open of dicht te zetten; ⊘ blokkeert de hele dag. Onder elk feest staat het hele blok van vertrek tot thuiskomst (* = reistijd nog niet bekend). ',
       badge('vrij', 'success'), ' te boeken · ', badge('geboekt', 'violet'), ' klik voor details · ', badge('aanvraag', 'warning'), ' nog niet bevestigd · grijs = gesloten'));
 }
 

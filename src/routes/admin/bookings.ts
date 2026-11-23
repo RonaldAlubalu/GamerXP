@@ -6,6 +6,7 @@ import {
   formatEuro, paymentLinkMail, reminderMail, reminderText, reviewRequestMail, statusChangeMail, whatsappUrl, withSignature,
 } from '../../lib/emails.js';
 import { HttpError } from '../../lib/errors.js';
+import { daySchedule, estimateTravelMinutes } from '../../lib/schedule.js';
 import { bookingStatus, dateString, TIME_SLOTS, timeString } from '../../lib/schemas.js';
 import { getBookingMailData, recalculatePaid, recalculatePrice } from '../../services/bookings.js';
 import { logCommunication, sendAndLog } from '../../services/communications.js';
@@ -21,7 +22,9 @@ const BOOKING_COLUMNS = `
   b.parent_name AS "parentName", b.email, b.phone, b.street, b.postal_code AS "postalCode", b.city,
   b.child_name AS "childName", b.child_age AS "childAge", b.guest_count AS "guestCount",
   b.notes, b.parking, b.status, b.admin_notes AS "adminNotes", b.waiting_on AS "waitingOn",
-  b.package_price_cents AS "packagePriceCents", b.travel_km::float AS "travelKm",
+  b.package_price_cents AS "packagePriceCents", b.travel_km::float AS "travelKm", b.travel_minutes AS "travelMinutes",
+  p.duration_hours::float AS "durationHours",
+  (SELECT to_char(ts.start_time, 'HH24:MI') FROM time_slots ts WHERE ts.key = b.time_slot) AS "slotStart",
   b.evening_surcharge AS "eveningSurcharge", b.price_extras AS "priceExtras",
   b.price_cents AS "priceCents", b.deposit_cents AS "depositCents", b.paid_cents AS "paidCents",
   (b.deposit_cents > 0 AND b.paid_cents >= b.deposit_cents) AS "depositPaid",
@@ -207,6 +210,8 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
     return {
       ...booking,
       priceLines: lines,
+      // Leaving, building up, the party, breaking down and being home again.
+      schedule: daySchedule(booking, { setupMinutes: app.config.SETUP_MINUTES, teardownMinutes: app.config.TEARDOWN_MINUTES }),
       invoices: await listInvoices(app, id),
       tasks: tasks.rows,
       events: events.rows,
@@ -270,6 +275,7 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
         startTime: timeString.nullable().optional(),
         extraStations: z.number().int().min(0).max(2).optional(),
         travelKm: z.number().min(0).max(2000).nullable().optional(),
+        travelMinutes: z.number().int().min(0).max(600).nullable().optional(),
         eveningSurcharge: z.boolean().optional(),
         priceExtras: z
           .array(z.object({ label: z.string().trim().min(1).max(100), amountCents: z.number().int().min(-100000).max(100000) }))
@@ -295,6 +301,7 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
          time_slot         = COALESCE($7, time_slot),
          extra_stations    = COALESCE($8, extra_stations),
          travel_km         = CASE WHEN $9 THEN $10::numeric ELSE travel_km END,
+         travel_minutes    = CASE WHEN $16 THEN $17::int ELSE travel_minutes END,
          evening_surcharge = COALESCE($11, evening_surcharge),
          price_extras      = COALESCE($12::jsonb, price_extras),
          deposit_cents     = COALESCE($13, deposit_cents),
@@ -308,6 +315,9 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
         body.travelKm !== undefined, body.travelKm ?? null, body.eveningSurcharge ?? null,
         body.priceExtras ? JSON.stringify(body.priceExtras) : null, body.depositCents ?? null,
         body.waitingOn ?? null, body.reviewStatus ?? null,
+        // A new distance typed by hand gets an estimated driving time, unless one is given too.
+        body.travelMinutes !== undefined || (body.travelKm !== undefined && body.travelKm !== before.travelKm),
+        body.travelMinutes !== undefined ? body.travelMinutes : body.travelKm == null ? null : estimateTravelMinutes(body.travelKm),
       ],
     );
     await recalculatePrice(app.db, app.config, id);
@@ -376,9 +386,10 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
     if (km === null) {
       throw new HttpError(422, 'Afstand kon niet worden berekend. Vul het aantal kilometers zelf in.', 'distance_unknown');
     }
-    await app.db.query('UPDATE bookings SET travel_km = $2 WHERE id = $1', [id, km]);
+    const minutes = app.distance.drivingMinutes?.(b.postalCode, b.city) ?? estimateTravelMinutes(km);
+    await app.db.query('UPDATE bookings SET travel_km = $2, travel_minutes = $3 WHERE id = $1', [id, km, minutes]);
     await recalculatePrice(app.db, app.config, id);
-    await addEvent(app.db, id, { type: 'update', message: `Afstand berekend: ${km} km enkele reis`, actor: actorOf(req) });
+    await addEvent(app.db, id, { type: 'update', message: `Afstand berekend: ${km} km enkele reis, ongeveer ${minutes} minuten rijden`, actor: actorOf(req) });
     return loadBooking(id);
   });
 

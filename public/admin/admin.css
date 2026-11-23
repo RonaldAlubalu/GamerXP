@@ -355,3 +355,11 @@ details.task-group:not([open]) > summary { color: var(--muted); font-weight: 500
 .qr-panel h2 { margin: 0 0 2px; color: #111; }
 .qr-panel .muted { color: #555; }
 .qr-code svg { width: 100%; height: auto; max-width: 320px; display: block; margin: 8px auto; }
+
+/* Day plan around a party */
+.day-plan { list-style: none; padding: 0; margin: 6px 0 0; display: grid; gap: 4px; }
+.day-plan li { padding-left: 14px; border-left: 3px solid var(--border); color: var(--muted); }
+.day-plan li strong { color: var(--text); display: inline-block; min-width: 96px; }
+.day-plan li.party { border-left-color: var(--primary); color: var(--text); }
+.cal-chip.booked { white-space: normal; }
+.cal-chip .cal-block { display: block; font-size: .66rem; opacity: .8; }

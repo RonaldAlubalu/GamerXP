@@ -19,6 +19,8 @@ export interface TestContext {
   inbox: IncomingMail[];
   // Labels the fake mailbox was asked to set: Message-ID -> label.
   labels: Map<string, string>;
+  // Notifications the site tried to deliver: one entry per device.
+  pushed: { endpoint: string; title: string; body: string; url: string }[];
 }
 
 export async function setupApp(overrides: Partial<Config> = {}, mollie: MollieClient | null = null): Promise<TestContext> {
@@ -34,6 +36,7 @@ export async function setupApp(overrides: Partial<Config> = {}, mollie: MollieCl
   const inbox: IncomingMail[] = [];
   // Like the real mailbox: hands over only the emails the import asks for.
   const labels = new Map<string, string>();
+  const pushed: TestContext['pushed'] = [];
   const mailSource: MailSource = {
     fetchSince: async (_since, relevant) => inbox.filter((m) => relevant(m)),
     setLabel: async (ids, label) => ids.forEach((id) => labels.set(id, label)),
@@ -47,8 +50,12 @@ export async function setupApp(overrides: Partial<Config> = {}, mollie: MollieCl
     distance: { drivingKm: async () => 30 },
     mollie,
     mailSource,
+    push: async (sub, payload) => {
+      if (sub.endpoint.includes('gone')) throw Object.assign(new Error('Gone'), { statusCode: 410 });
+      pushed.push({ endpoint: sub.endpoint, ...JSON.parse(payload) });
+    },
   });
-  return { app, db, config, sent, packageId: rows[0]!.id, inbox, labels };
+  return { app, db, config, sent, packageId: rows[0]!.id, inbox, labels, pushed };
 }
 
 export async function teardown(ctx: TestContext): Promise<void> {

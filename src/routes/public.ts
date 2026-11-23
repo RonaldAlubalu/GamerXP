@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { daysBetween } from '../lib/dates.js';
+import { daysBetween, formatDutchDate } from '../lib/dates.js';
 import { bookingOwnerNotification, bookingReceivedMail, contactOwnerNotification, statusUrl } from '../lib/emails.js';
 import { HttpError } from '../lib/errors.js';
 import type { Mail } from '../lib/mailer.js';
@@ -8,6 +8,7 @@ import { bookingRequest, contactRequest, dateString } from '../lib/schemas.js';
 import { availableSlots, bookingWindow, getTimeSlots } from '../services/availability.js';
 import { createBooking, recalculatePrice } from '../services/bookings.js';
 import { sendAndLog } from '../services/communications.js';
+import { notify } from '../services/push.js';
 import { travelCents } from '../services/pricing.js';
 import { amountsDue, paymentLink } from '../services/online-payments.js';
 import { STAGE_INFO, STAGES, stageIndex, type Status } from '../services/pipeline.js';
@@ -72,6 +73,12 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
         );
       }
 
+      void notify(app, {
+        title: 'Nieuwe aanvraag',
+        body: `${booking.parentName} · ${formatDutchDate(booking.partyDate)} · ${booking.packageName} in ${booking.city}`,
+        url: `#/bookings/${booking.id}`,
+      });
+
       return reply.status(201).send({
         reference: booking.reference,
         status: booking.status,
@@ -110,6 +117,7 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
         [rows[0]!.id, msg.message, msg.name],
       );
       if (app.config.OWNER_EMAIL) await sendSafely(contactOwnerNotification(msg, app.config.OWNER_EMAIL));
+      void notify(app, { title: `Bericht van ${msg.name}`, body: msg.message.slice(0, 140), url: `#/messages/${rows[0]!.id}` });
       return reply.status(201).send({ ok: true });
     },
   );

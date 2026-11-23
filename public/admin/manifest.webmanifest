@@ -1,0 +1,12 @@
+{
+  "name": "Gamer Xperience Admin",
+  "short_name": "GXP Admin",
+  "start_url": "/admin/",
+  "scope": "/admin/",
+  "display": "standalone",
+  "background_color": "#0f1420",
+  "theme_color": "#0f1420",
+  "icons": [
+    { "src": "/assets/img/logo.png", "sizes": "any", "type": "image/png", "purpose": "any" }
+  ]
+}

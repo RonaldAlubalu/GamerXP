@@ -1006,7 +1006,52 @@ async function systemView(fresh) {
       badge(TONE[c.state][0], TONE[c.state][1])))));
 }
 
-function accountView() {
+// Notifications on this device ---------------------------------------------------
+
+const pushSupported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+const pushRegistration = () => navigator.serviceWorker.register('/admin/sw.js', { scope: '/admin/' });
+const keyBytes = (base64) => Uint8Array.from(atob(base64.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
+
+async function enablePush() {
+  if ((await Notification.requestPermission()) !== 'granted') {
+    throw new Error('Meldingen zijn geblokkeerd voor deze site. Sta ze toe in de instellingen van je browser.');
+  }
+  const registration = await pushRegistration();
+  await navigator.serviceWorker.ready;
+  const { publicKey } = await api('/push/key');
+  const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(publicKey) });
+  const { endpoint, keys } = subscription.toJSON();
+  await post('/push/subscribe', { endpoint, keys, device: navigator.userAgent.slice(0, 200) });
+}
+
+async function disablePush() {
+  const subscription = await (await pushRegistration()).pushManager.getSubscription();
+  if (!subscription) return;
+  await post('/push/unsubscribe', { endpoint: subscription.endpoint });
+  await subscription.unsubscribe();
+}
+
+async function pushCard() {
+  const box = h('section', { class: 'card', style: 'max-width:480px' }, h('h2', {}, 'Meldingen op dit apparaat'));
+  if (!pushSupported) {
+    box.append(h('p', { class: 'muted' }, 'Deze browser ondersteunt geen meldingen. Op een iPhone of iPad: open de admin in Safari, kies Deel > "Zet op beginscherm" en open de admin daarna vanaf het beginscherm.'));
+    return box;
+  }
+  const subscription = await (await pushRegistration()).pushManager.getSubscription().catch(() => null);
+  box.append(
+    h('p', { class: 'muted' }, me.role === 'owner'
+      ? 'Krijg een melding bij een nieuwe aanvraag, een bericht of e-mail van een klant en een online betaling. Je stelt dit per apparaat in.'
+      : 'Meldingen over aanvragen, berichten en betalingen gaan naar eigenaren. Je kunt hier wel testen of meldingen op dit apparaat werken.'),
+    subscription
+      ? h('div', { class: 'inline' },
+          badge('Aan op dit apparaat', 'success'),
+          h('button', { class: 'btn', onclick: action(async () => { const r = await post('/push/test'); if (!r.sent) throw new Error('Er kon geen testmelding worden verstuurd.'); }, 'Testmelding verstuurd.') }, 'Testmelding'),
+          h('button', { class: 'btn', onclick: action(disablePush, 'Meldingen uitgezet op dit apparaat.') }, 'Uitzetten'))
+      : h('button', { class: 'btn primary', onclick: action(enablePush, 'Meldingen staan aan op dit apparaat.') }, 'Meldingen aanzetten'));
+  return box;
+}
+
+async function accountView() {
   setPage('Mijn account');
   const form = h('form', { class: 'card', style: 'max-width:480px', onsubmit: action(async () => {
     const d = Object.fromEntries(new FormData(form));
@@ -1019,7 +1064,7 @@ function accountView() {
     field('Nieuw wachtwoord (minimaal 12 tekens)', h('input', { name: 'password', type: 'password', required: true, minlength: 12, autocomplete: 'new-password' })),
     field('Herhaal nieuw wachtwoord', h('input', { name: 'repeat', type: 'password', required: true, minlength: 12, autocomplete: 'new-password' })),
     h('button', { class: 'btn primary', type: 'submit' }, 'Opslaan'));
-  view.replaceChildren(form);
+  view.replaceChildren(await pushCard(), form);
 }
 
 // Assistants can look at bookings but not change them: switch the controls off.
@@ -1078,7 +1123,7 @@ async function render() {
     else if (parts[0] === 'packages') await packagesView();
     else if (parts[0] === 'users') await usersView();
     else if (parts[0] === 'system') await systemView();
-    else if (parts[0] === 'account') accountView();
+    else if (parts[0] === 'account') await accountView();
     else await boardView();
     if (assistant && !['list', 'calendar', 'availability', 'account'].includes(parts[0])) lockView();
   } catch (err) {

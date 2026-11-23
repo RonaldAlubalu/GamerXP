@@ -6,6 +6,7 @@ import { getBookingMailData, recalculatePaid } from './bookings.js';
 import { sendAndLog } from './communications.js';
 import { valueToCents } from './mollie.js';
 import { addEvent } from './pipeline.js';
+import { notify } from './push.js';
 
 export type OnlineKind = 'deposit' | 'payment';
 
@@ -142,6 +143,12 @@ export async function syncPayment(app: FastifyInstance, molliePaymentId: string)
     type: 'payment',
     message: `Online betaald via Mollie: ${kind === 'deposit' ? 'aanbetaling' : 'restbedrag'} ${formatEuro(amountCents)}`,
     actor: 'Mollie',
+  });
+
+  void notify(app, {
+    title: 'Betaling ontvangen',
+    body: `${kind === 'deposit' ? 'Aanbetaling' : 'Restbedrag'} van ${formatEuro(amountCents)} via Mollie`,
+    url: `#/bookings/${bookingId}`,
   });
 
   // A paid deposit moves a confirmed booking on to "Aanbetaling ontvangen", with the usual email.

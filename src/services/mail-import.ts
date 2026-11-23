@@ -4,6 +4,7 @@ import { simpleParser } from 'mailparser';
 import type { Config } from '../config.js';
 import { logCommunication } from './communications.js';
 import { STAGE_INFO, STATUSES, type Status } from './pipeline.js';
+import { notify } from './push.js';
 
 // An email as read from the mailbox.
 export interface IncomingMail {
@@ -224,6 +225,11 @@ export async function importMails(app: FastifyInstance, mails: IncomingMail[]): 
       actor: mail.fromName,
     });
     await app.db.query('UPDATE communications SET external_id = $2, created_at = $3 WHERE id = $1', [id, mail.messageId, mail.date]);
+    void notify(app, {
+      title: `E-mail van ${mail.fromName}`,
+      body: body.slice(0, 140),
+      url: booking ? `#/bookings/${booking.id}` : `#/messages/${contactMessageId}`,
+    });
     // The new email still needs its label.
     if (booking) await app.db.query('UPDATE bookings SET mail_label = NULL WHERE id = $1', [booking.id]);
     result.imported++;

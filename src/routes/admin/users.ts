@@ -2,12 +2,13 @@ import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { hashPassword, verifyPassword } from '../../lib/auth.js';
 import { HttpError } from '../../lib/errors.js';
+import { notify, vapidKeys } from '../../services/push.js';
 
 export type Role = 'owner' | 'assistant';
 
 // What an assistant may do: look at bookings and the calendar, and change the availability.
-const ASSISTANT_READ = [/^\/me$/, /^\/stages$/, /^\/overview$/, /^\/pipeline$/, /^\/bookings(\/[^/]+)?$/, /^\/calendar$/, /^\/packages$/, /^\/availability(\/|$)/, /^\/blocked-dates(\/|$)/];
-const ASSISTANT_WRITE = [/^\/logout$/, /^\/me\/password$/, /^\/availability(\/|$)/, /^\/blocked-dates(\/|$)/];
+const ASSISTANT_READ = [/^\/me$/, /^\/push\/key$/, /^\/stages$/, /^\/overview$/, /^\/pipeline$/, /^\/bookings(\/[^/]+)?$/, /^\/calendar$/, /^\/packages$/, /^\/availability(\/|$)/, /^\/blocked-dates(\/|$)/];
+const ASSISTANT_WRITE = [/^\/logout$/, /^\/me\/password$/, /^\/push\//, /^\/availability(\/|$)/, /^\/blocked-dates(\/|$)/];
 
 export function assistantMayCall(method: string, path: string): boolean {
   return (method === 'GET' ? ASSISTANT_READ : ASSISTANT_WRITE).some((allowed) => allowed.test(path));
@@ -34,6 +35,35 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
     await app.db.query('DELETE FROM admin_sessions WHERE user_id = $1 AND token_hash <> $2', [req.admin!.id, req.admin!.tokenHash]);
     return reply.status(204).send();
   });
+
+  // Notifications on this device. Owners get them for new requests, messages and payments.
+  app.get('/push/key', async () => ({ publicKey: (await vapidKeys(app)).publicKey }));
+
+  app.post('/push/subscribe', async (req, reply) => {
+    const body = z
+      .object({
+        endpoint: z.url().max(1000),
+        keys: z.object({ p256dh: z.string().min(1).max(200), auth: z.string().min(1).max(100) }),
+        device: z.string().max(200).default(''),
+      })
+      .parse(req.body);
+    await app.db.query(
+      `INSERT INTO push_subscriptions (user_id, endpoint, keys, device) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (endpoint) DO UPDATE SET user_id = EXCLUDED.user_id, keys = EXCLUDED.keys, device = EXCLUDED.device`,
+      [req.admin!.id, body.endpoint, JSON.stringify(body.keys), body.device],
+    );
+    return reply.status(204).send();
+  });
+
+  app.post('/push/unsubscribe', async (req, reply) => {
+    const { endpoint } = z.object({ endpoint: z.string().max(1000) }).parse(req.body);
+    await app.db.query('DELETE FROM push_subscriptions WHERE endpoint = $1 AND user_id = $2', [endpoint, req.admin!.id]);
+    return reply.status(204).send();
+  });
+
+  app.post('/push/test', async (req) => ({
+    sent: await notify(app, { title: 'Gamer Xperience', body: 'Meldingen werken op dit apparaat. 🎮', url: '#/board' }, req.admin!.id),
+  }));
 
   app.get('/users', async (req) => {
     requireOwner(req);

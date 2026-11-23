@@ -5,6 +5,8 @@
 # and optionally:
 #   DEPLOY_USER     the login name (default: root). Any other user needs sudo without a password.
 #   MOLLIE_GXP_TEST the Mollie test API key; written to the server's .env as MOLLIE_API_KEY
+#   BACKUP_VPS_RD   address of the second server that keeps a copy of the backups
+#   BACKUP_PEER_PUBKEY  that server's public backup key, so it can store its backups here
 #   GMAIL_USER      the Google mailbox the site sends from and reads customer emails from
 #   GMAIL_APP_PASSWORD  an app password for that mailbox (Google account > Security > App passwords)
 # Without them the job does nothing.
@@ -35,6 +37,8 @@ jobs:
           # Test payments for now. At go-live this becomes secrets.MOLLIE_GXP_LIVE.
           MOLLIE_API_KEY: ${{ secrets.MOLLIE_GXP_TEST }}
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          BACKUP_PEER_HOST: ${{ secrets.BACKUP_VPS_RD }}
+          BACKUP_PEER_PUBKEY: ${{ secrets.BACKUP_PEER_PUBKEY }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
         run: |
           if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_SSH_KEY" ]; then
@@ -59,6 +63,7 @@ jobs:
           # The key travels inside the script over SSH, so it never shows up in a command line.
           {
           printf "export MOLLIE_API_KEY='%s'\n" "$MOLLIE_API_KEY"
+          printf "export BACKUP_PEER_HOST='%s' BACKUP_PEER_PUBKEY='%s'\n" "$BACKUP_PEER_HOST" "$BACKUP_PEER_PUBKEY"
           # Google shows app passwords with spaces; they work without.
           printf "export GMAIL_USER='%s' GMAIL_APP_PASSWORD='%s'\n" "$GMAIL_USER" "$(printf %s "$GMAIL_APP_PASSWORD" | tr -d ' ')"
           cat <<'REMOTE'

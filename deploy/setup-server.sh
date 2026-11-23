@@ -87,6 +87,23 @@ if [ -n "${GMAIL_USER:-}" ] && [ -n "${GMAIL_APP_PASSWORD:-}" ]; then
   set_env IMAP_PASS "$GMAIL_APP_PASSWORD"
 fi
 
+# Backups to and from a second server (see docs/backup-between-servers.md).
+if [ -n "${BACKUP_PEER_HOST:-}" ]; then
+  echo "==> Backups: sending to $BACKUP_PEER_HOST every night"
+  mkdir -p backups
+  sh deploy/backup-peer.sh send "$BACKUP_PEER_HOST" "$DIR/backups" 'gamerxp-*.sql.gz' >/dev/null ||
+    echo "::warning::Setting up the nightly backup copy failed; the site itself is not affected."
+fi
+if [ -n "${BACKUP_PEER_PUBKEY:-}" ]; then
+  echo "==> Backups: accepting copies from the other server"
+  sh deploy/backup-peer.sh receive "$BACKUP_PEER_PUBKEY" ||
+    echo "::warning::Setting up receiving backups failed; the site itself is not affected."
+fi
+# Shown on the deploy's page in GitHub, so it can be passed to the other server.
+if [ -n "${BACKUP_PEER_HOST:-}${BACKUP_PEER_PUBKEY:-}" ]; then
+  echo "::notice title=Backup key of this server::$(sh deploy/backup-peer.sh key || echo 'could not be made')"
+fi
+
 echo "==> Building and starting the site (the first time takes a few minutes)"
 docker compose up -d --build
 

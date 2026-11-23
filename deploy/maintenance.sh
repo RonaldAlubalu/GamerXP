@@ -29,6 +29,14 @@ else
 fi
 # Weekly backups are kept for about three months; the daily ones clean up after themselves.
 find backups -name 'gamerxp-*-weekly.sql.gz' -mtime +92 -delete
+# Straight to the second server over SSH, when that is set up (deploy/backup-peer.sh).
+if [ -f /etc/backup-peer.conf ] && [ "$PROBLEMS" -eq 0 ]; then
+  if /usr/local/sbin/backup-peer push > /tmp/gamerxp-push.log 2>&1; then
+    note "- Copy on the second server: yes"
+  else
+    problem "the backup could not be copied to the second server: $(tail -n 1 /tmp/gamerxp-push.log)"
+  fi
+fi
 note "- Backups on this server: $(find backups -name 'gamerxp-*.sql.gz' | wc -l), $(du -sh backups | cut -f1) in total"
 note ""
 

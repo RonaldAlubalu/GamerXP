@@ -1,10 +1,7 @@
 # Every Monday night: database backup, system updates, fresh containers and a
 # report. Run it by hand from the Actions tab with "Run workflow".
 # Uses the same secrets as the deploy (DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY).
-# To also copy the backup to a second server, add:
-#   BACKUP_VPS_RD   that server's IP address or hostname (BACKUP_HOST works too)
-#   BACKUP_USER     the login name there
-#   BACKUP_SSH_KEY  a private key that server accepts (default: DEPLOY_SSH_KEY)
+# The copy to a second server is made by the server itself (deploy/backup-peer.sh).
 name: Weekly maintenance
 
 on:
@@ -29,9 +26,6 @@ jobs:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          BACKUP_HOST: ${{ secrets.BACKUP_VPS_RD || secrets.BACKUP_HOST }}
-          BACKUP_USER: ${{ secrets.BACKUP_USER }}
-          BACKUP_SSH_KEY: ${{ secrets.BACKUP_SSH_KEY }}
         run: |
           if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_SSH_KEY" ]; then
             echo "DEPLOY_HOST and DEPLOY_SSH_KEY are not set; nothing to do."
@@ -39,8 +33,7 @@ jobs:
           fi
           install -m 700 -d ~/.ssh
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy
-          printf '%s\n' "${BACKUP_SSH_KEY:-$DEPLOY_SSH_KEY}" > ~/.ssh/backup
-          chmod 600 ~/.ssh/deploy ~/.ssh/backup
+          chmod 600 ~/.ssh/deploy
           OPTIONS="-o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ConnectTimeout=20"
           SSH="ssh -i $HOME/.ssh/deploy $OPTIONS"
           TARGET="${DEPLOY_USER:-root}@$DEPLOY_HOST"
@@ -59,22 +52,6 @@ jobs:
             echo "::error::Weekly maintenance reported a problem: $(grep -m 1 'PROBLEM' report/report.md || tail -n 1 report/errors.txt)"
           fi
 
-          # Copy the fresh backup straight to the second server; it is not stored here.
-          if [ -n "$BACKUP_HOST" ] && [ -n "$BACKUP_USER" ]; then
-            latest=$($SSH "$TARGET" "$AS_ROOT" <<'REMOTE'
-          ls -1t /opt/gamerxp/backups/gamerxp-*-weekly.sql.gz 2>/dev/null | head -n 1
-          REMOTE
-            )
-            if [ -n "$latest" ] && printf 'cat "%s"\n' "$latest" | $SSH "$TARGET" "$AS_ROOT" \
-              | ssh -i ~/.ssh/backup $OPTIONS "$BACKUP_USER@$BACKUP_HOST" \
-                "mkdir -p backups/gamerxp && cat > backups/gamerxp/$(basename "$latest") && ls -1t backups/gamerxp/*.sql.gz | tail -n +14 | xargs -r rm -f && ls -1 backups/gamerxp | wc -l" > report/remote.txt; then
-              echo "- Copy on the second server: yes ($(cat report/remote.txt) backups kept there)" | tee -a report/report.md >> "$GITHUB_STEP_SUMMARY"
-            else
-              echo "::error::The backup could not be copied to the second server."
-              status=1
-            fi
-            rm -f report/remote.txt
-          fi
           exit "$status"
 
       - name: Keep the report

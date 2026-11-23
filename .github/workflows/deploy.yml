@@ -4,6 +4,7 @@
 #   DEPLOY_SSH_KEY  the private half of an SSH key the server accepts
 # and optionally:
 #   DEPLOY_USER     the login name (default: root). Any other user needs sudo without a password.
+#   MOLLIE_GXP_TEST the Mollie test API key; written to the server's .env as MOLLIE_API_KEY
 # Without them the job does nothing.
 name: Deploy
 
@@ -29,6 +30,8 @@ jobs:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          # Test payments for now. At go-live this becomes secrets.MOLLIE_GXP_LIVE.
+          MOLLIE_API_KEY: ${{ secrets.MOLLIE_GXP_TEST }}
         run: |
           if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_SSH_KEY" ]; then
             echo "DEPLOY_HOST and DEPLOY_SSH_KEY are not set; nothing to do."
@@ -49,8 +52,10 @@ jobs:
             exit 1
           fi
           # Installs everything on a fresh server; on later runs it updates and restarts the site.
-          $SSH "$TARGET" \
-            'if [ "$(id -u)" = 0 ]; then sh -s; else sudo -n sh -s; fi' <<'REMOTE'
+          # The key travels inside the script over SSH, so it never shows up in a command line.
+          {
+          printf "export MOLLIE_API_KEY='%s'\n" "$MOLLIE_API_KEY"
+          cat <<'REMOTE'
           set -e
           if [ -d /opt/gamerxp/.git ]; then
             git -C /opt/gamerxp pull --ff-only
@@ -60,3 +65,4 @@ jobs:
           fi
           sh /opt/gamerxp/deploy/setup-server.sh
           REMOTE
+          } | $SSH "$TARGET" 'if [ "$(id -u)" = 0 ]; then sh -s; else sudo -n sh -s; fi'

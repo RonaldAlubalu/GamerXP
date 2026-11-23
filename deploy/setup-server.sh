@@ -59,6 +59,19 @@ elif [ -n "${1:-}" ]; then
   sed -i "s|^DOMAIN=.*|DOMAIN=$1|; s|^PUBLIC_URL=.*|PUBLIC_URL=https://$1|" .env
 fi
 
+# Settings handed over by the deploy (GitHub secrets) go into .env.
+set_env() {
+  if grep -q "^$1=" .env; then
+    sed -i "s|^$1=.*|$1=$2|" .env
+  else
+    echo "$1=$2" >> .env
+  fi
+}
+if [ -n "${MOLLIE_API_KEY:-}" ]; then
+  echo "==> Online payments: Mollie key set (${MOLLIE_API_KEY%%_*} mode)"
+  set_env MOLLIE_API_KEY "$MOLLIE_API_KEY"
+fi
+
 echo "==> Building and starting the site (the first time takes a few minutes)"
 docker compose up -d --build
 

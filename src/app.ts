@@ -160,6 +160,11 @@ export async function buildApp({ config, db, mailer, distance, mollie, mailSourc
     root: PUBLIC_DIR,
     index: ['index.html'],
     maxAge: config.NODE_ENV === 'production' ? '1d' : 0,
+    // Styles, scripts and pages are checked for a newer version on every visit, so a change
+    // shows up right away. Images and fonts rarely change and may be kept for a day.
+    setHeaders(res, filePath) {
+      if (/\.(css|js|html|webmanifest)$/.test(filePath)) res.header('cache-control', 'no-cache');
+    },
   });
   app.setNotFoundHandler(async (req, reply) => {
     if (req.url.startsWith('/api/')) {

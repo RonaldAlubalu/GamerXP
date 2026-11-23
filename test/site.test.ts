@@ -95,4 +95,10 @@ describe('website routes', () => {
     // Pages kept out of search engines get no labels.
     expect(await data('/status')).toEqual([]);
   });
+
+  it('lets browsers pick up new styles and scripts right away', async () => {
+    expect((await ctx.app.inject('/assets/styles.css')).headers['cache-control']).toBe('no-cache');
+    expect((await ctx.app.inject('/assets/site.js')).headers['cache-control']).toBe('no-cache');
+    expect((await ctx.app.inject('/admin/')).headers['cache-control']).toBe('no-cache');
+  });
 });

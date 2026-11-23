@@ -82,6 +82,9 @@ if [ -n "${MOLLIE_API_KEY:-}" ]; then
   echo "==> Online payments: Mollie key set (${MOLLIE_API_KEY%%_*} mode)"
   set_env MOLLIE_API_KEY "$MOLLIE_API_KEY"
 fi
+if [ -n "${GOOGLE_REVIEW_URL:-}" ]; then
+  set_env GOOGLE_REVIEW_URL "$GOOGLE_REVIEW_URL"
+fi
 if [ -n "${GMAIL_USER:-}" ] && [ -n "${GMAIL_APP_PASSWORD:-}" ]; then
   echo "==> Email: sending and reading through the Google mailbox $GMAIL_USER"
   set_env SMTP_HOST smtp.gmail.com

@@ -479,7 +479,7 @@ function invoicesBox(b, me) {
     const invoice = b.invoices.find((i) => i.kind === kind);
     box.append(h('div', { class: 'inline', style: 'margin-bottom:6px' },
       invoice
-        ? [h('span', {}, `${label}: factuur `, h('strong', {}, invoice.number), ` · ${fmtEuro(invoice.amountCents)} · ${fmtDate(invoice.createdAt)}`),
+        ? [h('span', {}, `${label}: factuur `, h('strong', {}, invoice.number), ` · ${fmtEuro(invoice.amountCents)} · ${fmtDateTime(invoice.createdAt)}`),
            invoice.pdfUrl && h('a', { class: 'btn small', href: invoice.pdfUrl, target: '_blank', rel: 'noopener' }, 'PDF openen'),
            h('button', { class: 'btn small ghost', title: 'Haalt de factuur alleen hier weg, niet uit e-Boekhouden', onclick: action(
              () => confirm(`Factuur ${invoice.number} loskoppelen?\n\nHij verdwijnt alleen uit de admin, zodat je hem opnieuw kunt maken. In e-Boekhouden verandert niets.`) ? del(`/bookings/${b.id}/invoices/${kind}`) : false,

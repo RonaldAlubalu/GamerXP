@@ -23,7 +23,7 @@ It replaces the Squarespace site with one app you run yourself:
 
 You need a Linux VPS (for example Hetzner, TransIP or DigitalOcean; 1 vCPU and 1–2 GB RAM is plenty) with Docker installed.
 
-The quick way on a fresh Ubuntu server, as root (installs Docker, sets the firewall, creates `.env` with a random database password and starts the site on a test address like `1-2-3-4.sslip.io`):
+The quick way on a fresh Ubuntu or Debian server, as root (installs Docker, sets the firewall, creates `.env` with a random database password and starts the site on a test address like `1-2-3-4.sslip.io`):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/RonaldAlubalu/GamerXP/claude/gamerxp-backend-migration-ew43zk/deploy/setup-server.sh | sh

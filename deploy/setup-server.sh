@@ -1,5 +1,5 @@
 #!/bin/sh
-# Sets up a fresh Ubuntu server and starts the site. Run as root:
+# Sets up a fresh Ubuntu or Debian server and starts the site. Run as root:
 #
 #   sh setup-server.sh [domain]
 #
@@ -22,7 +22,14 @@ if docker compose version >/dev/null 2>&1 && command -v ufw >/dev/null; then
 else
   echo "==> Installing Docker, git and the firewall"
   apt-get update -q
-  apt-get install -y -q docker.io docker-compose-v2 git ufw openssl curl
+  apt-get install -y -q git ufw openssl curl ca-certificates
+  # Ubuntu has Docker with Compose in its own packages; elsewhere (Debian) use Docker's installer.
+  if ! docker compose version >/dev/null 2>&1; then
+    apt-get install -y -q docker.io docker-compose-v2 || true
+  fi
+  if ! docker compose version >/dev/null 2>&1; then
+    curl -fsSL https://get.docker.com | sh
+  fi
 fi
 
 echo "==> Firewall: only SSH and the website are reachable"

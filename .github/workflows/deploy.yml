@@ -37,8 +37,19 @@ jobs:
           install -m 700 -d ~/.ssh
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy
           chmod 600 ~/.ssh/deploy
+          TARGET="${DEPLOY_USER:-root}@$DEPLOY_HOST"
+          SSH="ssh -i $HOME/.ssh/deploy -o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ConnectTimeout=20"
+          # Say plainly what is wrong when the login or the admin rights fail.
+          if ! $SSH "$TARGET" true 2> ~/ssh-error; then
+            echo "::error::Could not log in as ${DEPLOY_USER:-root} on the server: $(tail -n 1 ~/ssh-error). Check DEPLOY_HOST, DEPLOY_USER and that the server has the public half of DEPLOY_SSH_KEY."
+            exit 1
+          fi
+          if ! $SSH "$TARGET" '[ "$(id -u)" = 0 ] || sudo -n true' 2>/dev/null; then
+            echo "::error::Logged in as ${DEPLOY_USER:-root}, but that user cannot run admin commands without a password (sudo)."
+            exit 1
+          fi
           # Installs everything on a fresh server; on later runs it updates and restarts the site.
-          ssh -i ~/.ssh/deploy -o StrictHostKeyChecking=accept-new "${DEPLOY_USER:-root}@$DEPLOY_HOST" \
+          $SSH "$TARGET" \
             'if [ "$(id -u)" = 0 ]; then sh -s; else sudo -n sh -s; fi' <<'REMOTE'
           set -e
           if [ -d /opt/gamerxp/.git ]; then

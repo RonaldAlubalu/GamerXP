@@ -37,6 +37,8 @@ const schema = z.object({
   // Link for leaving a Google review (from your Google Business Profile: "Ask for reviews").
   GOOGLE_REVIEW_URL: z.string().default(''),
 
+  // API token of e-Boekhouden.nl (Beheer > API). Leave empty to switch invoicing off.
+  EBOEKHOUDEN_TOKEN: z.string().default(''),
   // Folders with the database backups and the weekly maintenance reports, for the status page.
   BACKUP_DIR: z.string().default(''),
   REPORTS_DIR: z.string().default(''),

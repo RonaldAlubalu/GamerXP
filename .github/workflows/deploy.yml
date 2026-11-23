@@ -7,6 +7,7 @@
 #   MOLLIE_GXP_TEST the Mollie test API key; written to the server's .env as MOLLIE_API_KEY
 #   BACKUP_VPS_RD   address of the second server that keeps a copy of the backups
 #   BACKUP_PEER_PUBKEY  that server's public backup key, so it can store its backups here
+#   API_EBOOK       the e-Boekhouden.nl API token, for invoices
 #   GOOGLE_LOGIN    the Google mailbox the site sends from and reads customer emails from
 #   GOOGLE_PWD      an app password for that mailbox (Google account > Security > App passwords)
 # Without them the job does nothing.
@@ -43,6 +44,7 @@ jobs:
           # Test payments for now. At go-live this becomes secrets.MOLLIE_GXP_LIVE.
           MOLLIE_API_KEY: ${{ secrets.MOLLIE_GXP_TEST }}
           GMAIL_USER: ${{ secrets.GOOGLE_LOGIN || secrets.GMAIL_USER }}
+          EBOEKHOUDEN_TOKEN: ${{ secrets.API_EBOOK }}
           BACKUP_PEER_HOST: ${{ secrets.BACKUP_VPS_RD }}
           # The address customers see and reply to. The mailbox login (GOOGLE_LOGIN) can be another address
           # of the same Google account; Google then needs this one as an alias of it.
@@ -85,6 +87,7 @@ jobs:
           # Google shows app passwords with spaces (sometimes non-breaking ones); they work without.
           clean() { printf %s "$1" | LC_ALL=C sed 's/\xc2\xa0//g' | tr -d '[:space:]'; }
           printf "export GMAIL_USER='%s' GMAIL_APP_PASSWORD='%s'\n" "$(clean "$GMAIL_USER")" "$(clean "$GMAIL_APP_PASSWORD")"
+          printf "export EBOEKHOUDEN_TOKEN='%s'\n" "$(clean "$EBOEKHOUDEN_TOKEN")"
           cat <<'REMOTE'
           set -e
           if [ -d /opt/gamerxp/.git ]; then

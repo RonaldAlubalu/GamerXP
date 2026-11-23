@@ -32,6 +32,8 @@ export interface CreatedInvoice {
 
 export interface Bookkeeping {
   createInvoice(invoice: NewInvoice): Promise<CreatedInvoice>;
+  // What the bookkeeping has booked as received on this invoice, in cents.
+  paidCents(invoiceNumber: string): Promise<number>;
   // The next free base number, like F00015. A party's invoices are F00015-1 (deposit) and F00015-2 (rest).
   nextNumberBase(): Promise<string>;
   // Asks the bookkeeping whether the token is accepted, and says what it sees there.
@@ -138,6 +140,14 @@ export function createBookkeeping(config: Config): Bookkeeping | null {
       } catch (err) {
         return `Verbonden, maar het overzicht kon niet worden opgehaald: ${(err as Error).message}`;
       }
+    },
+
+    async paidCents(invoiceNumber) {
+      // Mutation type 3 is "invoice payment received". Counting those is positive proof of a payment.
+      const payments = list(await call('GET', `/mutation?type=3&invoiceNumber=${encodeURIComponent(invoiceNumber)}&limit=200`));
+      return payments
+        .filter((m) => String(m.invoiceNumber) === invoiceNumber && String(m.type) === '3')
+        .reduce((sum, m) => sum + Math.round(Math.abs(Number(m.amount) || 0) * 100), 0);
     },
 
     async nextNumberBase() {

@@ -498,7 +498,8 @@ function invoicesBox(b, me) {
     const invoice = b.invoices.find((i) => i.kind === kind);
     box.append(h('div', { class: 'inline', style: 'margin-bottom:6px' },
       invoice
-        ? [h('span', {}, `${label}: factuur `, h('strong', {}, invoice.number), ` · ${fmtEuro(invoice.amountCents)} · ${fmtDateTime(invoice.createdAt)}`),
+        ? [h('span', {}, `${label}: factuur `, h('strong', {}, invoice.number), ` · ${fmtEuro(invoice.amountCents)} · ${fmtDateTime(invoice.createdAt)} `),
+           invoice.paidCents >= invoice.amountCents ? badge('Betaald', 'success') : invoice.paidCents > 0 ? badge(`${fmtEuro(invoice.paidCents)} ontvangen`, 'warning') : badge('Open', ''),
            invoice.pdfUrl && h('a', { class: 'btn small', href: invoice.pdfUrl, target: '_blank', rel: 'noopener' }, 'PDF openen'),
            h('button', { class: 'btn small ghost', title: 'Haalt de factuur alleen hier weg, niet uit e-Boekhouden', onclick: action(
              () => confirm(`Factuur ${invoice.number} loskoppelen?\n\nHij verdwijnt alleen uit de admin, zodat je hem opnieuw kunt maken. In e-Boekhouden verandert niets.`) ? del(`/bookings/${b.id}/invoices/${kind}`) : false,
@@ -508,7 +509,13 @@ function invoicesBox(b, me) {
              () => confirm(`Factuur voor ${label.toLowerCase()} aanmaken in e-Boekhouden?\n\nDit maakt een echte factuur met een factuurnummer in je boekhouding.`) ? post(`/bookings/${b.id}/invoices`, { kind }) : false,
              'Factuur gemaakt in e-Boekhouden.') }, 'Factuur maken')]));
   }
-  box.append(h('p', { class: 'muted small' }, 'De factuur voor het restbedrag bevat alle prijsregels en trekt de gefactureerde aanbetaling eraf.'));
+  if (b.invoices.some((i) => i.paidCents < i.amountCents)) {
+    box.append(h('button', { class: 'btn small', onclick: action(async () => {
+      const { registered } = await post(`/bookings/${b.id}/invoices/sync`);
+      flash('ok', registered ? 'Betaling gevonden en genoteerd.' : 'Nog geen nieuwe betaling in e-Boekhouden.');
+    }) }, '↻ Betaling controleren'));
+  }
+  box.append(h('p', { class: 'muted small' }, 'De site vraagt elke tien minuten bij e-Boekhouden na of een factuur is betaald. De factuur voor het restbedrag bevat alle prijsregels en trekt de gefactureerde aanbetaling eraf.'));
   return box;
 }
 

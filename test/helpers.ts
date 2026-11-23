@@ -24,6 +24,8 @@ export interface TestContext {
   pushed: { endpoint: string; title: string; body: string; url: string }[];
   // Invoices the fake bookkeeping was asked to make.
   invoiced: NewInvoice[];
+  // What the fake bookkeeping says was received per invoice number, in cents.
+  received: Map<string, number>;
 }
 
 export async function setupApp(overrides: Partial<Config> = {}, mollie: MollieClient | null = null): Promise<TestContext> {
@@ -41,6 +43,7 @@ export async function setupApp(overrides: Partial<Config> = {}, mollie: MollieCl
   const labels = new Map<string, string>();
   const pushed: TestContext['pushed'] = [];
   const invoiced: NewInvoice[] = [];
+  const received = new Map<string, number>();
   const mailSource: MailSource = {
     fetchSince: async (_since, relevant) => inbox.filter((m) => relevant(m)),
     setLabel: async (ids, label) => ids.forEach((id) => labels.set(id, label)),
@@ -57,6 +60,7 @@ export async function setupApp(overrides: Partial<Config> = {}, mollie: MollieCl
     bookkeeping: {
       ping: async () => 'Administratie: test.',
       nextNumberBase: async () => 'F00015',
+      paidCents: async (number) => received.get(number) ?? 0,
       createInvoice: async (invoice) => {
         invoiced.push(invoice);
         return { id: String(invoiced.length), number: invoice.number, pdfUrl: `https://boekhouding.example/${invoiced.length}.pdf` };
@@ -67,7 +71,7 @@ export async function setupApp(overrides: Partial<Config> = {}, mollie: MollieCl
       pushed.push({ endpoint: sub.endpoint, ...JSON.parse(payload) });
     },
   });
-  return { app, db, config, sent, packageId: rows[0]!.id, inbox, labels, pushed, invoiced };
+  return { app, db, config, sent, packageId: rows[0]!.id, inbox, labels, pushed, invoiced, received };
 }
 
 export async function teardown(ctx: TestContext): Promise<void> {

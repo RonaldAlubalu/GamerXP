@@ -10,7 +10,7 @@ import { getBookingMailData, recalculatePaid, recalculatePrice } from '../../ser
 import { logCommunication, sendAndLog } from '../../services/communications.js';
 import { addEvent, createDefaultTasks, STAGE_INFO, STATUSES, type Status } from '../../services/pipeline.js';
 import { calculatePrice, type PriceExtra } from '../../services/pricing.js';
-import { createInvoice, listInvoices } from '../../services/invoices.js';
+import { createInvoice, listInvoices, syncInvoicePayments } from '../../services/invoices.js';
 import { amountsDue, loadDue, paymentLink, syncOpenPayments } from '../../services/online-payments.js';
 
 const BOOKING_COLUMNS = `
@@ -476,6 +476,16 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
     const { id } = idParam.parse(req.params);
     const { kind } = z.object({ kind: z.enum(['deposit', 'final']) }).parse(req.body);
     return reply.status(201).send(await createInvoice(app, id, kind, actorOf(req)));
+  });
+
+  // Ask the bookkeeping right now whether this booking's invoices have been paid.
+  app.post('/bookings/:id/invoices/sync', async (req) => {
+    const { id } = idParam.parse(req.params);
+    try {
+      return { registered: await syncInvoicePayments(app, id) };
+    } catch (err) {
+      throw new HttpError(502, `e-Boekhouden kon niet worden geraadpleegd. ${(err as Error).message}`, 'bookkeeping_failed');
+    }
   });
 
   // Forgets an invoice here (it is not removed from the bookkeeping), so it can be made again.

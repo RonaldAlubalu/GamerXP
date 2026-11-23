@@ -60,6 +60,34 @@ describe('invoices in the bookkeeping', () => {
     expect(detail.communications[0].body).toContain('[Bijlage: Factuur F00015-1.pdf]');
   });
 
+  it('registers a payment the bookkeeping reports, once, and makes the party definite', async () => {
+    await call('POST', `/bookings/${id}/invoices`, { kind: 'deposit' });
+    await call('PATCH', `/bookings/${id}`, { status: 'confirmed' });
+    ctx.sent.length = 0;
+    expect((await call('POST', `/bookings/${id}/invoices/sync`)).json()).toEqual({ registered: 0 });
+
+    ctx.received.set('F00015-1', 10000);
+    expect((await call('POST', `/bookings/${id}/invoices/sync`)).json()).toEqual({ registered: 1 });
+    expect((await call('POST', `/bookings/${id}/invoices/sync`)).json()).toEqual({ registered: 0 });
+    const detail = (await call('GET', `/bookings/${id}`)).json();
+    expect(detail).toMatchObject({ status: 'deposit_paid', paidCents: 10000 });
+    expect(detail.invoices[0]).toMatchObject({ paidCents: 10000 });
+    expect(detail.payments).toHaveLength(1);
+    expect(ctx.sent.map((m) => m.subject).join()).toContain('Aanbetaling ontvangen');
+    await new Promise((r) => setTimeout(r, 100));
+    expect(ctx.pushed).toEqual([]); // no device subscribed, so nothing was sent
+  });
+
+  it('does not count a payment twice when it was already noted by hand', async () => {
+    await call('POST', `/bookings/${id}/invoices`, { kind: 'deposit' });
+    await call('POST', `/bookings/${id}/payments`, { kind: 'deposit', amountCents: 10000, method: 'bank', paidOn: '2026-11-01' });
+    ctx.received.set('F00015-1', 10000);
+    expect((await call('POST', `/bookings/${id}/invoices/sync`)).json()).toEqual({ registered: 0 });
+    const detail = (await call('GET', `/bookings/${id}`)).json();
+    expect(detail.paidCents).toBe(10000);
+    expect(detail.invoices[0].paidCents).toBe(10000);
+  });
+
   it('makes each invoice only once and refuses cancelled bookings', async () => {
     await call('POST', `/bookings/${id}/invoices`, { kind: 'deposit' });
     expect((await call('POST', `/bookings/${id}/invoices`, { kind: 'deposit' })).statusCode).toBe(409);

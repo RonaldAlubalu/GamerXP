@@ -2,7 +2,11 @@ import type { FastifyInstance } from 'fastify';
 import { daysBetween, formatDutchDate, today } from '../lib/dates.js';
 import { HttpError } from '../lib/errors.js';
 import type { InvoiceLine } from './bookkeeping.js';
+import { formatEuro, statusChangeMail } from '../lib/emails.js';
+import { getBookingMailData, recalculatePaid } from './bookings.js';
+import { sendAndLog } from './communications.js';
 import { addEvent } from './pipeline.js';
+import { notify } from './push.js';
 import { calculatePrice } from './pricing.js';
 
 export type InvoiceKind = 'deposit' | 'final';
@@ -48,11 +52,11 @@ export function invoiceLines(b: BookingForInvoice, kind: InvoiceKind, depositInv
 
 export async function listInvoices(app: FastifyInstance, bookingId: string) {
   const { rows } = await app.db.query(
-    `SELECT kind, number, amount_cents AS "amountCents", pdf_url AS "pdfUrl", created_at AS "createdAt"
+    `SELECT kind, number, amount_cents AS "amountCents", paid_cents AS "paidCents", pdf_url AS "pdfUrl", created_at AS "createdAt"
        FROM invoices WHERE booking_id = $1 ORDER BY created_at`,
     [bookingId],
   );
-  return rows as { kind: InvoiceKind; number: string; amountCents: number; pdfUrl: string; createdAt: string }[];
+  return rows as { kind: InvoiceKind; number: string; amountCents: number; paidCents: number; pdfUrl: string; createdAt: string }[];
 }
 
 // Makes the invoice in the bookkeeping and remembers its number. Each kind exists once per booking.
@@ -113,4 +117,63 @@ export async function createInvoice(app: FastifyInstance, bookingId: string, kin
     actor,
   });
   return listInvoices(app, bookingId);
+}
+
+// Asks the bookkeeping what has been received on the invoices that are still open (for one
+// booking, or all of them) and registers new payments, e.g. after the customer paid with the
+// QR code on the invoice. Returns how many payments were registered.
+export async function syncInvoicePayments(app: FastifyInstance, bookingId?: string): Promise<number> {
+  if (!app.bookkeeping) return 0;
+  const { rows } = await app.db.query<{ id: number; bookingId: string; kind: InvoiceKind; number: string; amountCents: number; paidCents: number }>(
+    `SELECT i.id, i.booking_id AS "bookingId", i.kind, i.number, i.amount_cents AS "amountCents", i.paid_cents AS "paidCents"
+       FROM invoices i JOIN bookings b ON b.id = i.booking_id
+      WHERE i.paid_cents < i.amount_cents AND b.status <> 'cancelled' AND ($1::uuid IS NULL OR i.booking_id = $1)`,
+    [bookingId ?? null],
+  );
+  let registered = 0;
+  for (const invoice of rows) {
+    const paid = Math.min(await app.bookkeeping.paidCents(invoice.number), invoice.amountCents);
+    if (paid <= invoice.paidCents) continue;
+    await app.db.query('UPDATE invoices SET paid_cents = $2 WHERE id = $1', [invoice.id, paid]);
+
+    // Register only what the admin doesn't know yet: a payment noted by hand or paid
+    // through the site must not be counted twice.
+    const totals = await app.db.query<{ invoiced: number; known: number; status: string; deposit: number }>(
+      `SELECT (SELECT coalesce(sum(paid_cents), 0)::int FROM invoices WHERE booking_id = b.id) AS invoiced,
+              b.paid_cents AS known, b.status, b.deposit_cents AS deposit FROM bookings b WHERE b.id = $1`,
+      [invoice.bookingId],
+    );
+    const { invoiced, known, status, deposit } = totals.rows[0]!;
+    const fresh = Math.min(paid - invoice.paidCents, Math.max(0, invoiced - known));
+    if (fresh > 0) {
+      await app.db.query(
+        `INSERT INTO payments (booking_id, kind, amount_cents, method, paid_on, note, actor)
+         VALUES ($1, $2, $3, 'bank', $4, $5, 'e-Boekhouden')`,
+        [invoice.bookingId, invoice.kind === 'deposit' ? 'deposit' : 'payment', fresh, today(app.config.TIMEZONE), `Factuur ${invoice.number} betaald`],
+      );
+      await recalculatePaid(app.db, invoice.bookingId);
+      registered++;
+    }
+    await addEvent(app.db, invoice.bookingId, {
+      type: 'payment',
+      message: `Factuur ${invoice.number}: ${formatEuro(paid)} ontvangen volgens e-Boekhouden`,
+      actor: 'e-Boekhouden',
+    });
+    void notify(app, {
+      title: 'Betaling ontvangen',
+      body: `Factuur ${invoice.number} (${invoice.kind === 'deposit' ? 'aanbetaling' : 'restbedrag'}): ${formatEuro(paid)}`,
+      url: `#/bookings/${invoice.bookingId}`,
+    });
+
+    // A paid deposit makes the party definite, with the usual thank-you email.
+    const after = await app.db.query<{ paid: number }>('SELECT paid_cents AS paid FROM bookings WHERE id = $1', [invoice.bookingId]);
+    if (invoice.kind === 'deposit' && ['new', 'contacted', 'confirmed'].includes(status) && after.rows[0]!.paid >= deposit) {
+      await app.db.query("UPDATE bookings SET status = 'deposit_paid', waiting_on = 'me', updated_at = now() WHERE id = $1", [invoice.bookingId]);
+      await addEvent(app.db, invoice.bookingId, { type: 'status', fromStatus: status, toStatus: 'deposit_paid', actor: 'e-Boekhouden' });
+      const mail = statusChangeMail('deposit_paid', (await getBookingMailData(app.db, invoice.bookingId))!, { publicUrl: app.config.PUBLIC_URL });
+      if (mail) await sendAndLog(app, { bookingId: invoice.bookingId }, mail, 'e-Boekhouden');
+      await app.db.query("UPDATE bookings SET waiting_on = 'me' WHERE id = $1", [invoice.bookingId]);
+    }
+  }
+  return registered;
 }

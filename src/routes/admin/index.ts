@@ -81,6 +81,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       emailConfigured: Boolean(app.config.SMTP_HOST),
       onlinePayments: Boolean(app.mollie),
       mailImportConfigured: Boolean(app.mailSource),
+      bookkeepingConfigured: Boolean(app.bookkeeping),
     }));
 
     // Check the mailbox now instead of waiting for the next automatic check.

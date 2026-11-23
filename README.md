@@ -59,6 +59,7 @@ Every push updates the server by itself: GitHub builds the site and loads it ont
 |---|---|
 | `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY` | where and how GitHub logs in to the server |
 | `GOOGLE_LOGIN`, `GOOGLE_PWD` | the Google mailbox: the account's main address and an app password |
+| `API_EBOOK` | the e-Boekhouden.nl API token; switches on "Factuur maken" on a booking |
 | `MOLLIE_GXP_TEST`, `MOLLIE_GXP_LIVE` | the Mollie API key (the test key is used until go-live) |
 | `BACKUP_VPS_RD`, `BACKUP_PEER_PUBKEY` | the second server for backups, and its public key |
 
@@ -83,6 +84,10 @@ Set `IMAP_HOST`, `IMAP_USER` and `IMAP_PASS` to the mailbox customers reply to (
 - the sender wrote through the contact form: it goes to their conversation under *Berichten*.
 
 All other email is never downloaded or stored. The mailbox is only read: nothing is marked as read, moved or deleted. Quoted earlier messages are cut from replies, each email is imported once, and the booking switches to "jouw beurt". The first check looks back `IMAP_LOOKBACK_DAYS`. *Berichten → E-mail ophalen* checks right away. Without IMAP, log important replies by hand on the booking ("WhatsApp / telefoon vastleggen", channel *E-mail*).
+
+### Invoices (e-Boekhouden.nl)
+
+With the token set, a booking shows *Facturen (e-Boekhouden)* under payments: one button for the deposit invoice and one for the rest. The site creates the customer and the invoice in e-Boekhouden, which assigns the invoice number; the number and a PDF link are kept with the booking. How the business is set up there (no VAT, ledger 8000, the template name and the product codes) is at the top of `src/services/bookkeeping.ts` and `src/services/invoices.ts`.
 
 ### Status page
 

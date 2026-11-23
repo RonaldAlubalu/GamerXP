@@ -15,6 +15,7 @@ import { createMollieClient, type MollieClient } from './services/mollie.js';
 import { paymentRoutes } from './routes/payments.js';
 import { publicRoutes } from './routes/public.js';
 import { adminRoutes } from './routes/admin/index.js';
+import { createBookkeeping, type Bookkeeping } from './services/bookkeeping.js';
 import { createPushSender, type PushSender } from './services/push.js';
 import { checkSystem, type SystemStatus } from './services/status.js';
 import { registerSite } from './site.js';
@@ -30,6 +31,8 @@ declare module 'fastify' {
     // Latest result of the connection checks, refreshed in the background.
     systemStatus: { current: SystemStatus | null };
     // The most recent emails the site tried to send, newest first, for the status page.
+    // The bookkeeping (e-Boekhouden.nl), or null when it is not connected.
+    bookkeeping: Bookkeeping | null;
     // Delivers a notification to one device.
     push: PushSender;
     mailLog: { at: string; to: string; subject: string; error?: string }[];
@@ -49,10 +52,11 @@ export interface AppOptions {
   mailSource?: MailSource | null;
   // A fake in tests.
   push?: PushSender;
+  bookkeeping?: Bookkeeping | null;
   logger?: boolean;
 }
 
-export async function buildApp({ config, db, mailer, distance, mollie, mailSource, push, logger = true }: AppOptions): Promise<FastifyInstance> {
+export async function buildApp({ config, db, mailer, distance, mollie, mailSource, push, bookkeeping, logger = true }: AppOptions): Promise<FastifyInstance> {
   const app = Fastify({
     logger: logger && {
       level: config.NODE_ENV === 'production' ? 'info' : 'debug',
@@ -99,6 +103,7 @@ export async function buildApp({ config, db, mailer, distance, mollie, mailSourc
 
   // Test the outside connections every ten minutes, so the dashboard can warn without waiting.
   app.decorate('push', push ?? createPushSender(app));
+  app.decorate('bookkeeping', bookkeeping === undefined ? createBookkeeping(config) : bookkeeping);
   app.decorate('systemStatus', { current: null });
   if (config.NODE_ENV !== 'test') {
     const refresh = () =>

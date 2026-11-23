@@ -147,7 +147,7 @@ export async function checkSystem(app: FastifyInstance): Promise<SystemStatus> {
   const { config } = app;
   const off = (key: string, label: string, detail: string): Check => ({ key, label, state: 'off', detail });
 
-  const [database, sending, reading, payments, backups, maintenance, resources] = await Promise.all([
+  const [database, sending, reading, payments, backups, maintenance, resources, bookkeeping] = await Promise.all([
     probe('database', 'Database', 'Bereikbaar.', () => app.db.query('SELECT 1')),
     app.mailer.verify
       ? probe('mail-send', 'E-mail versturen', `Ingelogd bij ${config.SMTP_HOST} als ${config.SMTP_USER || 'anoniem'}.`, () => app.mailer.verify!())
@@ -161,6 +161,9 @@ export async function checkSystem(app: FastifyInstance): Promise<SystemStatus> {
     backupChecks(config.BACKUP_DIR),
     maintenanceCheck(config.REPORTS_DIR),
     resourceChecks(config.BACKUP_DIR),
+    app.bookkeeping
+      ? probe('bookkeeping', 'Boekhouding (e-Boekhouden)', 'Verbonden: facturen kunnen vanuit een boeking worden gemaakt.', () => app.bookkeeping!.ping())
+      : Promise.resolve(off('bookkeeping', 'Boekhouding (e-Boekhouden)', 'Niet ingesteld: facturen maak je nog zelf in e-Boekhouden.')),
   ]);
 
   // When a mailbox login fails, show what was used, so a wrong secret is easy to spot.
@@ -190,5 +193,5 @@ export async function checkSystem(app: FastifyInstance): Promise<SystemStatus> {
   const review: Check = config.GOOGLE_REVIEW_URL
     ? { key: 'review', label: 'Google-reviewlink', state: 'ok', detail: 'Ingesteld.' }
     : off('review', 'Google-reviewlink', 'Niet ingesteld: reviewverzoeken bevatten geen directe link.');
-  return { checkedAt: new Date().toISOString(), checks: [database, ...resources, sending, reading, payments, ...backups, maintenance, whatsapp, review] };
+  return { checkedAt: new Date().toISOString(), checks: [database, ...resources, sending, reading, payments, bookkeeping, ...backups, maintenance, whatsapp, review] };
 }

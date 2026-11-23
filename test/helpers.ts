@@ -6,6 +6,7 @@ import { createPool, type Db } from '../src/db/pool.js';
 import { hashPassword } from '../src/lib/auth.js';
 import { addDays, today } from '../src/lib/dates.js';
 import type { Mail } from '../src/lib/mailer.js';
+import type { NewInvoice } from '../src/services/bookkeeping.js';
 import type { IncomingMail, MailSource } from '../src/services/mail-import.js';
 import type { MollieClient, MolliePayment } from '../src/services/mollie.js';
 
@@ -21,6 +22,8 @@ export interface TestContext {
   labels: Map<string, string>;
   // Notifications the site tried to deliver: one entry per device.
   pushed: { endpoint: string; title: string; body: string; url: string }[];
+  // Invoices the fake bookkeeping was asked to make.
+  invoiced: NewInvoice[];
 }
 
 export async function setupApp(overrides: Partial<Config> = {}, mollie: MollieClient | null = null): Promise<TestContext> {
@@ -37,6 +40,7 @@ export async function setupApp(overrides: Partial<Config> = {}, mollie: MollieCl
   // Like the real mailbox: hands over only the emails the import asks for.
   const labels = new Map<string, string>();
   const pushed: TestContext['pushed'] = [];
+  const invoiced: NewInvoice[] = [];
   const mailSource: MailSource = {
     fetchSince: async (_since, relevant) => inbox.filter((m) => relevant(m)),
     setLabel: async (ids, label) => ids.forEach((id) => labels.set(id, label)),
@@ -50,12 +54,19 @@ export async function setupApp(overrides: Partial<Config> = {}, mollie: MollieCl
     distance: { drivingKm: async () => 30 },
     mollie,
     mailSource,
+    bookkeeping: {
+      ping: async () => {},
+      createInvoice: async (invoice) => {
+        invoiced.push(invoice);
+        return { id: String(invoiced.length), number: `2026-00${invoiced.length}`, pdfUrl: `https://boekhouding.example/${invoiced.length}.pdf` };
+      },
+    },
     push: async (sub, payload) => {
       if (sub.endpoint.includes('gone')) throw Object.assign(new Error('Gone'), { statusCode: 410 });
       pushed.push({ endpoint: sub.endpoint, ...JSON.parse(payload) });
     },
   });
-  return { app, db, config, sent, packageId: rows[0]!.id, inbox, labels, pushed };
+  return { app, db, config, sent, packageId: rows[0]!.id, inbox, labels, pushed, invoiced };
 }
 
 export async function teardown(ctx: TestContext): Promise<void> {

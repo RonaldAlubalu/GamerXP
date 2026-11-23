@@ -467,6 +467,29 @@ function composer({ booking, contact, onSubmit, emailConfigured }) {
     h('div', { class: 'inline' }, submit, whatsapp));
 }
 
+// Invoices in e-Boekhouden: one for the deposit and one for the rest.
+function invoicesBox(b, me) {
+  const box = h('div', {}, h('h3', { style: 'margin-top:16px' }, 'Facturen (e-Boekhouden)'));
+  if (!me.bookkeepingConfigured) {
+    box.append(h('p', { class: 'muted small' }, 'De koppeling met e-Boekhouden is nog niet ingesteld.'));
+    return box;
+  }
+  const KINDS = { deposit: 'Aanbetaling', final: 'Restbedrag' };
+  for (const [kind, label] of Object.entries(KINDS)) {
+    const invoice = b.invoices.find((i) => i.kind === kind);
+    box.append(h('div', { class: 'inline', style: 'margin-bottom:6px' },
+      invoice
+        ? [h('span', {}, `${label}: factuur `, h('strong', {}, invoice.number), ` · ${fmtEuro(invoice.amountCents)} · ${fmtDate(invoice.createdAt)}`),
+           invoice.pdfUrl && h('a', { class: 'btn small', href: invoice.pdfUrl, target: '_blank', rel: 'noopener' }, 'PDF openen')]
+        : [h('span', { class: 'muted' }, `${label}: nog geen factuur`),
+           h('button', { class: 'btn small', onclick: action(
+             () => confirm(`Factuur voor ${label.toLowerCase()} aanmaken in e-Boekhouden?\n\nDit maakt een echte factuur met een factuurnummer in je boekhouding.`) ? post(`/bookings/${b.id}/invoices`, { kind }) : false,
+             'Factuur gemaakt in e-Boekhouden.') }, 'Factuur maken')]));
+  }
+  box.append(h('p', { class: 'muted small' }, 'De factuur voor het restbedrag bevat alle prijsregels en trekt de gefactureerde aanbetaling eraf.'));
+  return box;
+}
+
 // Mollie: payment links for the customer and the status of online payments.
 function onlinePayments(b, me) {
   const box = h('div', { class: 'online-pay' }, h('h3', { style: 'margin-top:16px' }, 'Online betalen (Mollie)'));
@@ -633,7 +656,8 @@ async function bookingDetailView(id) {
     h('div', { style: 'margin-top:12px' }, payForm),
     b.depositPaid && ['new', 'contacted', 'confirmed'].includes(b.status) &&
       h('p', {}, h('button', { class: 'btn success', onclick: action(() => moveBooking(id, 'deposit_paid')) }, 'Aanbetaling is binnen → zet op "Aanbetaling ontvangen"')),
-    onlinePayments(b, me));
+    onlinePayments(b, me),
+    invoicesBox(b, me));
 
   // Agreements.
   const agreementForm = h('form', { class: 'inline', onsubmit: action(() => post(`/bookings/${id}/agreements`, { text: agreementForm.elements.text.value }), 'Afspraak toegevoegd.') },

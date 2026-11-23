@@ -10,6 +10,7 @@ import { getBookingMailData, recalculatePaid, recalculatePrice } from '../../ser
 import { logCommunication, sendAndLog } from '../../services/communications.js';
 import { addEvent, createDefaultTasks, STAGE_INFO, STATUSES, type Status } from '../../services/pipeline.js';
 import { calculatePrice, type PriceExtra } from '../../services/pricing.js';
+import { createInvoice, listInvoices } from '../../services/invoices.js';
 import { amountsDue, loadDue, paymentLink, syncOpenPayments } from '../../services/online-payments.js';
 
 const BOOKING_COLUMNS = `
@@ -203,6 +204,7 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
     return {
       ...booking,
       priceLines: lines,
+      invoices: await listInvoices(app, id),
       tasks: tasks.rows,
       events: events.rows,
       communications: communications.rows,
@@ -450,6 +452,13 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
     await app.db.query('UPDATE bookings SET reminder_sent_at = now() WHERE id = $1', [id]);
     await addEvent(app.db, id, { type: 'update', message: `Herinnering verstuurd via ${channel === 'email' ? 'e-mail' : 'WhatsApp'}`, actor: actorOf(req) });
     return loadBooking(id);
+  });
+
+  // Invoices in the bookkeeping: one for the deposit, one for the rest.
+  app.post('/bookings/:id/invoices', async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const { kind } = z.object({ kind: z.enum(['deposit', 'final']) }).parse(req.body);
+    return reply.status(201).send(await createInvoice(app, id, kind, actorOf(req)));
   });
 
   // Agreements.

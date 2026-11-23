@@ -79,8 +79,9 @@ jobs:
           printf "export MOLLIE_API_KEY='%s' APP_IMAGE_LOADED='%s'\n" "$MOLLIE_API_KEY" "$LOADED"
           printf "export GOOGLE_REVIEW_URL='%s'\n" "$GOOGLE_REVIEW_URL"
           printf "export BACKUP_PEER_HOST='%s' BACKUP_PEER_PUBKEY='%s'\n" "$BACKUP_PEER_HOST" "$BACKUP_PEER_PUBKEY"
-          # Google shows app passwords with spaces; they work without.
-          printf "export GMAIL_USER='%s' GMAIL_APP_PASSWORD='%s'\n" "$GMAIL_USER" "$(printf %s "$GMAIL_APP_PASSWORD" | tr -d ' ')"
+          # Google shows app passwords with spaces (sometimes non-breaking ones); they work without.
+          clean() { printf %s "$1" | LC_ALL=C sed 's/\xc2\xa0//g' | tr -d '[:space:]'; }
+          printf "export GMAIL_USER='%s' GMAIL_APP_PASSWORD='%s'\n" "$(clean "$GMAIL_USER")" "$(clean "$GMAIL_APP_PASSWORD")"
           cat <<'REMOTE'
           set -e
           if [ -d /opt/gamerxp/.git ]; then

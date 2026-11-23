@@ -7,8 +7,8 @@
 #   MOLLIE_GXP_TEST the Mollie test API key; written to the server's .env as MOLLIE_API_KEY
 #   BACKUP_VPS_RD   address of the second server that keeps a copy of the backups
 #   BACKUP_PEER_PUBKEY  that server's public backup key, so it can store its backups here
-#   GMAIL_USER      the Google mailbox the site sends from and reads customer emails from
-#   GMAIL_APP_PASSWORD  an app password for that mailbox (Google account > Security > App passwords)
+#   GOOGLE_LOGIN    the Google mailbox the site sends from and reads customer emails from
+#   GOOGLE_PWD      an app password for that mailbox (Google account > Security > App passwords)
 # Without them the job does nothing.
 name: Deploy
 
@@ -36,10 +36,10 @@ jobs:
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           # Test payments for now. At go-live this becomes secrets.MOLLIE_GXP_LIVE.
           MOLLIE_API_KEY: ${{ secrets.MOLLIE_GXP_TEST }}
-          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_USER: ${{ secrets.GOOGLE_LOGIN || secrets.GMAIL_USER }}
           BACKUP_PEER_HOST: ${{ secrets.BACKUP_VPS_RD }}
           BACKUP_PEER_PUBKEY: ${{ secrets.BACKUP_PEER_PUBKEY }}
-          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GOOGLE_PWD || secrets.GMAIL_APP_PASSWORD }}
         run: |
           if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_SSH_KEY" ]; then
             echo "DEPLOY_HOST and DEPLOY_SSH_KEY are not set; nothing to do."

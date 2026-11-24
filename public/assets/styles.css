@@ -308,7 +308,11 @@ legend { font-family: var(--font-head); font-weight: 600; color: var(--cyan); pa
     display: block; position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 40; text-align: center;
     background: var(--green); color: var(--bg); font: 700 1.05rem var(--font-head); padding: 14px; border-radius: 999px;
     text-decoration: none; box-shadow: 0 8px 30px rgba(0, 0, 0, .55);
+    /* Slides in from below and fades, instead of popping up. */
+    opacity: 0; transform: translateY(140%) scale(.92); pointer-events: none;
+    transition: opacity .3s ease, transform .35s cubic-bezier(.2, .8, .2, 1);
   }
+  .sticky-cta.show { opacity: 1; transform: none; pointer-events: auto; }
 }
 .price-summary strong { color: var(--green); font-size: 1.3rem; font-family: var(--font-head); }
 

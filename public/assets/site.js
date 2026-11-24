@@ -73,15 +73,28 @@ if (header) {
   setScrolled();
 }
 
-// Booking button that stays in view on phones, once the visitor scrolls past the first screen.
+// Booking bar that stays in view on phones. On the home page it takes over from the green
+// button under the first text at the moment that button scrolls out of view; elsewhere it
+// appears once the visitor scrolls past the first screen.
 const stickyCta = document.querySelector('.sticky-cta');
 if (stickyCta && !/^\/(reserveer|status|betalen)/.test(location.pathname)) {
-  const toggleCta = () => {
-    stickyCta.hidden = scrollY < 220;
-    document.body.classList.toggle('cta-visible', !stickyCta.hidden);
+  const showCta = (visible) => {
+    stickyCta.classList.toggle('show', visible);
+    stickyCta.tabIndex = visible ? 0 : -1;
+    document.body.classList.toggle('cta-visible', visible);
   };
-  addEventListener('scroll', toggleCta, { passive: true });
-  toggleCta();
+  stickyCta.hidden = false;
+  showCta(false);
+  const firstButton = document.querySelector('.intro-action .btn');
+  if (firstButton && 'IntersectionObserver' in window) {
+    // The top margin stands for the header the button slides under.
+    new IntersectionObserver(([entry]) => showCta(!entry.isIntersecting && entry.boundingClientRect.top < 100), { rootMargin: '-76px 0px 0px 0px' })
+      .observe(firstButton);
+  } else {
+    const toggleCta = () => showCta(scrollY >= 220);
+    addEventListener('scroll', toggleCta, { passive: true });
+    toggleCta();
+  }
 }
 
 // The Google score opens a panel with reviews. Without JavaScript the link goes to the reviews page.

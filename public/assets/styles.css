@@ -523,3 +523,5 @@ body:has(#booking-form) .wa-float, body:has(#status-view) .wa-float { display: n
 .reviews-panel-google { color: var(--muted); font-size: .88rem; text-align: center; }
 /* Phone: no second hero button that only jumps to the block right below it. */
 @media (max-width: 640px) { .hero .actions a[href="#mogelijkheden"] { display: none; } }
+/* Tables in stories fit a phone screen better with tighter cells. */
+@media (max-width: 640px) { .prose .compare th, .prose .compare td { padding: 10px 9px; font-size: .88rem; line-height: 1.35; } }

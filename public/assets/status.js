@@ -37,7 +37,7 @@ function render(s) {
   const unconfirmed = ['new', 'contacted'].includes(s.status);
   const rows = [
     ['Referentie', s.reference],
-    ['Datum', s.startTime ? `${formatDate(s.partyDate)} om ${s.startTime}` : `${formatDate(s.partyDate)} (${SLOTS[s.timeSlot] ?? s.timeSlot})`],
+    ['Datum', s.startTime ? `${formatDate(s.partyDate)} ${s.endTime ? `van ${s.startTime} tot ${s.endTime}` : `om ${s.startTime}`}` : `${formatDate(s.partyDate)} (${SLOTS[s.timeSlot] ?? s.timeSlot})`],
     ['Pakket', s.packageName + (s.extraStations ? ` + ${s.extraStations} extra gamestation${s.extraStations > 1 ? 's' : ''}` : '')],
     ...(s.guestCount ? [['Aantal kinderen', s.guestCount]] : []),
     [unconfirmed ? 'Prijsindicatie' : 'Prijs', formatPrice(s.priceCents)],

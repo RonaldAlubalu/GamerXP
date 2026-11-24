@@ -131,12 +131,12 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
     async (req) => {
       const { token } = z.object({ token: z.string().min(20).max(100) }).parse(req.params);
       const { rows } = await app.db.query<{
-        reference: string; status: Status; partyDate: string; timeSlot: string; startTime: string | null;
+        reference: string; status: Status; partyDate: string; timeSlot: string; startTime: string | null; endTime: string | null;
         packageName: string; extraStations: number; childName: string; guestCount: number | null;
         priceCents: number; depositCents: number; paidCents: number; id: string; statusToken: string;
       }>(
         `SELECT b.reference, b.status, b.party_date AS "partyDate", b.time_slot AS "timeSlot",
-                to_char(b.start_time, 'HH24:MI') AS "startTime", p.name AS "packageName", b.extra_stations AS "extraStations", b.child_name AS "childName", b.guest_count AS "guestCount",
+                to_char(b.start_time, 'HH24:MI') AS "startTime", to_char(b.end_time, 'HH24:MI') AS "endTime", p.name AS "packageName", b.extra_stations AS "extraStations", b.child_name AS "childName", b.guest_count AS "guestCount",
                 b.price_cents AS "priceCents", b.deposit_cents AS "depositCents", b.paid_cents AS "paidCents",
                 b.id, b.status_token AS "statusToken"
            FROM bookings b JOIN packages p ON p.id = b.package_id

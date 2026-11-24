@@ -1,0 +1,202 @@
+/* Gatra: rebuilt from the Squarespace site. Sizes follow the original at 1440 and 390 wide. */
+@font-face { font-family: 'Julius Sans One'; src: url(/fonts/julius-sans-one.woff2) format('woff2'); font-display: swap; }
+@font-face { font-family: Poppins; font-weight: 300; src: url(/fonts/poppins-300.woff2) format('woff2'); font-display: swap; }
+@font-face { font-family: Poppins; font-weight: 300; font-style: italic; src: url(/fonts/poppins-300i.woff2) format('woff2'); font-display: swap; }
+@font-face { font-family: Poppins; font-weight: 500; src: url(/fonts/poppins-500.woff2) format('woff2'); font-display: swap; }
+@font-face { font-family: Poppins; font-weight: 600; src: url(/fonts/poppins-600.woff2) format('woff2'); font-display: swap; }
+:root {
+  --ink: #2b261d; --dark: #2e261a; --pale: #fffbfa; --teal: #88babf; --sand: #e7d1b5; --link: #dfc39a;
+  --gutter: 3vw; --head: 'Julius Sans One', sans-serif;
+  --text: clamp(14.9px, 13.9px + .1vw, 15.4px);
+  --large: clamp(17px, 15px + .5vw, 22.1px);
+  --h1: clamp(46px, 39px + 1.85vw, 66px); --h2: clamp(33px, 29px + 1.1vw, 45px);
+  --h3: clamp(27px, 24px + .74vw, 34.7px); --h4: clamp(19.4px, 18.2px + .31vw, 22.6px);
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: #fff; color: var(--ink); font: 300 var(--text)/1.87 Poppins, sans-serif; }
+img { max-width: 100%; height: auto; display: block; }
+a { color: inherit; text-underline-offset: .2em; text-decoration-thickness: 1px; }
+a.plain { text-decoration: none; }
+strong { font-weight: 600; }
+p { margin: 0 0 1em; }
+h1, h2, h3, .h2, .h4 { font-family: var(--head); font-weight: 400; margin: 0; text-transform: uppercase; }
+/* Julius Sans One has small capitals for lower case: keep the letters as typed where the original does. */
+h1, h2, h3, .h2, .h4 { text-transform: none; }
+h1 { font-size: var(--h1); line-height: 1.232; text-align: center; }
+h2, .h2 { font-size: var(--h2); line-height: 1.3; }
+h3 { font-size: var(--h3); line-height: 1.333; }
+.h4 { font-size: var(--h4); line-height: 1.372; }
+.center { text-align: center; }
+.large { font-size: var(--large); line-height: 1.87; }
+.skip { position: absolute; left: -999px; }
+.skip:focus { left: 8px; top: 8px; background: var(--dark); color: #fff; padding: 8px 12px; z-index: 50; }
+
+/* Header: logo left, menu in the middle, LinkedIn right; lies over the first section. */
+.site-header { position: absolute; z-index: 20; top: 0; left: 0; right: 0; height: 146px; padding: 0 var(--gutter); display: flex; align-items: center; justify-content: space-between; }
+.logo img { width: 60px; height: 60px; }
+.main-nav { position: absolute; left: 50%; transform: translateX(-50%); display: flex; gap: 17px; align-items: center; }
+.main-nav a { text-decoration: none; padding: 1.5px 0; line-height: 1.87; background: linear-gradient(currentColor, currentColor) 0 100% / 0 1px no-repeat; }
+.main-nav a[aria-current], .main-nav > a:hover, .main-nav .has-sub > a:hover { background-size: 100% 1px; }
+.has-sub { position: relative; }
+.sub { position: absolute; top: 100%; left: -16px; min-width: 240px; padding: 10px 16px; background: #fff; display: none; }
+.has-sub:hover .sub, .has-sub:focus-within .sub { display: block; }
+.social { display: grid; place-items: center; }
+.social svg { width: 26px; height: 26px; }
+.burger { display: none; }
+.mobile-menu { display: none; }
+
+/* Sections */
+main > section { position: relative; }
+section.first { padding-top: 146px; }
+.title { padding-bottom: 48px; }
+.title h1 { padding-top: 48px; }
+
+.hero { display: grid; grid-template-columns: 44.65vw 1fr; column-gap: 4.7vw; align-items: center; padding: 146px calc(var(--gutter) + .5vw) 47px var(--gutter); min-height: 828px; }
+.hero-img { margin-top: 48px; width: 100%; }
+.hero-text { margin-top: 48px; max-width: 635px; }
+.hero-text .h4 { margin-bottom: 20px; text-align: left; }
+
+.band { background: var(--pale); min-height: 297px; display: grid; place-items: center; padding: 60px var(--gutter); text-align: center; }
+.band .h4 { max-width: 930px; margin: 0; }
+.band.wide .h4 { max-width: none; }
+.band a { color: var(--link); }
+
+/* A photo with a text panel that slides over its edge. */
+.overlap { display: grid; grid-template-columns: repeat(24, 1fr); align-items: center; padding: 48px var(--gutter); }
+.overlap > img { grid-row: 1; grid-column: 1 / 13; width: 100%; }
+.overlap > .panel { grid-row: 1; grid-column: 12 / 25; margin-left: -1.2vw; z-index: 1; background: #fff; padding: 68px 68px 60px; }
+.overlap > .panel.dark { background: var(--dark); color: #fff; }
+.overlap .panel h2 { margin-bottom: 22px; }
+.overlap .panel p { max-width: 600px; }
+.overlap.reverse > img { grid-column: 13 / 25; }
+.overlap.reverse > .panel { grid-column: 1 / 14; margin: 0 -1.2vw 0 0; padding-left: 68px; }
+.overlap.reverse .panel p { max-width: 610px; }
+.overlap.small { padding-top: 0; padding-bottom: 28px; }
+.overlap.small > .panel { padding: 68px 68px 76px; }
+.overlap.small .panel h3 { margin-bottom: 4px; }
+.overlap.small.tall { padding-top: 48px; padding-bottom: 46px; }
+blockquote { margin: 0; }
+blockquote p { margin: 0; }
+
+.btn { display: inline-block; font: 500 var(--text)/1.2 Poppins, sans-serif; padding: 18.5px 31px; text-decoration: none; border: 0; cursor: pointer; margin-top: 12px; }
+.btn.light { background: #fff; color: var(--dark); }
+.btn.dark { background: var(--dark); color: #fff; }
+.btn.teal { background: var(--teal); color: #fffafa; }
+.btn.big { font-size: 18.7px; padding: 22.4px 37.4px; }
+.btn.plain-btn { background: #fff; color: #000; }
+.btn:hover { opacity: .8; }
+
+.text { padding: 48px var(--gutter); }
+.text > * { max-width: 1015px; margin-left: auto; margin-right: auto; }
+.text h2 { text-align: center; margin-bottom: 28px; }
+.text h3 { margin-top: 28px; }
+.text .large { margin-bottom: .75em; }
+.text.pale { background: var(--pale); padding-top: 48px; padding-bottom: 80px; }
+.text.pale .h4 { margin-top: 56px; max-width: 930px; }
+.refs { padding-left: 38px; margin-top: -6px; margin-bottom: 40px; }
+.refs li { padding-left: 4px; line-height: 2.35; }
+.dots { list-style: none; padding: 0; }
+.dots li { margin-bottom: .5em; }
+.dots li::before { content: '●'; font-size: .72em; vertical-align: .15em; margin-right: 2.6em; }
+.stars { margin: 34px auto; }
+
+/* What others say: three next to each other, arrows top right. */
+.said { padding: 48px var(--gutter) 44px; }
+.said h2 { text-align: center; margin-bottom: 34px; }
+.reviews { position: relative; padding-top: 44px; }
+.reviews-nav { position: absolute; top: 0; right: 0; display: flex; gap: 6px; }
+.reviews-nav button { border: 0; background: none; font: 300 34px/1 Poppins, sans-serif; padding: 0 7px; cursor: pointer; color: var(--ink); }
+.reviews-nav button:disabled { opacity: .3; cursor: default; }
+.reviews-track { display: flex; gap: 2%; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; scroll-behavior: smooth; }
+.reviews-track::-webkit-scrollbar { display: none; }
+.reviews figure { flex: 0 0 32%; margin: 0; scroll-snap-align: start; text-align: center; font-size: 14px; line-height: 1.4; }
+.reviews blockquote { margin-bottom: 9px; }
+.text .reviews figure { text-align: left; }
+.text .reviews { margin-bottom: 44px; }
+
+.cta { height: 594px; display: grid; place-items: center; background: var(--sand); text-align: center; color: var(--pale); }
+.cta img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.cta div { position: relative; }
+.cta h3 { margin-bottom: 14px; }
+
+.narrow { padding: 146px var(--gutter) 48px; }
+.narrow > * { max-width: 677px; margin-left: auto; margin-right: auto; }
+.narrow h1 { margin-top: 44px; margin-bottom: 30px; }
+.narrow p { font-size: 17px; line-height: 1.7; }
+.narrow .large { font-size: var(--large); margin-bottom: 14px; }
+.alfabet { margin: 46px auto 30px; width: 490px; }
+.gap { margin-top: 70px; }
+
+.contact { display: grid; grid-template-columns: repeat(24, 1fr); align-items: center; padding: 96px var(--gutter) 110px; }
+.contact-text { grid-column: 1 / 11; }
+.contact-text .h4 { margin-bottom: 24px; }
+.contact-text p { margin-bottom: 1.6em; }
+.contact .form { grid-column: 13 / 25; }
+.form label { display: block; margin-bottom: 26px; line-height: 1.6; }
+.form label span { font-size: .85em; opacity: .7; margin-left: 4px; }
+.form input, .form textarea { display: block; width: 100%; font: inherit; color: #000; border: 0; border-bottom: 1px solid #6b6964; background: transparent; padding: 10px 0; border-radius: 0; }
+.form textarea { resize: vertical; min-height: 96px; }
+.form input:focus, .form textarea:focus { outline: 0; border-bottom-color: #000; box-shadow: 0 1px 0 #000; }
+.form ::placeholder { color: #8a8782; font-size: .9em; }
+.form .hp { position: absolute; left: -9999px; width: 1px; height: 1px; }
+.form-note { margin-top: 16px; }
+.dialog { border: 0; padding: 48px 40px 32px; width: min(560px, calc(100vw - 32px)); }
+.dialog::backdrop { background: rgba(43, 38, 29, .6); }
+.dialog-close { position: absolute; top: 8px; right: 12px; border: 0; background: none; font-size: 30px; line-height: 1; cursor: pointer; }
+
+.site-footer { background: var(--dark); color: #fff; min-height: 297px; display: grid; place-items: center; text-align: center; padding: 48px var(--gutter); }
+.footer-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; width: min(100%, 345px * 2); }
+.footer-cols p:first-child { margin-bottom: .9em; }
+.footer-cols p:last-child { margin: 0; }
+.copyright { min-height: 297px; text-align: center; padding: 46px var(--gutter); }
+.copyright p { margin: 0 auto; }
+.copyright p { max-width: 690px; }
+
+@media (max-width: 800px) {
+  :root { --gutter: 6vw; }
+  .site-header { height: 84px; }
+  .logo img { width: 34px; height: 34px; }
+  .main-nav, .social { display: none; }
+  .burger { display: grid; gap: 9px; width: 44px; height: 44px; align-content: center; justify-items: end; background: none; border: 0; padding: 0; cursor: pointer; margin-right: -4px; }
+  .burger span { display: block; width: 35px; height: 1px; background: var(--ink); transition: transform .25s; }
+  .burger[aria-expanded="true"] span:first-child { transform: translateY(5px) rotate(45deg); }
+  .burger[aria-expanded="true"] span:last-child { transform: translateY(-5px) rotate(-45deg); }
+  .mobile-menu:not([hidden]) { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; position: fixed; inset: 0; z-index: 15; background: #fff; }
+  .mobile-menu a { font-size: 8.5vw; text-decoration: none; line-height: 1.3; text-align: center; }
+  body.menu-open { overflow: hidden; }
+  body.menu-open .site-header { position: fixed; }
+  section.first { padding-top: 84px; }
+  .title { padding-bottom: 56px; }
+  .title h1 { padding-top: 62px; }
+  .hero { display: block; padding: 84px var(--gutter) 40px; min-height: 0; }
+  .hero-img { margin-top: 44px; }
+  .hero-text { margin-top: 28px; }
+  .band { padding: 48px var(--gutter); }
+  .overlap { display: block; padding: 46px var(--gutter) 0; }
+  .overlap > img { width: 79%; }
+  .overlap > .panel, .overlap.reverse > .panel { margin: -70px 0 0 9%; padding: 30px 30px 8px; position: relative; }
+  .overlap > .panel.dark { padding-bottom: 8px; }
+  .overlap.reverse { padding-right: 0; }
+  .overlap.reverse > img { margin-left: 15%; width: 85%; }
+  .overlap.reverse > .panel { margin: -70px 18% 0 calc(15% - 4px); padding: 22px 0 0 0; }
+  .overlap .panel h2 { margin-bottom: 12px; }
+  .overlap.small { padding-top: 0; padding-bottom: 40px; }
+  .overlap.small > .panel { margin: -40px 0 0 12%; padding: 26px 28px 20px; }
+  .overlap.small .panel h3 { margin-bottom: 10px; }
+  .said { padding-top: 70px; }
+  .reviews figure { flex-basis: 49%; }
+  .text { padding: 40px var(--gutter); }
+  .text.pale { padding-bottom: 60px; }
+  .dots li::before { margin-right: 1.4em; }
+  .refs { padding-left: 22px; }
+  .narrow { padding-top: 84px; }
+  .narrow p { font-size: 15.5px; }
+  .alfabet { width: 100%; }
+  .contact { display: block; padding-bottom: 80px; }
+  .contact .form { margin-top: 44px; }
+  .form input, .form textarea { font-size: 16px; }
+  .footer-cols { grid-template-columns: 1fr; gap: 26px; }
+  .site-footer { padding: 64px var(--gutter); }
+  .copyright { min-height: 0; padding: 44px 12vw 60px; }
+}

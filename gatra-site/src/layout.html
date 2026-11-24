@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{title}}</title>
+<meta name="description" content="{{description}}">
+<link rel="icon" href="/img/favicon.png">
+<link rel="preload" href="/fonts/poppins-300.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/julius-sans-one.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/site.css">
+</head>
+<body class="page-{{slug}}">
+<a class="skip" href="#inhoud">Doorgaan naar inhoud</a>
+<header class="site-header">
+  <a class="logo" href="/"><img src="/img/logo.webp" alt="Gatra" width="60" height="60"></a>
+  <nav class="main-nav" aria-label="Hoofdmenu">
+    <a href="/wat-ik-doe"{{nav:wat-ik-doe}}>Wat doe ik</a>
+    <a href="/wie-ben-ik"{{nav:wie-ben-ik}}>Wie ben ik</a>
+    <div class="has-sub">
+      <a href="/het-inclusieve-spelalfabet"{{nav:het-inclusieve-spelalfabet}}>Downloads</a>
+      <div class="sub"><a href="/het-inclusieve-spelalfabet">Het inclusieve spelalfabet</a></div>
+    </div>
+    <a href="/contact"{{nav:contact}}>Contact</a>
+  </nav>
+  <a class="social" href="https://www.linkedin.com/in/gatra/" target="_blank" rel="noopener" aria-label="LinkedIn">
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M4.98 3.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5zM3 9.75h4V21H3zM9.5 9.75h3.8v1.55h.06c.53-1 1.83-1.85 3.76-1.85 4.02 0 4.88 2.5 4.88 5.9V21h-4v-5.1c0-1.3-.03-2.9-1.85-2.9-1.85 0-2.15 1.36-2.15 2.8V21h-4z"/></svg>
+  </a>
+  <button class="burger" type="button" aria-label="Menu openen" aria-expanded="false" aria-controls="mobile-menu"><span></span><span></span></button>
+</header>
+<div class="mobile-menu" id="mobile-menu" hidden>
+  <a href="/wat-ik-doe">Wat doe ik</a>
+  <a href="/wie-ben-ik">Wie ben ik</a>
+  <a href="/het-inclusieve-spelalfabet">Het inclusieve spelalfabet</a>
+  <a href="/contact">Contact</a>
+  <a href="https://www.linkedin.com/in/gatra/" target="_blank" rel="noopener">LinkedIn</a>
+</div>
+<main id="inhoud">
+{{content}}
+</main>
+<footer class="site-footer">
+  <div class="footer-cols">
+    <div><p>Contact</p><p><a href="mailto:info@gatra.nl">info@gatra.nl</a><br><a class="plain" href="tel:+31610002278">+31 (0) 6 1000 2278</a></p></div>
+    <div><p>Kom hallo zeggen op</p><p><a href="https://www.linkedin.com/in/gatra/" target="_blank" rel="noopener">LinkedIn</a></p></div>
+  </div>
+</footer>
+<div class="copyright"><p>Copyright © 2021 Gatra &amp; Cultuur APK. De genoemde merken, rechten en handelsnamen zijn eigendom van de respectievelijke ondernemingen.</p></div>
+<script src="/site.js" defer></script>
+</body>
+</html>

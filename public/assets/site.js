@@ -171,31 +171,18 @@ for (const video of document.querySelectorAll('[data-youtube]')) {
   });
 }
 
-// A quiet offer of help from Ronald for a visitor who lingers. Once per visit, never while
-// someone is typing or the cookie banner is open, and it goes away with one tap.
-const nudge = document.getElementById('nudge');
-const NUDGE_KEY = 'gxp_nudge';
-const nudgeSeen = () => {
-  try { return sessionStorage.getItem(NUDGE_KEY) === '1'; } catch { return true; }
-};
-if (nudge && !nudgeSeen() && !/^\/(status|betalen|contact)/.test(location.pathname)) {
-  const busy = () =>
-    document.body.classList.contains('cookie-open') ||
-    document.querySelector('dialog[open]') ||
-    /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? '');
-  const offer = () => {
-    if (nudgeSeen()) return;
-    // Not now: try again a little later.
-    if (busy() || document.hidden) return void setTimeout(offer, 8000);
-    try { sessionStorage.setItem(NUDGE_KEY, '1'); } catch {}
-    nudge.hidden = false;
-    requestAnimationFrame(() => nudge.classList.add('show'));
+// Round chat button, bottom right: a tap opens a small card with ways to ask Ronald a question.
+const chatButton = document.getElementById('chat-button');
+const chatCard = document.getElementById('chat-card');
+if (chatButton && chatCard) {
+  const openChat = (open) => {
+    chatCard.hidden = !open;
+    chatButton.setAttribute('aria-expanded', String(open));
   };
-  setTimeout(offer, 45000);
-  const close = () => {
-    nudge.classList.remove('show');
-    setTimeout(() => (nudge.hidden = true), 300);
-  };
-  nudge.querySelector('[data-nudge-close]').addEventListener('click', close);
-  nudge.querySelector('.nudge-link').addEventListener('click', close);
+  chatButton.addEventListener('click', () => openChat(chatCard.hidden));
+  chatCard.querySelector('[data-chat-close]').addEventListener('click', () => openChat(false));
+  addEventListener('keydown', (event) => { if (event.key === 'Escape') openChat(false); });
+  addEventListener('click', (event) => {
+    if (!chatCard.hidden && !chatCard.contains(event.target) && !chatButton.contains(event.target)) openChat(false);
+  });
 }

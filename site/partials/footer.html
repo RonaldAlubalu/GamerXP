@@ -53,14 +53,18 @@
       <button type="button" class="btn" data-cookie-choice="all">Accepteren</button>
     </div>
   </div>
-  <aside class="nudge" id="nudge" aria-label="Een vraag stellen" hidden>
-    <img src="/assets/img/game-feestjes-thuis-wie-zijn-wij.webp" alt="" width="56" height="56">
+  <button type="button" class="chat-button" id="chat-button" aria-expanded="false" aria-controls="chat-card" aria-label="Stel een vraag">
+    <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21 12a8 8 0 0 1-8 8H5l-2 2V12a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8zM8.500 11h7M8.500 14.500h4.500"/></svg>
+  </button>
+  <aside class="chat-card" id="chat-card" aria-label="Een vraag stellen" hidden>
+    <img src="/assets/img/game-feestjes-thuis-wie-zijn-wij.webp" alt="" width="56" height="56" loading="lazy">
     <div>
       <strong>Hoi, ik ben Ronald</strong>
-      <p>Twijfel je nog of heb je een vraag? Stuur me gerust een berichtje, ik denk graag mee.</p>
-      <a class="nudge-link" href="https://wa.me/31634206753?text=Hoi%20Ronald%2C%20ik%20heb%20een%20vraag%20over%20een%20gamefeestje" target="_blank" rel="noopener">Stel je vraag via WhatsApp →</a>
+      <p>Heb je een vraag? Stuur me een berichtje, ik denk graag mee.</p>
+      <a class="chat-link" href="https://wa.me/31634206753?text=Hoi%20Ronald%2C%20ik%20heb%20een%20vraag%20over%20een%20gamefeestje" target="_blank" rel="noopener">Stel je vraag via WhatsApp →</a>
+      <a class="chat-link quiet" href="/contact">Liever mailen of bellen?</a>
     </div>
-    <button type="button" class="nudge-close" data-nudge-close aria-label="Sluiten">×</button>
+    <button type="button" class="chat-close" data-chat-close aria-label="Sluiten">×</button>
   </aside>
   {{> reviews-panel}}
   <a class="sticky-cta" href="/reserveer" hidden>Check beschikbaarheid</a>

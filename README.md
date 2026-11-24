@@ -29,7 +29,11 @@ The quick way on a fresh Ubuntu or Debian server, as root (installs Docker, sets
 curl -fsSL https://raw.githubusercontent.com/RonaldAlubalu/GamerXP/claude/gamerxp-backend-migration-ew43zk/deploy/setup-server.sh | sh
 ```
 
-Run `sh /opt/gamerxp/deploy/setup-server.sh gamerxp.nl` later to switch to the real domain. Or do it by hand:
+Run `sh /opt/gamerxp/deploy/setup-server.sh gamerxp.nl` later to switch to the real domain.
+
+With the deploy from GitHub Actions, set `SITE_DOMAIN` in `.github/workflows/deploy.yml` instead. Each deploy checks whether that domain's DNS points at the server and its HTTPS certificate works; once both do, the site moves to it and the old address leads there. `SITE_NOINDEX: 'true'` keeps a test address out of search engines; remove it at go-live.
+
+Or do it by hand:
 
 1. **DNS:** point the `A` (and `AAAA`) records of `gamerxp.nl` and `www.gamerxp.nl` at the VPS IP address.
 2. **Get the code and configure it:**

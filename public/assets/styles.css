@@ -536,6 +536,17 @@ body:has(main > .hero:first-child) main > .hero.compact:first-child { padding-to
     radial-gradient(620px 360px at 10% 22%, rgba(13, 232, 251, .11), transparent 70%),
     radial-gradient(720px 400px at 90% 78%, rgba(246, 3, 131, .15), transparent 70%);
 }
+/* The same glow, but right behind one thing: a photo or a form. */
+.glow-behind { position: relative; isolation: isolate; }
+.glow-behind::before {
+  content: ''; position: absolute; z-index: -1; inset: -12% -16%; pointer-events: none; filter: blur(46px);
+  background:
+    radial-gradient(55% 55% at 22% 28%, rgba(13, 232, 251, .26), transparent 70%),
+    radial-gradient(60% 60% at 78% 74%, rgba(246, 3, 131, .34), transparent 70%);
+}
+/* The glow may stick out of its column, but never widens the page. */
+.section:has(.glow-behind) { overflow-x: clip; }
+@media (max-width: 640px) { .glow-behind::before { inset: -14% -8%; filter: blur(34px); } }
 /* Cards on the events page: each its own colour, icon and glow. */
 .audience-cards .package-card[style*="--tint"] {
   border-color: rgba(var(--tint), .45);

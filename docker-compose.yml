@@ -52,6 +52,10 @@ services:
       - caddy-config:/config
     depends_on:
       - app
+    # Also on the network of the second site (Gatra), to reach its form container.
+    networks:
+      - default
+      - gatra
 
   backup:
     image: postgres:16-alpine
@@ -74,3 +78,8 @@ volumes:
   db-data:
   caddy-data:
   caddy-config:
+
+networks:
+  # Made by the deploy (setup-server.sh) and shared with the Gatra repository's own containers.
+  gatra:
+    external: true

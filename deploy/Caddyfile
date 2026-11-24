@@ -21,6 +21,12 @@ www.{$DOMAIN} {
 {$GATRA_DOMAIN:gatra.localhost} {
 	encode zstd gzip
 	header X-Robots-Tag "noindex, nofollow"
-	root * /srv/gatra
-	file_server
+	# Its forms go to a small container of its own, started by that repository's deploy.
+	handle /api/* {
+		reverse_proxy gatra-form:8080
+	}
+	handle {
+		root * /srv/gatra
+		file_server
+	}
 }

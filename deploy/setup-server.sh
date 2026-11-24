@@ -143,6 +143,9 @@ if [ -z "$(ls -A /srv/gatra/public)" ] && [ -d "$DIR/gatra-site/public" ]; then
   cp -a "$DIR/gatra-site/public/." /srv/gatra/public/
 fi
 
+# The network the web server shares with Gatra's own containers.
+docker network inspect gatra >/dev/null 2>&1 || docker network create gatra >/dev/null
+
 if [ "${APP_IMAGE_LOADED:-}" = 1 ]; then
   echo "==> Starting the site with the version built by the deploy"
   docker compose up -d --no-build

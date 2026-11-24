@@ -93,6 +93,19 @@ describe('admin API', () => {
     expect(bad.statusCode).toBe(400);
   });
 
+  it('switches a booking to another package: price and duration follow, and it is logged', async () => {
+    const booking = await createBooking();
+    const packages = (await ctx.app.inject({ url: '/api/admin/packages', headers: auth() })).json() as { id: number; slug: string; name: string; priceCents: number; durationHours: number }[];
+    const from = packages.find((p) => p.id === booking.packageId)!;
+    const to = packages.find((p) => p.id !== booking.packageId)!;
+    const changed = (await patch(booking.id, { packageId: to.id })).json();
+    expect(changed).toMatchObject({ packageId: to.id, packageName: to.name, packagePriceCents: to.priceCents, durationHours: to.durationHours });
+    expect(changed.priceCents - booking.priceCents).toBe(to.priceCents - from.priceCents);
+    expect((await patch(booking.id, { packageId: 99999 })).json().code).toBe('unknown_package');
+    const detail = (await ctx.app.inject({ url: `/api/admin/bookings/${booking.id}`, headers: auth() })).json();
+    expect(detail.events.map((e: { message: string }) => e.message).join(' | ')).toContain(`Pakket: ${from.name} → ${to.name}`);
+  });
+
   it('removes a booking with everything under it, for the owner only', async () => {
     const booking = await createBooking();
     await ctx.app.inject({ method: 'POST', url: `/api/admin/bookings/${booking.id}/payments`, headers: { authorization: `Bearer ${token}` }, payload: { kind: 'deposit', amountCents: 10000, method: 'bank', paidOn: '2026-11-01' } });

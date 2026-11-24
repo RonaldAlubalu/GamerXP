@@ -8,7 +8,7 @@ import {
 import { HttpError } from '../../lib/errors.js';
 import { daySchedule, estimateTravelMinutes } from '../../lib/schedule.js';
 import { bookingRequest, bookingStatus, dateString, TIME_SLOTS, timeString } from '../../lib/schemas.js';
-import { createBooking, getBookingMailData, recalculatePaid, recalculatePrice } from '../../services/bookings.js';
+import { createBooking, DECORATION_LABEL, getBookingMailData, recalculatePaid, recalculatePrice } from '../../services/bookings.js';
 import { logCommunication, sendAndLog } from '../../services/communications.js';
 import { addEvent, createDefaultTasks, STAGE_INFO, STATUSES, type Status } from '../../services/pipeline.js';
 import { calculatePrice, type PriceExtra } from '../../services/pricing.js';
@@ -377,6 +377,8 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
         timeSlot: z.enum(TIME_SLOTS).optional(),
         // The exact start time is agreed with the parent; null clears it.
         startTime: timeString.nullable().optional(),
+        // Another package after all, e.g. from Standaard to Ultimate.
+        packageId: z.number().int().positive().optional(),
         // An agreed end time, when the party is shorter or longer than the package; null clears it.
         endTime: timeString.nullable().optional(),
         extraStations: z.number().int().min(0).max(2).optional(),
@@ -401,6 +403,15 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
     const end = body.endTime !== undefined ? body.endTime : before.endTime;
     if (end && !start) throw new HttpError(422, 'Vul bij een eindtijd ook de starttijd in.', 'end_without_start');
     if (end && start && end <= start) throw new HttpError(422, 'De eindtijd moet na de starttijd liggen.', 'end_before_start');
+    // The new package brings its own price; decoration that is part of Ultimate is no longer an extra.
+    let packageChange: string | null = null;
+    if (body.packageId !== undefined && body.packageId !== before.packageId) {
+      const pkg = await app.db.query<{ name: string; slug: string; priceCents: number }>('SELECT name, slug, price_cents AS "priceCents" FROM packages WHERE id = $1', [body.packageId]);
+      if (!pkg.rows[0]) throw new HttpError(422, 'Dit pakket bestaat niet (meer).', 'unknown_package');
+      const extras = (before.priceExtras as { label: string; amountCents: number }[]).filter((x) => !(pkg.rows[0]!.slug === 'ultimate' && x.label === DECORATION_LABEL));
+      await app.db.query('UPDATE bookings SET package_id = $2, package_price_cents = $3, price_extras = $4::jsonb WHERE id = $1', [id, body.packageId, pkg.rows[0].priceCents, JSON.stringify(extras)]);
+      packageChange = `Pakket: ${before.packageName} → ${pkg.rows[0].name}`;
+    }
 
     await app.db.query(
       `UPDATE bookings SET
@@ -437,6 +448,7 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
 
     // Record what changed on the timeline.
     const changes: string[] = [];
+    if (packageChange) changes.push(packageChange);
     if (body.partyDate && body.partyDate !== before.partyDate) changes.push(`Datum: ${before.partyDate} → ${body.partyDate}`);
     if (body.startTime !== undefined && body.startTime !== before.startTime) {
       changes.push(`Starttijd: ${before.startTime ?? '–'} → ${body.startTime ?? '–'}`);

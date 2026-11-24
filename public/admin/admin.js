@@ -798,7 +798,7 @@ function showPayQr(b, label, { url, amountCents, qrSvg }) {
 let detailTab = { id: null, tab: 'overview' };
 
 async function bookingDetailView(id) {
-  const [b, me] = await Promise.all([api(`/bookings/${id}`), api('/me')]);
+  const [b, me, packages] = await Promise.all([api(`/bookings/${id}`), api('/me'), api('/packages')]);
   const patch = (body, message) => action(() => patchJson(`/bookings/${id}`, body), message);
   const current = STAGES.indexOf(b.status);
   const statusLink = `${location.origin}/status?t=${encodeURIComponent(b.statusToken)}`;
@@ -843,9 +843,12 @@ async function bookingDetailView(id) {
     const f = planForm.elements;
     return patchJson(`/bookings/${id}`, {
       partyDate: f.partyDate.value, timeSlot: f.timeSlot.value, startTime: f.startTime.value || null, endTime: f.endTime.value || null,
+      packageId: Number(f.packageId.value),
       travelMinutes: f.travelMinutes.value === '' ? null : Number(f.travelMinutes.value),
     });
   }, 'Planning opgeslagen.') },
+    // The package can still change, e.g. from Standaard to Ultimate; the price follows.
+    field('Pakket', h('select', { name: 'packageId' }, packages.filter((p) => p.active !== false || p.id === b.packageId).map((p) => h('option', { value: p.id, selected: p.id === b.packageId }, `${p.name} (${euro.format(p.priceCents / 100)})`)))),
     field('Datum', h('input', { type: 'date', name: 'partyDate', value: b.partyDate, required: true })),
     field('Dagdeel', h('select', { name: 'timeSlot' }, Object.entries(SLOT_LABELS).map(([k, l]) => h('option', { value: k, selected: k === b.timeSlot }, l)))),
     field('Starttijd', h('input', { type: 'time', name: 'startTime', value: b.startTime ?? '' })),

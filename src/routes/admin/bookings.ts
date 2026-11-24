@@ -153,6 +153,17 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
     return reply.status(201).send({ id: booking.id, reference: booking.reference });
   });
 
+  // Removes a booking for good, with everything noted under it: a double entry or a test. A real
+  // party that falls through is cancelled instead, so its history stays.
+  app.delete('/bookings/:id', async (req, reply) => {
+    if (req.admin!.role !== 'owner') throw new HttpError(403, 'Je hebt geen rechten voor deze actie.', 'forbidden');
+    const { id } = idParam.parse(req.params);
+    const { rows } = await app.db.query<{ reference: string }>('DELETE FROM bookings WHERE id = $1 RETURNING reference', [id]);
+    if (!rows[0]) throw new HttpError(404, 'Boeking niet gevonden.', 'not_found');
+    req.log.info({ reference: rows[0].reference, by: actorOf(req) }, 'Booking deleted');
+    return reply.status(204).send();
+  });
+
   app.get('/bookings', async (req) => {
     const q = z
       .object({

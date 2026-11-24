@@ -56,6 +56,16 @@ describe('admin API', () => {
     expect(detail.events).toEqual([expect.objectContaining({ type: 'created', toStatus: 'new', actor: 'Sanne de Vries' })]);
   });
 
+  it('removes a booking with everything under it, for the owner only', async () => {
+    const booking = await createBooking();
+    await ctx.app.inject({ method: 'POST', url: `/api/admin/bookings/${booking.id}/payments`, headers: { authorization: `Bearer ${token}` }, payload: { kind: 'deposit', amountCents: 10000, method: 'bank', paidOn: '2026-11-01' } });
+    const remove = () => ctx.app.inject({ method: 'DELETE', url: `/api/admin/bookings/${booking.id}`, headers: { authorization: `Bearer ${token}` } });
+    expect((await remove()).statusCode).toBe(204);
+    expect((await remove()).statusCode).toBe(404);
+    const left = await ctx.db.query('SELECT (SELECT count(*) FROM payments)::int AS payments, (SELECT count(*) FROM booking_tasks)::int AS tasks, (SELECT count(*) FROM bookings)::int AS bookings');
+    expect(left.rows[0]).toEqual({ payments: 0, tasks: 0, bookings: 0 });
+  });
+
   it('moves bookings through the pipeline, logging and emailing the parent', async () => {
     const booking = await createBooking();
 

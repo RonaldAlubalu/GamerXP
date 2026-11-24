@@ -811,7 +811,20 @@ async function bookingDetailView(id) {
     } }, 'Statuslink kopiëren'),
     b.status !== 'cancelled'
       ? h('button', { class: 'btn danger', onclick: action(() => moveBooking(id, 'cancelled')) }, 'Annuleren')
-      : h('button', { class: 'btn', onclick: action(() => moveBooking(id, 'new')) }, 'Heropenen'));
+      : h('button', { class: 'btn', onclick: action(() => moveBooking(id, 'new')) }, 'Heropenen'),
+    // For a double entry or a test. A real party that falls through is cancelled, so its history stays.
+    me.role === 'owner' && h('button', { class: 'btn danger', onclick: async () => {
+      const kept = [b.payments?.length && `${b.payments.length} betaling(en)`, b.invoices?.length && `${b.invoices.length} gekoppelde factuur/facturen`, b.communications?.length && `${b.communications.length} bericht(en)`].filter(Boolean);
+      const warning = kept.length ? `\n\nOok dit verdwijnt: ${kept.join(', ')}. Facturen blijven wel in e-Boekhouden staan.` : '';
+      if (!confirm(`Boeking ${b.reference} van ${displayName(b)} definitief verwijderen? Dit kan niet ongedaan worden.${warning}\n\nGaat een echt feest niet door, kies dan Annuleren: dan blijft de geschiedenis bewaard.`)) return;
+      try {
+        await del(`/bookings/${id}`);
+        flash('ok', `Boeking ${b.reference} verwijderd.`);
+        location.hash = '#/list';
+      } catch (err) {
+        flash('error', err.message);
+      }
+    } }, 'Verwijderen'));
 
   // Phase, whose turn, payment state.
   const turn = h('div', { class: 'segmented', title: 'Wie is er aan zet?' },

@@ -487,7 +487,7 @@ tr.picked > td { background: color-mix(in srgb, var(--primary, #2563eb) 9%, tran
 .profile-photo { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; }
 
 /* Under the list of bookings: what they add up to. */
-.list-totals { display: flex; flex-wrap: wrap; gap: 10px 28px; align-items: baseline; margin-top: 14px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
+.list-totals { display: flex; flex-wrap: wrap; gap: 10px 28px; align-items: baseline; justify-content: flex-end; text-align: right; margin-top: 14px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
 .list-totals > div { display: flex; flex-direction: column; gap: 2px; }
 .list-totals span { color: var(--muted); font-size: .8rem; }
 .list-totals strong { font-size: 1.15rem; }

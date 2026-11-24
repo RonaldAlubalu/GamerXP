@@ -520,3 +520,4 @@ body:has(#booking-form) .wa-float, body:has(#status-view) .wa-float { display: n
   .reviews-open-hint { display: block; text-decoration: underline; text-underline-offset: 3px; }
   .reviews-open-hint .dot { display: none; }
 }
+.reviews-panel-google { color: var(--muted); font-size: .88rem; text-align: center; }

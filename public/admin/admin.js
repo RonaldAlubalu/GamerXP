@@ -81,7 +81,7 @@ async function api(path, options = {}) {
       ...(getToken() ? { authorization: `Bearer ${getToken()}` } : {}),
     },
   });
-  if (res.status === 401 && path !== '/login') {
+  if (res.status === 401 && !path.startsWith('/login')) {
     setToken(null);
     render();
     throw new Error('Sessie verlopen, log opnieuw in.');
@@ -181,31 +181,87 @@ function setPage(title, ...actions) {
 
 // Views -------------------------------------------------------------------------
 
-function loginView() {
+// The second step by email: "pending" stays in this browser between typing the password and
+// opening the link from the mail (which may open in a new tab).
+const PENDING_KEY = 'gxp_login_pending';
+function getPending() {
+  try { return localStorage.getItem(PENDING_KEY); } catch { return null; }
+}
+function setPending(value) {
+  try { value ? localStorage.setItem(PENDING_KEY, value) : localStorage.removeItem(PENDING_KEY); } catch {}
+}
+
+function loginView(notice) {
   sidebar.hidden = true;
   topbar.hidden = true;
   const form = document.getElementById('login-tpl').content.firstElementChild.cloneNode(true);
+  const codeField = form.querySelector('#l-code-field');
+  const codeInput = form.querySelector('#l-code');
+  let emailStep = false;
+  const askMailCode = (minutes) => {
+    emailStep = true;
+    codeField.hidden = false;
+    codeField.querySelector('label').textContent = 'Code uit de mail';
+    codeField.querySelector('small').textContent =
+      `We hebben je een mail gestuurd. Open de link in die mail op dit apparaat, of typ hier de code van 6 cijfers over.${minutes ? ` Geldig voor ${minutes} minuten.` : ''}`;
+    codeInput.value = '';
+    codeInput.focus();
+  };
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     try {
       const data = Object.fromEntries(new FormData(form));
       if (!data.code) delete data.code;
-      const { token } = await api('/login', { method: 'POST', body: JSON.stringify(data) });
-      setToken(token);
+      if (emailStep && data.code && getPending()) {
+        const { token } = await api('/login/link', { method: 'POST', body: JSON.stringify({ pending: getPending(), code: data.code }) });
+        setPending(null);
+        setToken(token);
+        return render();
+      }
+      const res = await api('/login', { method: 'POST', body: JSON.stringify(data) });
+      if (res.step === 'email') {
+        setPending(res.pending);
+        return askMailCode(res.minutes);
+      }
+      setToken(res.token);
       render();
     } catch (err) {
       // Password accepted, second step needed: ask for the code and stay on the form.
-      const codeField = form.querySelector('#l-code-field');
       if (err.code === 'two_factor_required') {
         codeField.hidden = false;
-        form.querySelector('#l-code').focus();
+        codeInput.focus();
         return;
       }
-      if (err.code === 'invalid_code') form.querySelector('#l-code').select();
+      if (err.code === 'invalid_code') codeInput.select();
+      if (err.code === 'link_expired') {
+        setPending(null);
+        emailStep = false;
+        codeField.hidden = true;
+        codeInput.value = '';
+      }
       flash('error', err.message);
     }
   });
   view.replaceChildren(form);
+  if (notice) flash('error', notice);
+}
+
+// Opened from the login mail: finish the login that was started in this browser.
+async function loginFromLink(token) {
+  history.replaceState(null, '', `${location.pathname}#/`);
+  const pending = getPending();
+  if (!pending) {
+    return loginView('Deze link werkt alleen op het apparaat waarop je inlogde. Log hier in, of typ daar de code uit de mail over.');
+  }
+  try {
+    const res = await api('/login/link', { method: 'POST', body: JSON.stringify({ pending, token }) });
+    setPending(null);
+    setToken(res.token);
+    render();
+  } catch (err) {
+    if (err.code === 'link_expired') setPending(null);
+    loginView(err.message);
+  }
 }
 
 async function boardView() {
@@ -1272,7 +1328,10 @@ function twoFactorCard() {
         confirmForm);
     } catch (err) { flash('error', err.message); }
   } }, 'Instellen');
-  box.append(h('p', { class: 'muted' }, 'Extra beveiliging: naast je wachtwoord vraagt de admin bij het inloggen om een code van je telefoon. Zonder je telefoon komt niemand binnen, ook niet met je wachtwoord.'), start);
+  box.append(me.emailConfigured
+      ? h('p', {}, badge('Via e-mail', 'info'), ' Na je wachtwoord sturen we nu een inloglink en code naar je e-mailadres.')
+      : h('p', {}, badge('Uit', 'warn'), ' Inloggen gaat nu met alleen je wachtwoord.'),
+    h('p', { class: 'muted' }, 'Sterker en sneller is een authenticator-app: dan vraagt de admin om een code van je telefoon en hoef je niet op een mail te wachten.'), start);
   return box;
 }
 
@@ -1319,6 +1378,8 @@ async function updateCounts() {
 }
 
 async function render() {
+  const linkToken = location.hash.startsWith('#/inloggen') ? new URLSearchParams(location.hash.split('?')[1] || '').get('t') : null;
+  if (linkToken && !getToken()) return loginFromLink(linkToken);
   if (!getToken()) return loginView();
   sidebar.hidden = false;
   topbar.hidden = false;

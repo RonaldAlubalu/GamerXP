@@ -153,3 +153,63 @@ describe('two-step login', () => {
     expect((await ctx.app.inject({ method: 'POST', url: '/api/admin/login', payload: { email: 'lisa@gamerxp.nl', password: 'lisa-wachtwoord-1' } })).statusCode).toBe(200);
   });
 });
+
+describe('login link by email', () => {
+  const loginUrl = '/api/admin/login';
+  const creds = { email: 'admin@gamerxp.nl', password: 'correct-horse-battery' };
+  const finish = (payload: object) => ctx.app.inject({ method: 'POST', url: '/api/admin/login/link', payload });
+  const start = async () => {
+    const res = await ctx.app.inject({ method: 'POST', url: loginUrl, payload: creds });
+    const mail = ctx.sent.at(-1)!;
+    return { res, mail, token: /inloggen\?t=([\w-]+)/.exec(mail.text)![1]!, code: /code over in het inlogscherm: (\d{6})/.exec(mail.text)![1]! };
+  };
+
+  beforeEach(() => {
+    ctx.app.config.SMTP_HOST = 'smtp.example.test';
+  });
+
+  it('sends a link and a code instead of a session when there is no authenticator app', async () => {
+    const { res, mail, token } = await start();
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ step: 'email', minutes: 10 });
+    expect(res.json().token).toBeUndefined();
+    expect(mail.to).toBe('admin@gamerxp.nl');
+
+    const done = await finish({ pending: res.json().pending, token });
+    expect(done.statusCode).toBe(200);
+    expect((await call(done.json().token, 'GET', '/me')).statusCode).toBe(200);
+    // One use only.
+    expect((await finish({ pending: res.json().pending, token })).json().code).toBe('link_expired');
+  });
+
+  it('accepts the code typed over, and the link alone opens nothing', async () => {
+    const { res, token, code } = await start();
+    // The mail without the browser that typed the password is useless.
+    expect((await finish({ pending: 'x'.repeat(43), token })).statusCode).toBe(401);
+    const done = await finish({ pending: res.json().pending, code });
+    expect(done.statusCode).toBe(200);
+    expect(done.json().token).toBeTruthy();
+  });
+
+  it('stops after five wrong codes and expires', async () => {
+    const { res, code } = await start();
+    const pending = res.json().pending;
+    const wrong = code === '000000' ? '111111' : '000000';
+    for (let i = 0; i < 5; i++) expect((await finish({ pending, code: wrong })).json().code).toBe('invalid_code');
+    expect((await finish({ pending, code })).json().code).toBe('link_expired');
+
+    const again = await start();
+    await ctx.db.query(`UPDATE login_links SET expires_at = now() - interval '1 minute'`);
+    expect((await finish({ pending: again.res.json().pending, code: again.code })).json().code).toBe('link_expired');
+  });
+
+  it('does not mail when the password is wrong or an authenticator app is set up', async () => {
+    const before = ctx.sent.length;
+    const bad = await ctx.app.inject({ method: 'POST', url: loginUrl, payload: { ...creds, password: 'fout' } });
+    expect(bad.statusCode).toBe(401);
+    await ctx.db.query(`UPDATE admin_users SET totp_enabled = true, totp_secret = 'JBSWY3DPEHPK3PXP'`);
+    const totp = await ctx.app.inject({ method: 'POST', url: loginUrl, payload: creds });
+    expect(totp.json().code).toBe('two_factor_required');
+    expect(ctx.sent.length).toBe(before);
+  });
+});

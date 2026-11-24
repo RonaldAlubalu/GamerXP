@@ -1,4 +1,5 @@
-import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
+import { randomInt } from 'node:crypto';
+import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { generateSessionToken, hashToken, verifyPassword } from '../../lib/auth.js';
 import { HttpError } from '../../lib/errors.js';
@@ -24,6 +25,20 @@ function bearerToken(req: FastifyRequest): string | undefined {
 
 // A dummy hash so a login for an unknown email takes as long as a wrong password.
 const DUMMY_HASH = '$2b$12$S7333sHhnxTEx1ayGNjnRuORrSn9Jxd0CQNP9DvJqelEUm2piol6G';
+
+async function startSession(app: FastifyInstance, userId: number) {
+  const token = generateSessionToken();
+  const expires = await app.db.query<{ expires_at: Date }>(
+    `INSERT INTO admin_sessions (token_hash, user_id, expires_at)
+     VALUES ($1, $2, now() + make_interval(hours => $3)) RETURNING expires_at`,
+    [hashToken(token), userId, app.config.SESSION_TTL_HOURS],
+  );
+  // Opportunistically clean up old sessions.
+  await app.db.query('DELETE FROM admin_sessions WHERE expires_at < now()');
+  return { token, expiresAt: expires.rows[0]!.expires_at };
+}
+
+const MAX_LINK_ATTEMPTS = 5;
 
 export const adminRoutes: FastifyPluginAsync = async (app) => {
   app.post(
@@ -57,15 +72,72 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         }
       }
 
-      const token = generateSessionToken();
-      const expires = await app.db.query<{ expires_at: Date }>(
-        `INSERT INTO admin_sessions (token_hash, user_id, expires_at)
-         VALUES ($1, $2, now() + make_interval(hours => $3)) RETURNING expires_at`,
-        [hashToken(token), user.id, app.config.SESSION_TTL_HOURS],
+      // Without an authenticator app the second step goes by email: a link and a code that are
+      // valid for a short while. They only work together with "pending", which stays in the
+      // browser that typed the password, so a stolen mail on its own opens nothing.
+      if (!(user.totp_enabled && user.totp_secret) && app.config.SMTP_HOST) {
+        const minutes = app.config.LOGIN_LINK_MINUTES;
+        const pending = generateSessionToken();
+        const linkToken = generateSessionToken();
+        const mailCode = String(randomInt(0, 1_000_000)).padStart(6, '0');
+        await app.db.query('DELETE FROM login_links WHERE user_id = $1 OR expires_at < now()', [user.id]);
+        await app.db.query(
+          `INSERT INTO login_links (user_id, pending_hash, token_hash, code_hash, expires_at)
+           VALUES ($1, $2, $3, $4, now() + make_interval(mins => $5))`,
+          [user.id, hashToken(pending), hashToken(linkToken), hashToken(mailCode), minutes],
+        );
+        try {
+          await app.mailer.send({
+            to: email,
+            subject: `Je inlogcode voor Gamer Xperience Admin: ${mailCode}`,
+            text:
+              `Iemand logt in op de admin van Gamer Xperience met jouw wachtwoord.\n\n` +
+              `Ben jij dat? Open dan deze link op het apparaat waarop je inlogt:\n` +
+              `${app.config.PUBLIC_URL}/admin/#/inloggen?t=${linkToken}\n\n` +
+              `Of typ deze code over in het inlogscherm: ${mailCode}\n\n` +
+              `De link en de code zijn ${minutes} minuten geldig en werken één keer.\n\n` +
+              `Was jij dit niet? Dan kent iemand je wachtwoord. Wijzig het zo snel mogelijk; ` +
+              `zonder deze mail komt diegene niet binnen.`,
+            plain: true,
+          });
+        } catch (err) {
+          app.log.error({ err }, 'Login mail could not be sent');
+          await app.db.query('DELETE FROM login_links WHERE user_id = $1', [user.id]);
+          throw new HttpError(503, 'De inlogmail kon niet worden verstuurd. Probeer het over een paar minuten opnieuw.', 'login_mail_failed');
+        }
+        return { step: 'email' as const, pending, minutes };
+      }
+
+      return startSession(app, user.id);
+    },
+  );
+
+  // Second step by email: the link from the mail, or the code typed over.
+  app.post(
+    '/login/link',
+    { config: { rateLimit: { max: 20, timeWindow: '15 minutes' } } },
+    async (req) => {
+      const { pending, token, code } = z
+        .object({ pending: z.string().min(20).max(200), token: z.string().max(200).optional(), code: z.string().trim().max(20).optional() })
+        .parse(req.body);
+      const expired = new HttpError(401, 'Deze inloglink is verlopen of al gebruikt. Log opnieuw in.', 'link_expired');
+      const { rows } = await app.db.query<{ id: string; user_id: number; token_hash: string; code_hash: string; attempts: number }>(
+        `UPDATE login_links SET attempts = attempts + 1
+          WHERE pending_hash = $1 AND expires_at > now() AND attempts < $2
+          RETURNING id, user_id, token_hash, code_hash, attempts`,
+        [hashToken(pending), MAX_LINK_ATTEMPTS],
       );
-      // Opportunistically clean up old sessions.
-      await app.db.query('DELETE FROM admin_sessions WHERE expires_at < now()');
-      return { token, expiresAt: expires.rows[0]!.expires_at };
+      const link = rows[0];
+      if (!link) throw expired;
+      const ok = (token && hashToken(token) === link.token_hash) || (code && hashToken(code.replace(/\s/g, '')) === link.code_hash);
+      if (!ok) {
+        if (token) throw new HttpError(401, 'Deze link hoort bij een andere inlogpoging. Gebruik de nieuwste mail.', 'invalid_code');
+        throw new HttpError(401, link.attempts >= MAX_LINK_ATTEMPTS ? 'Te vaak een verkeerde code. Log opnieuw in.' : 'Deze code klopt niet.', 'invalid_code');
+      }
+      // One use only.
+      const used = await app.db.query('DELETE FROM login_links WHERE id = $1', [link.id]);
+      if (!used.rowCount) throw expired;
+      return startSession(app, link.user_id);
     },
   );
 

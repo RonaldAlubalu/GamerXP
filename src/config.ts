@@ -54,6 +54,8 @@ const schema = z.object({
 
   // When SMTP_HOST is empty, emails are logged instead of sent.
   SMTP_HOST: z.string().default(''),
+  // How long the login link and code sent by email stay valid.
+  LOGIN_LINK_MINUTES: z.coerce.number().int().min(1).max(60).default(10),
   SMTP_PORT: z.coerce.number().int().positive().default(587),
   SMTP_SECURE: bool.default(false),
   SMTP_USER: z.string().default(''),

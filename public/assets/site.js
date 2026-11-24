@@ -99,3 +99,52 @@ if (reviewsPanel?.showModal) {
     if (event.target === reviewsPanel || event.target.closest('[data-reviews-close]')) reviewsPanel.close();
   });
 }
+
+// Cookie choice. The site itself needs no consent; YouTube videos do, because YouTube places
+// cookies when a video plays. The choice is kept in this browser.
+const CONSENT_KEY = 'gxp_consent';
+const getConsent = () => {
+  try { return localStorage.getItem(CONSENT_KEY); } catch { return null; }
+};
+const setConsent = (value) => {
+  try { localStorage.setItem(CONSENT_KEY, value); } catch {}
+};
+const cookieBanner = document.getElementById('cookie-banner');
+if (cookieBanner) {
+  const show = (visible) => {
+    cookieBanner.hidden = !visible;
+    document.body.classList.toggle('cookie-open', visible);
+  };
+  show(!getConsent());
+  for (const button of cookieBanner.querySelectorAll('[data-cookie-choice]')) {
+    button.addEventListener('click', () => {
+      setConsent(button.dataset.cookieChoice);
+      show(false);
+    });
+  }
+  for (const link of document.querySelectorAll('[data-cookie-settings]')) link.addEventListener('click', () => show(true));
+}
+
+// YouTube videos load only on a click, and only with consent for YouTube's cookies.
+for (const video of document.querySelectorAll('[data-youtube]')) {
+  const play = () => {
+    const frame = document.createElement('iframe');
+    frame.src = `https://www.youtube-nocookie.com/embed/${video.dataset.youtube}?autoplay=1&rel=0&playsinline=1`;
+    frame.title = video.dataset.title || 'Video';
+    frame.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
+    frame.allowFullscreen = true;
+    frame.referrerPolicy = 'strict-origin-when-cross-origin';
+    video.replaceChildren(frame);
+  };
+  const note = video.querySelector('.video-note');
+  video.querySelector('.video-play')?.addEventListener('click', () => {
+    if (getConsent() === 'all') return play();
+    note.hidden = false;
+    note.querySelector('button').focus();
+  });
+  video.querySelector('[data-video-accept]')?.addEventListener('click', () => {
+    setConsent('all');
+    if (cookieBanner) { cookieBanner.hidden = true; document.body.classList.remove('cookie-open'); }
+    play();
+  });
+}

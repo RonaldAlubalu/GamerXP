@@ -39,14 +39,34 @@ async function startSession(app: FastifyInstance, userId: number) {
 }
 
 const MAX_LINK_ATTEMPTS = 5;
+const TRUST_DAYS = 30;
+
+// Remembers the device that just passed the second step. The token goes to that browser only.
+async function trustDevice(app: FastifyInstance, userId: number, req: FastifyRequest): Promise<string> {
+  const token = generateSessionToken();
+  await app.db.query('DELETE FROM trusted_devices WHERE expires_at < now()');
+  await app.db.query(
+    `INSERT INTO trusted_devices (user_id, token_hash, label, expires_at) VALUES ($1, $2, $3, now() + make_interval(days => $4))`,
+    [userId, hashToken(token), String(req.headers['user-agent'] ?? '').slice(0, 200), TRUST_DAYS],
+  );
+  return token;
+}
+
 
 export const adminRoutes: FastifyPluginAsync = async (app) => {
   app.post(
     '/login',
     { config: { rateLimit: { max: 10, timeWindow: '15 minutes' } } },
     async (req) => {
-      const { email, password, code } = z
-        .object({ email: z.string().trim().toLowerCase(), password: z.string().min(1), code: z.string().trim().max(20).optional() })
+      const { email, password, code, device, remember } = z
+        .object({
+          email: z.string().trim().toLowerCase(),
+          password: z.string().min(1),
+          code: z.string().trim().max(20).optional(),
+          // The token of a device that was remembered at an earlier login.
+          device: z.string().max(200).optional(),
+          remember: z.boolean().default(false),
+        })
         .parse(req.body);
       const { rows } = await app.db.query<{
         id: number; password_hash: string; totp_enabled: boolean; totp_secret: string | null; totp_last_step: string; recovery_codes: string[];
@@ -57,6 +77,15 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       const user = rows[0];
       const ok = await verifyPassword(password, user?.password_hash ?? DUMMY_HASH);
       if (!user || !ok) throw new HttpError(401, 'Onjuist e-mailadres of wachtwoord.', 'invalid_credentials');
+
+      // A remembered device has passed the second step within the last 30 days.
+      if (device) {
+        const known = await app.db.query(
+          'SELECT 1 FROM trusted_devices WHERE user_id = $1 AND token_hash = $2 AND expires_at > now()',
+          [user.id, hashToken(device)],
+        );
+        if (known.rowCount) return startSession(app, user.id);
+      }
 
       // Second step: a code from the authenticator app, or a one-time backup code.
       if (user.totp_enabled && user.totp_secret) {
@@ -70,6 +99,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         } else {
           throw new HttpError(401, 'Deze code klopt niet of is al gebruikt. Probeer de volgende code.', 'invalid_code');
         }
+        const session = await startSession(app, user.id);
+        return remember ? { ...session, deviceToken: await trustDevice(app, user.id, req) } : session;
       }
 
       // Without an authenticator app the second step goes by email: a link and a code that are
@@ -82,9 +113,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         const mailCode = String(randomInt(0, 1_000_000)).padStart(6, '0');
         await app.db.query('DELETE FROM login_links WHERE user_id = $1 OR expires_at < now()', [user.id]);
         await app.db.query(
-          `INSERT INTO login_links (user_id, pending_hash, token_hash, code_hash, expires_at)
-           VALUES ($1, $2, $3, $4, now() + make_interval(mins => $5))`,
-          [user.id, hashToken(pending), hashToken(linkToken), hashToken(mailCode), minutes],
+          `INSERT INTO login_links (user_id, pending_hash, token_hash, code_hash, expires_at, remember)
+           VALUES ($1, $2, $3, $4, now() + make_interval(mins => $5), $6)`,
+          [user.id, hashToken(pending), hashToken(linkToken), hashToken(mailCode), minutes, remember],
         );
         try {
           await app.mailer.send({
@@ -121,10 +152,10 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         .object({ pending: z.string().min(20).max(200), token: z.string().max(200).optional(), code: z.string().trim().max(20).optional() })
         .parse(req.body);
       const expired = new HttpError(401, 'Deze inloglink is verlopen of al gebruikt. Log opnieuw in.', 'link_expired');
-      const { rows } = await app.db.query<{ id: string; user_id: number; token_hash: string; code_hash: string; attempts: number }>(
+      const { rows } = await app.db.query<{ id: string; user_id: number; token_hash: string; code_hash: string; attempts: number; remember: boolean }>(
         `UPDATE login_links SET attempts = attempts + 1
           WHERE pending_hash = $1 AND expires_at > now() AND attempts < $2
-          RETURNING id, user_id, token_hash, code_hash, attempts`,
+          RETURNING id, user_id, token_hash, code_hash, attempts, remember`,
         [hashToken(pending), MAX_LINK_ATTEMPTS],
       );
       const link = rows[0];
@@ -137,7 +168,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       // One use only.
       const used = await app.db.query('DELETE FROM login_links WHERE id = $1', [link.id]);
       if (!used.rowCount) throw expired;
-      return startSession(app, link.user_id);
+      const session = await startSession(app, link.user_id);
+      return link.remember ? { ...session, deviceToken: await trustDevice(app, link.user_id, req) } : session;
     },
   );
 
@@ -161,6 +193,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     });
 
     secured.get('/me', async (req) => ({
+      trustedDevices: (await app.db.query('SELECT 1 FROM trusted_devices WHERE user_id = $1 AND expires_at > now()', [req.admin!.id])).rowCount ?? 0,
       id: req.admin!.id,
       email: req.admin!.email,
       name: req.admin!.name,

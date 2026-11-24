@@ -123,7 +123,8 @@ export async function buildApp({ config, db, mailer, distance, mollie, mailSourc
 
   await app.register(helmet, {
     contentSecurityPolicy: {
-      directives: { 'img-src': ["'self'", 'data:'] },
+      // Videos play from YouTube's cookie-light address, after the visitor's click.
+      directives: { 'img-src': ["'self'", 'data:'], 'frame-src': ["'self'", 'https://www.youtube-nocookie.com'] },
     },
   });
   await app.register(rateLimit, { global: false });

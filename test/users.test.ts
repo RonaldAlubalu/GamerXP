@@ -213,3 +213,56 @@ describe('login link by email', () => {
     expect(ctx.sent.length).toBe(before);
   });
 });
+
+describe('remember this device for 30 days', () => {
+  const loginUrl = '/api/admin/login';
+  const creds = { email: 'admin@gamerxp.nl', password: 'correct-horse-battery' };
+  const post = (url: string, payload: object) => ctx.app.inject({ method: 'POST', url, payload });
+
+  beforeEach(() => {
+    ctx.app.config.SMTP_HOST = 'smtp.example.test';
+  });
+
+  async function rememberedDevice() {
+    const first = await post(loginUrl, { ...creds, remember: true });
+    const code = /inlogscherm: (\d{6})/.exec(ctx.sent.at(-1)!.text)![1]!;
+    const done = await post('/api/admin/login/link', { pending: first.json().pending, code });
+    expect(done.json().deviceToken).toBeTruthy();
+    return done.json() as { token: string; deviceToken: string };
+  }
+
+  it('skips the second step on that device only, and not without the password', async () => {
+    const { deviceToken } = await rememberedDevice();
+    const mails = ctx.sent.length;
+
+    const again = await post(loginUrl, { ...creds, device: deviceToken });
+    expect(again.json().token).toBeTruthy();
+    expect(ctx.sent.length).toBe(mails);
+
+    expect((await post(loginUrl, { ...creds, password: 'fout', device: deviceToken })).statusCode).toBe(401);
+    expect((await post(loginUrl, { ...creds, device: 'een-ander-apparaat' })).json().step).toBe('email');
+  });
+
+  it('gives no device token without the tick, and expires after 30 days', async () => {
+    const first = await post(loginUrl, creds);
+    const code = /inlogscherm: (\d{6})/.exec(ctx.sent.at(-1)!.text)![1]!;
+    expect((await post('/api/admin/login/link', { pending: first.json().pending, code })).json().deviceToken).toBeUndefined();
+
+    const { deviceToken } = await rememberedDevice();
+    await ctx.db.query(`UPDATE trusted_devices SET expires_at = now() - interval '1 minute'`);
+    expect((await post(loginUrl, { ...creds, device: deviceToken })).json().step).toBe('email');
+  });
+
+  it('forgets devices on request and when the password changes', async () => {
+    const a = await rememberedDevice();
+    expect((await call(a.token, 'GET', '/me')).json().trustedDevices).toBe(1);
+    expect((await call(a.token, 'POST', '/me/devices/forget')).statusCode).toBe(204);
+    expect((await post(loginUrl, { ...creds, device: a.deviceToken })).json().step).toBe('email');
+
+    const b = await rememberedDevice();
+    const changed = await call(b.token, 'POST', '/me/password', { current: creds.password, password: 'een-heel-nieuw-wachtwoord' });
+    expect(changed.statusCode).toBeLessThan(300);
+    const after = await post(loginUrl, { email: creds.email, password: 'een-heel-nieuw-wachtwoord', device: b.deviceToken });
+    expect(after.json().step).toBe('email');
+  });
+});

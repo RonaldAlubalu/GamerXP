@@ -10,7 +10,7 @@ export type Role = 'owner' | 'assistant';
 
 // What an assistant may do: look at bookings and the calendar, and change the availability.
 const ASSISTANT_READ = [/^\/me$/, /^\/push\/key$/, /^\/stages$/, /^\/overview$/, /^\/pipeline$/, /^\/bookings(\/[^/]+)?$/, /^\/calendar$/, /^\/packages$/, /^\/availability(\/|$)/, /^\/blocked-dates(\/|$)/];
-const ASSISTANT_WRITE = [/^\/logout$/, /^\/me\/password$/, /^\/me\/2fa\//, /^\/push\//, /^\/availability(\/|$)/, /^\/blocked-dates(\/|$)/];
+const ASSISTANT_WRITE = [/^\/logout$/, /^\/me\/password$/, /^\/me\/2fa\//, /^\/me\/devices\//, /^\/push\//, /^\/availability(\/|$)/, /^\/blocked-dates(\/|$)/];
 
 export function assistantMayCall(method: string, path: string): boolean {
   return (method === 'GET' ? ASSISTANT_READ : ASSISTANT_WRITE).some((allowed) => allowed.test(path));
@@ -35,10 +35,17 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
     }
     await app.db.query('UPDATE admin_users SET password_hash = $2 WHERE id = $1', [req.admin!.id, await hashPassword(body.password)]);
     await app.db.query('DELETE FROM admin_sessions WHERE user_id = $1 AND token_hash <> $2', [req.admin!.id, req.admin!.tokenHash]);
+    await app.db.query('DELETE FROM trusted_devices WHERE user_id = $1', [req.admin!.id]);
     return reply.status(204).send();
   });
 
   // Two-step login. Step 1: get a secret to scan with an authenticator app.
+  // Forget every remembered device: the next login on each asks for the second step again.
+  app.post('/me/devices/forget', async (req, reply) => {
+    await app.db.query('DELETE FROM trusted_devices WHERE user_id = $1', [req.admin!.id]);
+    return reply.status(204).send();
+  });
+
   app.post('/me/2fa/setup', async (req) => {
     if (req.admin!.twoFactor) throw new HttpError(409, 'Tweestapsverificatie staat al aan.', 'already_enabled');
     const secret = generateSecret();
@@ -71,6 +78,7 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
     const { rows } = await app.db.query<{ password_hash: string }>('SELECT password_hash FROM admin_users WHERE id = $1', [req.admin!.id]);
     if (!(await verifyPassword(current, rows[0]!.password_hash))) throw new HttpError(400, 'Je wachtwoord klopt niet.', 'invalid_credentials');
     await app.db.query("UPDATE admin_users SET totp_enabled = FALSE, totp_secret = NULL, recovery_codes = '{}' WHERE id = $1", [req.admin!.id]);
+    await app.db.query('DELETE FROM trusted_devices WHERE user_id = $1', [req.admin!.id]);
     return reply.status(204).send();
   });
 
@@ -84,6 +92,7 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
     );
     if (!rowCount) throw new HttpError(404, 'Gebruiker niet gevonden.', 'not_found');
     await app.db.query('DELETE FROM admin_sessions WHERE user_id = $1 AND user_id <> $2', [id, req.admin!.id]);
+    await app.db.query('DELETE FROM trusted_devices WHERE user_id = $1', [id]);
     return reply.status(204).send();
   });
 
@@ -154,6 +163,7 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
     if (!rows[0]) throw new HttpError(404, 'Gebruiker niet gevonden.', 'not_found');
     // A new password or role takes effect right away: the user has to log in again.
     if ((body.password || body.role) && id !== req.admin!.id) await app.db.query('DELETE FROM admin_sessions WHERE user_id = $1', [id]);
+    if (body.password) await app.db.query('DELETE FROM trusted_devices WHERE user_id = $1', [id]);
     return rows[0];
   });
 

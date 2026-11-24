@@ -191,6 +191,18 @@ function setPending(value) {
   try { value ? localStorage.setItem(PENDING_KEY, value) : localStorage.removeItem(PENDING_KEY); } catch {}
 }
 
+// A device that passed the second step can be remembered for 30 days.
+const DEVICE_KEY = 'gxp_device';
+function getDevice() {
+  try { return localStorage.getItem(DEVICE_KEY); } catch { return null; }
+}
+function finishLogin(res) {
+  if (res.deviceToken) { try { localStorage.setItem(DEVICE_KEY, res.deviceToken); } catch {} }
+  setPending(null);
+  setToken(res.token);
+  render();
+}
+
 function loginView(notice) {
   sidebar.hidden = true;
   topbar.hidden = true;
@@ -212,19 +224,17 @@ function loginView(notice) {
     try {
       const data = Object.fromEntries(new FormData(form));
       if (!data.code) delete data.code;
+      data.remember = form.querySelector('#l-remember').checked;
+      if (getDevice()) data.device = getDevice();
       if (emailStep && data.code && getPending()) {
-        const { token } = await api('/login/link', { method: 'POST', body: JSON.stringify({ pending: getPending(), code: data.code }) });
-        setPending(null);
-        setToken(token);
-        return render();
+        return finishLogin(await api('/login/link', { method: 'POST', body: JSON.stringify({ pending: getPending(), code: data.code }) }));
       }
       const res = await api('/login', { method: 'POST', body: JSON.stringify(data) });
       if (res.step === 'email') {
         setPending(res.pending);
         return askMailCode(res.minutes);
       }
-      setToken(res.token);
-      render();
+      finishLogin(res);
     } catch (err) {
       // Password accepted, second step needed: ask for the code and stay on the form.
       if (err.code === 'two_factor_required') {
@@ -254,10 +264,7 @@ async function loginFromLink(token) {
     return loginView('Deze link werkt alleen op het apparaat waarop je inlogde. Log hier in, of typ daar de code uit de mail over.');
   }
   try {
-    const res = await api('/login/link', { method: 'POST', body: JSON.stringify({ pending, token }) });
-    setPending(null);
-    setToken(res.token);
-    render();
+    finishLogin(await api('/login/link', { method: 'POST', body: JSON.stringify({ pending, token }) }));
   } catch (err) {
     if (err.code === 'link_expired') setPending(null);
     loginView(err.message);
@@ -1338,6 +1345,21 @@ async function pushCard() {
   return box;
 }
 
+// Devices that skip the second step for 30 days.
+function devicesCard() {
+  if (!me.trustedDevices) return null;
+  return h('section', { class: 'card', style: 'max-width:480px' },
+    h('h2', {}, 'Onthouden apparaten'),
+    h('p', {}, me.trustedDevices === 1
+      ? 'Op 1 apparaat hoef je 30 dagen geen tweede stap te doen.'
+      : `Op ${me.trustedDevices} apparaten hoef je 30 dagen geen tweede stap te doen.`),
+    h('p', { class: 'muted small' }, 'Telefoon of laptop kwijt? Laat alle apparaten vergeten; bij de volgende login is de tweede stap weer nodig.'),
+    h('button', { class: 'btn', onclick: action(async () => {
+      await post('/me/devices/forget');
+      try { localStorage.removeItem(DEVICE_KEY); } catch {}
+    }, 'Alle apparaten zijn vergeten.') }, 'Alle apparaten vergeten'));
+}
+
 // Two-step login: set up, show backup codes once, or switch off.
 function twoFactorCard() {
   const box = h('section', { class: 'card', style: 'max-width:480px' }, h('h2', {}, 'Tweestapsverificatie'));
@@ -1397,7 +1419,7 @@ async function accountView() {
     field('Nieuw wachtwoord (minimaal 12 tekens)', h('input', { name: 'password', type: 'password', required: true, minlength: 12, autocomplete: 'new-password' })),
     field('Herhaal nieuw wachtwoord', h('input', { name: 'repeat', type: 'password', required: true, minlength: 12, autocomplete: 'new-password' })),
     h('button', { class: 'btn primary', type: 'submit' }, 'Opslaan'));
-  view.replaceChildren(twoFactorCard(), await pushCard(), form);
+  view.replaceChildren(...[twoFactorCard(), devicesCard(), await pushCard(), form].filter(Boolean));
 }
 
 // Assistants can look at bookings but not change them: switch the controls off.

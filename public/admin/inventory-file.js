@@ -148,7 +148,7 @@ function money(v) {
   return v === '' || Number.isNaN(n) ? null : Math.round(n * 100);
 }
 
-function date(v) {
+export function date(v) {
   const s = String(v).trim();
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
   const m = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
@@ -228,6 +228,12 @@ export function itemsFromRows(rows) {
     items.push(item);
   }
   return { items, skipped };
+}
+
+// The rows of a spreadsheet or .csv file, as lists of text cells.
+export async function readRows(file) {
+  const name = file.name.toLowerCase();
+  return name.endsWith('.csv') || name.endsWith('.txt') ? csvRows(await file.text()) : xlsxRows(await file.arrayBuffer());
 }
 
 export async function readInventoryFile(file) {

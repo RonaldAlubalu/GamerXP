@@ -542,6 +542,16 @@ describe('inventory', () => {
     expect((await list()).map((i) => i.name)).toEqual(['Station 2', 'Station 3']);
   });
 
+  it('takes a booking noted by hand without e-mail or address, and mails nothing to it', async () => {
+    const { termsAccepted: _t, email: _e, street: _s, postalCode: _p, ...body } = bookingBody(ctx, { partyDate: futureDate(ctx, 25) });
+    const created = await call('POST', '/bookings', body);
+    expect(created.statusCode).toBe(201);
+    ctx.sent.length = 0;
+    expect((await call('PATCH', `/bookings/${created.json().id}`, { status: 'confirmed' })).statusCode).toBe(200);
+    expect(ctx.sent).toHaveLength(0);
+    expect((await call('GET', `/bookings/${created.json().id}`)).json()).toMatchObject({ email: '', street: '', postalCode: '', status: 'confirmed' });
+  });
+
   it('remembers which gear went to which party and flags a station used twice on one day', async () => {
     const station = (await call('POST', '/inventory', { kind: 'station', name: 'Station 1' })).json();
     const { termsAccepted: _t, ...body } = bookingBody(ctx, { partyDate: futureDate(ctx, 20) });

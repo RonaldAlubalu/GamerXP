@@ -289,13 +289,13 @@ async function newBookingView() {
       field('Datum', input('partyDate', { type: 'date', required: true })),
       field('Tijdslot', select('timeSlot', SLOT_LABELS)),
       field('Naam ouder of contactpersoon', input('parentName', { required: true, maxlength: 100 })),
-      field('E-mail', input('email', { type: 'email', required: true })),
+      field('E-mail', input('email', { type: 'email' }), 'Mag leeg blijven als je het nog niet weet.'),
       field('Telefoon', input('phone', { type: 'tel' })),
       field('Naam jarige', input('childName', { maxlength: 50 })),
       field('Leeftijd', input('childAge', { type: 'number', min: 1, max: 18 })),
       field('Aantal kinderen', input('guestCount', { type: 'number', min: 1, max: 40 })),
-      field('Straat en huisnummer', input('street', { required: true })),
-      field('Postcode', input('postalCode', { required: true, placeholder: '1234 AB' })),
+      field('Straat en huisnummer', input('street')),
+      field('Postcode', input('postalCode', { placeholder: '1234 AB' })),
       field('Plaats', input('city', { required: true })),
       field('Extra gamestations', select('extraStations', { 0: 'Geen', 1: '1 extra', 2: '2 extra' })),
       field('Parkeren', select('parking', { '': 'Onbekend', free: 'Gratis', paid: 'Betaald' }))),
@@ -397,7 +397,50 @@ async function listView() {
   const keys = ['status', 'from', 'q', 'waitingOn', 'payment', 'review'];
   const query = new URLSearchParams(keys.filter((k) => params.get(k)).map((k) => [k, params.get(k)]));
   const bookings = await api(`/bookings?${query}`);
-  setPage('Boekingen', me.role === 'owner' && h('a', { class: 'btn primary', href: '#/bookings/new' }, '+ Boeking toevoegen'));
+  // Several bookings at once, from a spreadsheet or .csv file that is read here in the browser.
+  const importInput = h('input', { type: 'file', accept: '.xlsx,.csv', hidden: true, onchange: async () => {
+    const file = importInput.files[0];
+    importInput.value = '';
+    if (!file) return;
+    try {
+      const [{ readRows }, { bookingsFromRows }, packages] = await Promise.all([import('/admin/inventory-file.js'), import('/admin/bookings-file.js'), api('/packages')]);
+      const found = bookingsFromRows(await readRows(file), packages.filter((p) => p.active !== false));
+      if (!found.bookings.length) throw new Error(found.problems.join(' ') || 'In dit bestand staan geen boekingen.');
+      const lines = found.bookings.map((x) => `• ${fmtDate(x.body.partyDate)} · ${x.body.parentName} · ${x.body.city} (${STATUS_LABELS[x.status]})`);
+      const skip = found.problems.length ? `\n\nDeze sla ik over:\n${found.problems.join('\n')}` : '';
+      if (!confirm(`${found.bookings.length} boeking(en) toevoegen? Klanten krijgen hier geen e-mail van.\n\n${lines.join('\n')}${skip}`)) return;
+      const failed = [...found.problems];
+      let added = 0;
+      for (const x of found.bookings) {
+        try {
+          const created = await post('/bookings', x.body);
+          added++;
+          // A party that is already over gets no automatic review request.
+          if (x.status !== 'new') await patchJson(`/bookings/${created.id}`, { status: x.status, notifyCustomer: false, ...(['party_held', 'completed'].includes(x.status) ? { reviewStatus: 'declined' } : {}) });
+        } catch (err) {
+          failed.push(`Rij ${x.line} (${x.body.parentName}): ${err.message}`);
+        }
+      }
+      if (failed.length) alert(`${added} toegevoegd. Niet gelukt:\n\n${failed.join('\n')}`);
+      flash(added ? 'ok' : 'error', `${added} boeking(en) toegevoegd${failed.length ? `, ${failed.length} niet` : ''}.`);
+      await render();
+    } catch (err) {
+      flash('error', err.message);
+    }
+  } });
+  const template = async () => {
+    const { bookingsTemplate } = await import('/admin/bookings-file.js');
+    const link = h('a', { href: URL.createObjectURL(new Blob([bookingsTemplate()], { type: 'text/csv' })), download: 'boekingen-voorbeeld.csv' });
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
+  setPage('Boekingen',
+    me.role === 'owner' && h('button', { class: 'btn', type: 'button', onclick: template }, 'Voorbeeldbestand'),
+    me.role === 'owner' && h('button', { class: 'btn', type: 'button', onclick: () => importInput.click() }, 'Importeren'),
+    me.role === 'owner' && h('a', { class: 'btn primary', href: '#/bookings/new' }, '+ Boeking toevoegen'));
+  document.body.querySelector('#bookings-import')?.remove();
+  importInput.id = 'bookings-import';
+  document.body.append(importInput);
 
   const filter = (key, value) => {
     value ? params.set(key, value) : params.delete(key);

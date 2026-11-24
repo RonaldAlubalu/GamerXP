@@ -64,6 +64,8 @@ export async function sendAndLog(
   actor: string,
   options: { keepTurn?: boolean } = {},
 ): Promise<boolean> {
+  // A booking noted by hand can be without an e-mail address: then there is nothing to send.
+  if (!mail.to) return false;
   let delivery: 'sent' | 'failed' = 'sent';
   try {
     await app.mailer.send(mail);

@@ -131,7 +131,15 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
   // A booking that was made elsewhere (phone, WhatsApp, the old site). No emails go out.
   app.post('/bookings', async (req, reply) => {
     if (req.admin!.role !== 'owner') throw new HttpError(403, 'Je hebt geen rechten voor deze actie.', 'forbidden');
-    const input = bookingRequest.omit({ termsAccepted: true, website: true }).parse(req.body);
+    // By phone or WhatsApp not everything is known yet: e-mail and address may follow later.
+    const input = bookingRequest
+      .omit({ termsAccepted: true, website: true })
+      .extend({
+        email: z.union([bookingRequest.shape.email, z.literal('')]).default(''),
+        street: z.string().trim().max(200).default(''),
+        postalCode: z.union([bookingRequest.shape.postalCode, z.literal('')]).default(''),
+      })
+      .parse(req.body);
     const booking = await createBooking(app.db, app.config, input, { actor: req.admin!.name || req.admin!.email });
     const lookup = app.distance.drivingKm(input.postalCode, input.city).then(async (km) => {
       if (km === null) return;

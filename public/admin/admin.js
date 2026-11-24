@@ -449,6 +449,14 @@ async function listView() {
   const select = (key, options) => h('select', { onchange: (e) => filter(key, e.target.value) },
     Object.entries(options).map(([v, l]) => h('option', { value: v, selected: (params.get(key) ?? '') === v }, l)));
 
+  // Under the list: what the bookings shown add up to. Cancelled ones don't count.
+  const counted = bookings.filter((b) => b.status !== 'cancelled');
+  const sum = (key) => counted.reduce((total, b) => total + (b[key] ?? 0), 0);
+  const totalsBar = counted.length > 0 && h('div', { class: 'list-totals' },
+    h('div', {}, h('span', {}, `${counted.length} ${counted.length === 1 ? 'boeking' : 'boekingen'}`), h('strong', {}, fmtEuro(sum('priceCents')))),
+    h('div', {}, h('span', {}, 'Betaald'), h('strong', {}, fmtEuro(sum('paidCents')))),
+    h('div', {}, h('span', {}, 'Nog te ontvangen'), h('strong', { class: sum('outstandingCents') ? 'warn' : '' }, fmtEuro(sum('outstandingCents')))),
+    bookings.length > counted.length && h('p', { class: 'muted small' }, `${bookings.length - counted.length} geannuleerde boeking(en) niet meegeteld.`));
   view.replaceChildren(
     h('div', { class: 'toolbar' },
       field('Zoeken', h('input', { type: 'search', value: params.get('q') ?? '', placeholder: 'Naam, referentie, plaats…', onchange: (e) => filter('q', e.target.value) })),
@@ -468,6 +476,7 @@ async function listView() {
         h('td', { class: 'nowrap' }, `${fmtEuro(b.paidCents)} / ${fmtEuro(b.priceCents)}`, h('div', { class: 'badges' }, paymentBadges(b))),
         h('td', {}, progressBar(b.tasksDone, b.tasksTotal)))),
       'Geen boekingen gevonden.'),
+    totalsBar,
   );
 }
 

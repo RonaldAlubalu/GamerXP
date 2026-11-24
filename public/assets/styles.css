@@ -496,7 +496,7 @@ body:has(#booking-form) .wa-float, body:has(#status-view) .wa-float { display: n
 .reviews-open:hover, .reviews-open:focus-visible { border-bottom-color: var(--cyan); }
 .reviews-open-hint { color: var(--cyan); }
 .reviews-panel {
-  position: fixed; inset: 0 0 0 auto; margin: 0; width: min(440px, 100vw); height: 100dvh; max-height: none; max-width: none;
+  position: fixed; inset: 0 0 0 auto; margin: 0; width: min(440px, 100vw); height: calc(100dvh / var(--zoom, 1)); max-height: none; max-width: none;
   padding: 0; border: 0; border-left: 1px solid var(--line); background: var(--bg-2); color: var(--text);
   overflow: hidden;
 }
@@ -525,3 +525,7 @@ body:has(#booking-form) .wa-float, body:has(#status-view) .wa-float { display: n
 @media (max-width: 640px) { .hero .actions a[href="#mogelijkheden"] { display: none; } }
 /* Tables in stories fit a phone screen better with tighter cells. */
 @media (max-width: 640px) { .prose .compare th, .prose .compare td { padding: 10px 9px; font-size: .88rem; line-height: 1.35; } }
+/* Very wide screens: everything a size larger, so the page fills the screen instead of sitting
+   as a narrow column in the middle. */
+@media (min-width: 2200px) { html { --zoom: 1.25; zoom: var(--zoom); } }
+@media (min-width: 3000px) { html { --zoom: 1.5; } }

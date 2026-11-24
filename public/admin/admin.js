@@ -1368,7 +1368,7 @@ const INV_FIELDS = {
   other: [['category', 'Soort'], ['serial', 'Serienummer']],
   subscription: [['provider', 'Bij wie'], ['period', 'Betaling', SUB_PERIOD], ['autoRenew', 'Verlengt automatisch', 'check']],
 };
-let invState = { kind: 'station', editing: null };
+let invState = { kind: 'station', editing: null, selected: new Set() };
 
 async function inventoryView() {
   const items = await api('/inventory');
@@ -1413,15 +1413,85 @@ async function inventoryView() {
     h('button', { class: 'btn primary', onclick: () => { invState.editing = 'new'; render(); } }, '+ Toevoegen'));
 
   const tabs = h('div', { class: 'tabs page-tabs' }, Object.entries(INV_KINDS).map(([k, label]) =>
-    h('button', { type: 'button', class: k === kind ? 'on' : '', onclick: () => { invState = { kind: k, editing: null }; render(); } },
+    h('button', { type: 'button', class: k === kind ? 'on' : '', onclick: () => { invState = { kind: k, editing: null, selected: new Set() }; render(); } },
       `${label} (${items.filter((i) => i.kind === k).length})`)));
 
   const total = kind === 'subscription'
     ? list.reduce((sum, i) => sum + (i.priceCents ?? 0) * ({ month: 12, year: 1 }[i.details.period] ?? 0), 0)
     : list.reduce((sum, i) => sum + (i.priceCents ?? 0) * (kind === 'game' ? 1 : i.quantity), 0);
-  const headers = { station: ['Station', 'Console', 'Controller', 'Account', 'Gamertag', 'Game Pass', 'Status', ''],
+  const headers = ['', ...{ station: ['Station', 'Console', 'Controller', 'Account', 'Gamertag', 'Game Pass', 'Status', ''],
     game: ['Game', 'Herkomst', 'Aankoopprijs', 'Notitie', ''], other: ['Wat', 'Soort', 'Aantal', 'Aankoopprijs', 'Status', ''],
-    subscription: ['Abonnement', 'Bij wie', 'Kosten', 'Loopt tot', 'Verlengt', ''] }[kind];
+    subscription: ['Abonnement', 'Bij wie', 'Kosten', 'Loopt tot', 'Verlengt', ''] }[kind]];
+
+  // Tick several rows to change them in one go.
+  const selected = invState.selected;
+  for (const id of [...selected]) if (!list.some((i) => i.id === id)) selected.delete(id);
+  const boxes = new Map();
+  const pick = (i) => {
+    const box = h('input', { type: 'checkbox', checked: selected.has(i.id), 'aria-label': `${i.name} selecteren`, onchange: () => {
+      if (box.checked) selected.add(i.id); else selected.delete(i.id);
+      box.closest('tr').classList.toggle('picked', box.checked);
+      refreshBulk();
+    } });
+    boxes.set(i.id, box);
+    return h('td', { class: 'pick' }, h('label', {}, box));
+  };
+  const bulkBar = h('div', { class: 'bulk-bar' });
+  const travels = kind === 'station' || kind === 'other';
+  const bulkActions = [
+    kind !== 'game' && kind !== 'subscription' && ['status', 'Status wijzigen'],
+    kind === 'station' && ['gamepass-on', 'Game Pass verlengd'],
+    kind === 'station' && ['gamepass-off', 'Game Pass gestopt'],
+    kind === 'subscription' && ['expires', 'Einddatum zetten'],
+    travels && ['party', 'Meegeweest naar een feest'],
+    ['delete', 'Verwijderen'],
+  ].filter(Boolean);
+  let bulkAction = bulkActions[0][0];
+  let partyOptions = null;
+  function refreshBulk() {
+    const all = list.length > 0 && selected.size === list.length;
+    const toggleAll = h('button', { class: 'btn small', type: 'button', onclick: () => {
+      for (const i of list) { if (all) selected.delete(i.id); else selected.add(i.id); }
+      for (const [id, box] of boxes) { box.checked = selected.has(id); box.closest('tr').classList.toggle('picked', box.checked); }
+      refreshBulk();
+    } }, all ? 'Niets selecteren' : 'Alles selecteren');
+    if (!selected.size) {
+      bulkBar.replaceChildren(h('span', { class: 'muted small' }, 'Vink regels aan om er meerdere tegelijk te wijzigen.'), toggleAll);
+      return;
+    }
+    const choice = h('select', { 'aria-label': 'Wat wil je doen?', onchange: () => { bulkAction = choice.value; refreshBulk(); } },
+      bulkActions.map(([value, label]) => h('option', { value, selected: value === bulkAction }, label)));
+    const status = h('select', { 'aria-label': 'Nieuwe status' }, Object.entries(INV_STATUS).map(([value, [label]]) => h('option', { value }, label)));
+    const until = h('input', { type: 'date', 'aria-label': 'Loopt tot' });
+    const party = h('select', { 'aria-label': 'Welk feest' }, h('option', { value: '' }, 'Feesten laden…'));
+    const extra = { status: [status], 'gamepass-on': [h('span', { class: 'muted small' }, 'loopt tot'), until], expires: [until], party: [party] }[bulkAction] ?? [];
+    if (bulkAction === 'party') {
+      (partyOptions ??= api('/bookings').then((all) => all.filter((b) => b.status !== 'cancelled').sort((a, b) => b.partyDate.localeCompare(a.partyDate)))).then((bookings) => {
+        party.replaceChildren(h('option', { value: '' }, bookings.length ? 'Kies het feest…' : 'Nog geen boekingen'),
+          ...bookings.map((b) => h('option', { value: b.id }, `${fmtDate(b.partyDate)} · ${b.parentName} · ${b.city}`)));
+      });
+    }
+    const apply = h('button', { class: bulkAction === 'delete' ? 'btn danger' : 'btn primary', type: 'button', onclick: action(async () => {
+      const ids = [...selected];
+      const n = `${ids.length} ${ids.length === 1 ? 'regel' : 'regels'}`;
+      let body;
+      if (bulkAction === 'status') body = { action: 'status', status: status.value };
+      else if (bulkAction === 'gamepass-on') body = { action: 'gamepass', gamePass: true, expiresOn: until.value, note: until.value ? '' : `Verlengd op ${fmtDate(new Date().toISOString().slice(0, 10))}` };
+      else if (bulkAction === 'gamepass-off') body = { action: 'gamepass', gamePass: false, expiresOn: '' };
+      else if (bulkAction === 'expires') body = { action: 'expires', expiresOn: until.value };
+      else if (bulkAction === 'party') {
+        if (!party.value) throw new Error('Kies eerst het feest.');
+        body = { action: 'party', bookingId: party.value };
+      } else {
+        if (!confirm(`${n} uit de inventaris verwijderen? Dit kan niet ongedaan worden.`)) return false;
+        body = { action: 'delete' };
+      }
+      await post('/inventory/bulk', { ...body, ids });
+      selected.clear();
+    }, 'Bijgewerkt.') }, bulkAction === 'delete' ? 'Verwijderen' : 'Toepassen');
+    bulkBar.replaceChildren(h('strong', {}, `${selected.size} geselecteerd`), choice, ...extra, apply, toggleAll);
+  }
+  refreshBulk();
   const statusCell = (i) => h('td', {}, badge(INV_STATUS[i.status][0], INV_STATUS[i.status][1]));
   const actions = (i) => h('td', { class: 'inline' },
     (kind === 'station' || kind === 'other') && h('button', { class: 'btn small', onclick: () => showHistory(i) }, 'Waar geweest'),
@@ -1495,7 +1565,7 @@ async function inventoryView() {
     h('div', {}, h('strong', {}, i.kind === 'station' ? `Game Pass van ${i.name}` : i.name)), expiryBadge(i.expiresOn)))) : null;
   view.replaceChildren(...[
     importInput, soonCard, tabs, form,
-    card(null, table(headers, list.map((i) => h('tr', {}, cells(i))), 'Nog niets in deze lijst. Voeg iets toe of importeer een Excel- of CSV-bestand.'),
+    card(null, list.length > 0 && bulkBar, table(headers, list.map((i) => h('tr', { class: selected.has(i.id) ? 'picked' : '' }, pick(i), cells(i))), 'Nog niets in deze lijst. Voeg iets toe of importeer een Excel- of CSV-bestand.'),
       total > 0 && h('p', { class: 'muted small', style: 'margin-top:10px' },
         kind === 'subscription' ? `Vaste kosten per jaar: ${euro.format(total / 100)}` : `Aankoopwaarde in deze lijst: ${euro.format(total / 100)}`)),
     history,

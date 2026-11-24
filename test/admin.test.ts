@@ -512,6 +512,36 @@ describe('inventory', () => {
     expect(secret.json().code).toBe('secrets_in_import');
   });
 
+  it('changes a whole selection at once: status, Game Pass, the party it went to, removal', async () => {
+    const ids: number[] = [];
+    for (const name of ['Station 1', 'Station 2', 'Station 3']) ids.push((await call('POST', '/inventory', { kind: 'station', name, details: { gamertag: name } })).json().id);
+    const game = (await call('POST', '/inventory', { kind: 'game', name: 'Minecraft' })).json();
+    const bulk = (payload: object) => call('POST', '/inventory/bulk', payload);
+    const list = async () => (await call('GET', '/inventory')).json() as { id: number; name: string; status: string; expiresOn: string | null; details: Record<string, unknown> }[];
+
+    expect((await bulk({ action: 'status', ids: [] })).statusCode).toBe(400);
+    expect((await bulk({ action: 'status', ids: [ids[0], ids[1]], status: 'broken' })).json()).toEqual({ changed: 2 });
+    expect((await list()).filter((i) => i.status === 'broken').map((i) => i.name)).toEqual(['Station 1', 'Station 2']);
+
+    // Renewed: only stations get it, and their other details stay.
+    expect((await bulk({ action: 'gamepass', ids: [ids[0], ids[2], game.id], gamePass: true, expiresOn: '2027-03-01', note: 'Verlengd' })).json()).toEqual({ changed: 2 });
+    const renewed = (await list()).find((i) => i.id === ids[2])!;
+    expect(renewed).toMatchObject({ expiresOn: '2027-03-01', details: { gamePass: true, gamePassNote: 'Verlengd', gamertag: 'Station 3' } });
+    expect((await bulk({ action: 'gamepass', ids: [ids[2]], gamePass: false, expiresOn: '2027-03-01' })).json()).toEqual({ changed: 1 });
+    expect((await list()).find((i) => i.id === ids[2])).toMatchObject({ expiresOn: null, details: { gamePass: false } });
+
+    // Went to a party: added to what the party already had; a game does not travel.
+    const { termsAccepted: _t, ...body } = bookingBody(ctx, { partyDate: futureDate(ctx, 20) });
+    const booking = (await call('POST', '/bookings', body)).json();
+    await call('PUT', `/bookings/${booking.id}/inventory`, { itemIds: [ids[0]] });
+    expect((await bulk({ action: 'party', ids: [ids[0], ids[1], game.id], bookingId: booking.id })).json()).toEqual({ changed: 1 });
+    expect((await call('GET', `/inventory/${ids[1]}/history`)).json()).toHaveLength(1);
+    expect((await bulk({ action: 'party', ids: [ids[1]], bookingId: '00000000-0000-4000-8000-000000000000' })).statusCode).toBe(404);
+
+    expect((await bulk({ action: 'delete', ids: [ids[0], game.id] })).json()).toEqual({ changed: 2 });
+    expect((await list()).map((i) => i.name)).toEqual(['Station 2', 'Station 3']);
+  });
+
   it('remembers which gear went to which party and flags a station used twice on one day', async () => {
     const station = (await call('POST', '/inventory', { kind: 'station', name: 'Station 1' })).json();
     const { termsAccepted: _t, ...body } = bookingBody(ctx, { partyDate: futureDate(ctx, 20) });

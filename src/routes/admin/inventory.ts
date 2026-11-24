@@ -78,6 +78,55 @@ export const inventoryRoutes: FastifyPluginAsync = async (app) => {
     return reply.status(204).send();
   });
 
+  // One change for a whole selection: a new status, Game Pass renewed or stopped, an end date,
+  // the party the gear went to, or removal.
+  app.post('/inventory/bulk', async (req) => {
+    const ids = z.array(z.coerce.number().int().positive()).min(1, 'Kies eerst een of meer regels.').max(500);
+    const endDate = z.union([dateString, z.literal('')]).nullable().default(null).transform((v) => v || null);
+    const body = z
+      .discriminatedUnion('action', [
+        z.object({ action: z.literal('status'), ids, status: z.enum(['in_use', 'spare', 'broken', 'gone']) }),
+        z.object({ action: z.literal('gamepass'), ids, gamePass: z.boolean(), expiresOn: endDate, note: short }),
+        z.object({ action: z.literal('expires'), ids, expiresOn: endDate }),
+        z.object({ action: z.literal('party'), ids, bookingId: z.uuid() }),
+        z.object({ action: z.literal('delete'), ids }),
+      ])
+      .parse(req.body);
+    let result;
+    if (body.action === 'status') {
+      result = await app.db.query('UPDATE inventory_items SET status = $2, updated_at = now() WHERE id = ANY($1::bigint[])', [body.ids, body.status]);
+    } else if (body.action === 'gamepass') {
+      // Stopping Game Pass also clears its end date, so no notice goes out for it.
+      const expires = body.gamePass ? body.expiresOn : null;
+      result = await app.db.query(
+        `UPDATE inventory_items
+            SET details = details || jsonb_build_object('gamePass', $2::boolean, 'gamePassNote', $3::text),
+                expiry_notice = CASE WHEN expires_on IS DISTINCT FROM $4::date THEN 0 ELSE expiry_notice END, expires_on = $4, updated_at = now()
+          WHERE id = ANY($1::bigint[]) AND kind = 'station'`,
+        [body.ids, body.gamePass, body.gamePass ? body.note : '', expires],
+      );
+    } else if (body.action === 'expires') {
+      result = await app.db.query(
+        `UPDATE inventory_items
+            SET expiry_notice = CASE WHEN expires_on IS DISTINCT FROM $2::date THEN 0 ELSE expiry_notice END, expires_on = $2, updated_at = now()
+          WHERE id = ANY($1::bigint[])`,
+        [body.ids, body.expiresOn],
+      );
+    } else if (body.action === 'party') {
+      const exists = await app.db.query('SELECT 1 FROM bookings WHERE id = $1', [body.bookingId]);
+      if (!exists.rowCount) throw new HttpError(404, 'Deze boeking bestaat niet (meer).', 'not_found');
+      // Adds to what the party already has; only gear that can travel.
+      result = await app.db.query(
+        `INSERT INTO booking_inventory (booking_id, item_id)
+         SELECT $2, i.id FROM inventory_items i WHERE i.id = ANY($1::bigint[]) AND i.kind IN ('station', 'other') ON CONFLICT DO NOTHING`,
+        [body.ids, body.bookingId],
+      );
+    } else {
+      result = await app.db.query('DELETE FROM inventory_items WHERE id = ANY($1::bigint[])', [body.ids]);
+    }
+    return { changed: result.rowCount ?? 0 };
+  });
+
   // Where an item has been: the parties it was assigned to, newest first.
   app.get('/inventory/:id/history', async (req) => {
     const { id } = idParam.parse(req.params);

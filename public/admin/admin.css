@@ -373,6 +373,13 @@ pre.codes { background: var(--surface-2); border: 1px solid var(--border); borde
    One hand, one thumb: the title on one line, actions and tabs in a row you can swipe,
    the steps as dots, and fields large enough to tap without the screen zooming in. */
 .stepper-caption { display: none; }
+/* Inventory: tick rows and change them together. */
+.bulk-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-bottom: 12px; min-height: 36px; }
+.bulk-bar select, .bulk-bar input[type=date] { width: auto; min-width: 0; }
+td.pick { width: 1%; padding-right: 0; }
+td.pick label { display: grid; place-items: center; width: 32px; height: 32px; cursor: pointer; }
+td.pick input { width: 18px; height: 18px; margin: 0; }
+tr.picked > td { background: color-mix(in srgb, var(--primary, #2563eb) 9%, transparent); }
 @media (max-width: 700px) {
   .topbar { flex-wrap: wrap; row-gap: 8px; padding: 10px 12px; }
   .topbar h1 { flex: 1; min-width: 0; font-size: 1.02rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -426,4 +433,15 @@ pre.codes { background: var(--surface-2); border: 1px solid var(--border); borde
   .toolbar .field { min-width: 0; }
   .toolbar .field:first-child { grid-column: 1 / -1; }
   .toolbar .field input, .toolbar .field select { width: 100%; }
+}
+@media (max-width: 700px) {
+  /* On a card the tick box sits in the top right corner and the name leads. */
+  .card-table tr:has(td.pick) { position: relative; padding-right: 48px; }
+  .card-table td.pick { position: absolute; top: 4px; right: 4px; width: auto; padding: 0; }
+  .card-table td.pick label { width: 40px; height: 40px; }
+  .card-table td.pick + td { text-align: left; font-size: 1.02rem; padding-bottom: 6px; }
+  .card-table td.pick + td::before { display: none; }
+  .card-table tr.picked { border-color: var(--primary); background: var(--primary-soft); }
+  .card-table tr.picked > td { background: none; }
+  .bulk-bar select, .bulk-bar input[type=date] { flex: 1 1 140px; }
 }

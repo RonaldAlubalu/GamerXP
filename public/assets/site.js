@@ -78,7 +78,6 @@ const stickyCta = document.querySelector('.sticky-cta');
 if (stickyCta && !/^\/(reserveer|status|betalen)/.test(location.pathname)) {
   const toggleCta = () => {
     stickyCta.hidden = scrollY < 220;
-    // The WhatsApp button moves up to make room.
     document.body.classList.toggle('cta-visible', !stickyCta.hidden);
   };
   addEventListener('scroll', toggleCta, { passive: true });
@@ -147,21 +146,4 @@ for (const video of document.querySelectorAll('[data-youtube]')) {
     if (cookieBanner) { cookieBanner.hidden = true; document.body.classList.remove('cookie-open'); }
     play();
   });
-}
-
-// Phone, home page: at the top of the page the WhatsApp button lines up with the packages
-// button beside it. Once the visitor scrolls it returns to its usual corner.
-const waFloat = document.querySelector('.wa-float');
-const introButton = document.querySelector('.intro-action .btn');
-if (waFloat && introButton) {
-  const alignWa = () => {
-    const box = introButton.getBoundingClientRect();
-    const bottom = innerHeight - (box.top + box.height / 2) - waFloat.offsetHeight / 2;
-    const fits = matchMedia('(max-width: 640px)').matches && scrollY < 10 && bottom >= 8 && bottom <= 180;
-    waFloat.style.bottom = fits ? `${Math.round(bottom)}px` : '';
-  };
-  addEventListener('scroll', alignWa, { passive: true });
-  addEventListener('resize', alignWa);
-  addEventListener('load', alignWa);
-  alignWa();
 }

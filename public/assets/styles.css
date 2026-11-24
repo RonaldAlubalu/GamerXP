@@ -455,14 +455,6 @@ body:has(main > .hero:first-child) main > .hero:first-child { padding-top: calc(
 body:has(main > .hero:first-child) main > .hero.short:first-child { padding-top: calc(var(--header-h) + 40px); }
 body:has(main > .hero:first-child) main > .hero.compact:first-child { padding-top: calc(var(--header-h) + 16px); }
 
-/* WhatsApp button that floats bottom right */
-.wa-float {
-  position: fixed; right: 16px; bottom: 16px; z-index: 39; width: 58px; height: 58px; border-radius: 50%;
-  display: grid; place-items: center; background: #25d366; box-shadow: 0 6px 22px rgba(0, 0, 0, .45); transition: transform .15s, bottom .2s;
-}
-.wa-float:hover { transform: scale(1.06); }
-body:has(#booking-form) .wa-float, body:has(#status-view) .wa-float { display: none; }
-
 @media (max-width: 640px) {
   :root { --header-h: 76px; }
   .logo img { width: 52px; }
@@ -476,7 +468,6 @@ body:has(#booking-form) .wa-float, body:has(#status-view) .wa-float { display: n
   .stats { display: grid; grid-template-columns: auto auto; gap: 12px 14px; justify-content: start; margin-top: 22px; font-size: .8rem; }
   .hero .actions { justify-content: flex-start; margin-top: 22px; gap: 10px; }
   .hero .actions .btn { padding: 12px 20px; font-size: .98rem; }
-  body.cta-visible .wa-float { bottom: 78px; }
 }
 
 /* Footnote for the 24-hour response time */
@@ -571,8 +562,8 @@ body:has(#booking-form) .wa-float, body:has(#status-view) .wa-float { display: n
 @media (max-width: 640px) {
   .cookie-banner { flex-direction: column; align-items: stretch; left: 8px; right: 8px; bottom: 8px; }
   .cookie-actions .btn { flex: 1; }
-  /* While the banner is open, the booking bar and WhatsApp button wait behind it. */
-  body.cookie-open .sticky-cta, body.cookie-open .wa-float { display: none; }
+  /* While the banner is open, the booking bar waits behind it. */
+  body.cookie-open .sticky-cta { display: none; }
 }
 .link-button { background: none; border: 0; padding: 0; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
 /* Phone: room under the footer, so the booking bar does not cover its last line. */
@@ -590,7 +581,6 @@ body:has(#booking-form) .wa-float, body:has(#status-view) .wa-float { display: n
 }
 }
 }
-.wa-float { transition: bottom .25s; }
 
 /* Two buttons side by side, centred; on a phone they stack at equal width. */
 .button-row { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 24px; }

@@ -9,6 +9,7 @@ import { checkSystem } from '../../services/status.js';
 import { availabilityRoutes } from './availability.js';
 import { bookingRoutes } from './bookings.js';
 import { catalogRoutes } from './catalog.js';
+import { inventoryRoutes } from './inventory.js';
 import { messageRoutes } from './messages.js';
 import { assistantMayCall, userRoutes, type Role } from './users.js';
 
@@ -236,5 +237,6 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     await secured.register(availabilityRoutes);
     await secured.register(messageRoutes);
     await secured.register(userRoutes);
+    await secured.register(inventoryRoutes);
   });
 };

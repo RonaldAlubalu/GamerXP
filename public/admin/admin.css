@@ -365,3 +365,6 @@ details.task-group:not([open]) > summary { color: var(--muted); font-weight: 500
 .cal-chip .cal-block { display: block; font-size: .66rem; opacity: .8; }
 
 pre.codes { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; font-size: 1.05rem; letter-spacing: .05em; columns: 2; }
+
+/* Gear of a party: a list of tick boxes in columns. */
+.gear-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px 14px; }

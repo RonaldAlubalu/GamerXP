@@ -93,6 +93,7 @@ async function api(path, options = {}) {
 const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(body ?? {}) });
 const patchJson = (path, body) => api(path, { method: 'PATCH', body: JSON.stringify(body) });
 const del = (path) => api(path, { method: 'DELETE' });
+const put = (path, body) => api(path, { method: 'PUT', body: JSON.stringify(body) });
 
 function flash(type, message) {
   notice.className = `toast ${type}`;
@@ -277,7 +278,7 @@ async function newBookingView() {
   setPage('Boeking toevoegen', h('a', { class: 'btn ghost', href: '#/list' }, 'Annuleren'));
   const input = (name, attrs = {}) => h('input', { name, ...attrs });
   const select = (name, options) => h('select', { name }, Object.entries(options).map(([v, l]) => h('option', { value: v }, l)));
-  const startStatuses = Object.fromEntries(['new', 'contacted', 'confirmed', 'deposit_paid', 'scheduled'].map((s) => [s, STATUS_LABELS[s]]));
+  const startStatuses = Object.fromEntries(['new', 'contacted', 'confirmed', 'deposit_paid', 'scheduled', 'party_held', 'completed'].map((s) => [s, STATUS_LABELS[s]]));
   const form = h('form', { class: 'card', style: 'max-width:720px' },
     h('p', { class: 'muted' }, 'Voor een boeking die via telefoon, WhatsApp of de oude site is gemaakt. De klant krijgt hier geen e-mail van.'),
     h('div', { class: 'row', style: 'grid-template-columns:repeat(auto-fit,minmax(220px,1fr))' },
@@ -297,25 +298,33 @@ async function newBookingView() {
       field('Extra gamestations', select('extraStations', { 0: 'Geen', 1: '1 extra', 2: '2 extra' })),
       field('Parkeren', select('parking', { '': 'Onbekend', free: 'Gratis', paid: 'Betaald' }))),
     h('label', { class: 'check' }, h('input', { type: 'checkbox', name: 'decoration' }), ' Decoratie erbij (alleen bij Standaard een meerprijs)'),
+    h('label', { class: 'check', id: 'review-choice', hidden: true }, h('input', { type: 'checkbox', name: 'askReview', checked: true }), ' Deze klant automatisch om een Google-review vragen (per e-mail)'),
     field('Afspraken en bijzonderheden', h('textarea', { name: 'notes', rows: 3, maxlength: 2000 })),
     h('button', { class: 'btn primary', type: 'submit' }, 'Boeking toevoegen'));
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const data = Object.fromEntries(new FormData(form));
-    const { status, ...body } = data;
+    const { status, askReview: _ask, ...body } = data;
+    const past = ['party_held', 'completed'].includes(status);
     body.decoration = form.elements.decoration.checked;
     for (const key of ['childAge', 'guestCount']) if (!body[key]) delete body[key];
     const button = form.querySelector('button[type=submit]');
     button.disabled = true;
     try {
       const created = await post('/bookings', body);
-      if (status !== 'new') await patchJson(`/bookings/${created.id}`, { status, notifyCustomer: false });
+      if (status !== 'new') {
+        // A party that is already over: no review request unless the box is ticked.
+        await patchJson(`/bookings/${created.id}`, { status, notifyCustomer: false, ...(past && !form.elements.askReview.checked ? { reviewStatus: 'declined' } : {}) });
+      }
       flash('ok', `Boeking ${created.reference} toegevoegd.`);
       location.hash = `#/bookings/${created.id}`;
     } catch (err) {
       button.disabled = false;
       flash('error', err.message);
     }
+  });
+  form.elements.status.addEventListener('change', (e) => {
+    form.querySelector('#review-choice').hidden = !['party_held', 'completed'].includes(e.target.value);
   });
   view.replaceChildren(form);
 }
@@ -938,12 +947,29 @@ async function bookingDetailView(id) {
         h('span', { class: 'ev-icon' }, EVENT_ICONS[e.type] ?? '•'),
         h('div', {}, h('div', { class: 'pre' }, eventText(e)), h('div', { class: 'muted small' }, `${fmtDateTime(e.createdAt)} · ${e.actor}`))))));
 
+  // Gear that goes along to this party (owners only; shown once the inventory has stations or gear).
+  const gear = me.role === 'owner' ? await api(`/bookings/${id}/inventory`) : [];
+  const gearForm = h('form', { onsubmit: action(() => put(`/bookings/${id}/inventory`, {
+    itemIds: [...gearForm.querySelectorAll('input[type=checkbox]:checked')].map((el) => Number(el.value)),
+  }), 'Materiaal opgeslagen.') },
+    h('div', { class: 'gear-list' }, gear.map((g) => h('label', { class: 'check' },
+      h('input', { type: 'checkbox', value: g.id, checked: g.assigned }),
+      h('span', {}, g.name, g.status === 'spare' ? h('span', { class: 'muted small' }, ' (reserve)') : null,
+        g.alsoAt ? h('span', { class: 'badge warning', style: 'margin-left:6px' }, `ook bij ${g.alsoAt}`) : null)))),
+    h('div', { class: 'inline', style: 'margin-top:10px' },
+      h('button', { class: 'btn primary', type: 'submit' }, 'Opslaan'),
+      h('button', { class: 'btn', type: 'button', onclick: () => { for (const el of gearForm.querySelectorAll('input[type=checkbox]')) el.checked = true; } }, 'Alles aanvinken')));
+  const gearCard = me.role !== 'owner' ? null : card('Materiaal voor dit feest',
+    gear.length
+      ? [h('p', { class: 'muted small' }, 'Vink aan wat er meegaat. Zo weet je achteraf waar elk station is geweest.'), gearForm]
+      : h('p', { class: 'muted' }, 'Nog geen stations of materiaal in de ', h('a', { href: '#/inventory' }, 'inventaris'), '.'));
+
   // One page per subject instead of everything underneath each other.
   const TABS = [
     ['overview', 'Overzicht', [customer, agreementsCard]],
     ['messages', 'Berichten', [commCard, reviewCard]],
     ['money', 'Geld', [priceCard, paymentsCard]],
-    ['progress', 'Checklist en tijdlijn', [checklist, timeline]],
+    ['progress', 'Checklist en tijdlijn', [checklist, gearCard, timeline].filter(Boolean)],
   ];
   if (detailTab.id !== id) detailTab = { id, tab: 'overview' };
   const panels = TABS.map(([key, , blocks]) => h('div', { class: 'stack', hidden: key !== detailTab.tab }, blocks));
@@ -1289,6 +1315,145 @@ async function usersView() {
     table, form);
 }
 
+// Inventory: game stations, games and other gear. Passwords stay out of it.
+const INV_KINDS = { station: 'Gamestations', game: 'Games', other: 'Overig materiaal', subscription: 'Abonnementen' };
+const SUB_PERIOD = { '': '–', month: 'Per maand', year: 'Per jaar', once: 'Eenmalig' };
+// How soon something runs out, as a badge.
+function expiryBadge(date) {
+  if (!date) return null;
+  const days = Math.round((new Date(`${date}T00:00:00Z`) - new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`)) / 864e5);
+  if (days < 0) return badge(`Verlopen op ${fmtDate(date)}`, 'danger');
+  if (days <= 14) return badge(days === 0 ? 'Verloopt vandaag' : `Nog ${days} ${days === 1 ? 'dag' : 'dagen'}`, 'warning');
+  return h('span', {}, fmtDate(date));
+}
+const INV_STATUS = { in_use: ['In gebruik', 'success'], spare: ['Reserve', 'info'], broken: ['Defect', 'danger'], gone: ['Weg', ''] };
+const GAME_SOURCE = { '': '–', free: 'Gratis', gamepass: 'Game Pass', bought: 'Gekocht', gamepass_or_bought: 'Game Pass of gekocht' };
+// Per kind: the extra fields as [key, label, type].
+const INV_FIELDS = {
+  station: [['consoleSerial', 'Serienummer console'], ['controllerSerial', 'Serienummer controller'], ['accountEmail', 'Account (e-mail)'],
+    ['gamertag', 'Xbox-gamertag'], ['epicName', 'Epic-naam'], ['otherAccounts', 'Andere accounts'], ['homeConsole', 'Thuis-Xbox van'],
+    ['gamePass', 'Game Pass', 'check'], ['gamePassNote', 'Game Pass sinds / tot']],
+  game: [['source', 'Herkomst', GAME_SOURCE]],
+  other: [['category', 'Soort'], ['serial', 'Serienummer']],
+  subscription: [['provider', 'Bij wie'], ['period', 'Betaling', SUB_PERIOD], ['autoRenew', 'Verlengt automatisch', 'check']],
+};
+let invState = { kind: 'station', editing: null };
+
+async function inventoryView() {
+  const items = await api('/inventory');
+  const kind = invState.kind;
+  const list = items.filter((i) => i.kind === kind);
+  const editing = invState.editing === 'new' ? { kind, name: '', quantity: 1, status: 'in_use', priceCents: null, details: {}, notes: '' }
+    : items.find((i) => i.id === invState.editing) ?? null;
+  // What runs out within two weeks, across all lists.
+  const soon = items.filter((i) => i.expiresOn && i.status !== 'gone' && (new Date(`${i.expiresOn}T00:00:00Z`) - Date.now()) / 864e5 <= 14);
+
+  const importInput = h('input', { type: 'file', accept: '.json,application/json', hidden: true, onchange: async () => {
+    const file = importInput.files[0];
+    if (!file) return;
+    try {
+      const data = JSON.parse(await file.text());
+      const r = await post('/inventory/import', { items: Array.isArray(data) ? data : data.items });
+      flash('ok', `${r.added} toegevoegd, ${r.updated} bijgewerkt.`);
+      await render();
+    } catch (err) {
+      flash('error', err instanceof SyntaxError ? 'Dit is geen geldig importbestand.' : err.message);
+    }
+  } });
+  setPage('Inventaris',
+    h('button', { class: 'btn', onclick: () => importInput.click() }, 'Importeren'),
+    h('button', { class: 'btn primary', onclick: () => { invState.editing = 'new'; render(); } }, '+ Toevoegen'));
+
+  const tabs = h('div', { class: 'tabs page-tabs' }, Object.entries(INV_KINDS).map(([k, label]) =>
+    h('button', { type: 'button', class: k === kind ? 'on' : '', onclick: () => { invState = { kind: k, editing: null }; render(); } },
+      `${label} (${items.filter((i) => i.kind === k).length})`)));
+
+  const total = kind === 'subscription'
+    ? list.reduce((sum, i) => sum + (i.priceCents ?? 0) * ({ month: 12, year: 1 }[i.details.period] ?? 0), 0)
+    : list.reduce((sum, i) => sum + (i.priceCents ?? 0) * (kind === 'game' ? 1 : i.quantity), 0);
+  const headers = { station: ['Station', 'Console', 'Controller', 'Account', 'Gamertag', 'Game Pass', 'Status', ''],
+    game: ['Game', 'Herkomst', 'Aankoopprijs', 'Notitie', ''], other: ['Wat', 'Soort', 'Aantal', 'Aankoopprijs', 'Status', ''],
+    subscription: ['Abonnement', 'Bij wie', 'Kosten', 'Loopt tot', 'Verlengt', ''] }[kind];
+  const statusCell = (i) => h('td', {}, badge(INV_STATUS[i.status][0], INV_STATUS[i.status][1]));
+  const actions = (i) => h('td', { class: 'inline' },
+    (kind === 'station' || kind === 'other') && h('button', { class: 'btn small', onclick: () => showHistory(i) }, 'Waar geweest'),
+    h('button', { class: 'btn small', onclick: () => { invState.editing = i.id; render(); } }, 'Wijzigen'));
+  const price = (i) => (i.priceCents === null ? '–' : euro.format(i.priceCents / 100));
+  const cells = {
+    station: (i) => [h('td', {}, h('strong', {}, i.name), i.notes && h('div', { class: 'muted small' }, i.notes)), h('td', {}, i.details.consoleSerial || '–'),
+      h('td', {}, i.details.controllerSerial || '–'), h('td', {}, i.details.accountEmail || '–'), h('td', {}, i.details.gamertag || '–'),
+      h('td', {}, i.details.gamePass ? (i.expiresOn ? expiryBadge(i.expiresOn) : badge(i.details.gamePassNote ? `Ja · ${i.details.gamePassNote}` : 'Ja', 'success')) : 'Nee'), statusCell(i), actions(i)],
+    game: (i) => [h('td', {}, h('strong', {}, i.name)), h('td', {}, GAME_SOURCE[i.details.source ?? '']), h('td', {}, price(i)), h('td', {}, i.notes || '–'), actions(i)],
+    other: (i) => [h('td', {}, h('strong', {}, i.name), i.notes && h('div', { class: 'muted small' }, i.notes)), h('td', {}, i.details.category || '–'),
+      h('td', {}, String(i.quantity)), h('td', {}, price(i)), statusCell(i), actions(i)],
+    subscription: (i) => [h('td', {}, h('strong', {}, i.name), i.notes && h('div', { class: 'muted small' }, i.notes)), h('td', {}, i.details.provider || '–'),
+      h('td', {}, i.priceCents === null ? '–' : `${price(i)}${{ month: ' p/m', year: ' p/j' }[i.details.period] ?? ''}`),
+      h('td', {}, expiryBadge(i.expiresOn) ?? '–'), h('td', {}, i.details.autoRenew ? 'Automatisch' : 'Handmatig'), actions(i)],
+  }[kind];
+
+  const history = h('div', {});
+  async function showHistory(i) {
+    const rows = await api(`/inventory/${i.id}/history`);
+    history.replaceChildren(card(`Waar is ${i.name} geweest?`,
+      rows.length
+        ? table(['Datum', 'Klant', 'Plaats', 'Fase'], rows.map((r) => h('tr', { class: 'clickable', onclick: () => (location.hash = `#/bookings/${r.id}`) },
+            h('td', {}, fmtDate(r.partyDate)), h('td', {}, `${r.parentName} · ${r.reference}`), h('td', {}, r.city), h('td', {}, statusBadge(r.status)))))
+        : h('p', { class: 'muted' }, 'Nog bij geen enkel feest aangevinkt. Dat doe je in een boeking, onder "Checklist en tijdlijn".')));
+    history.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  let form = null;
+  if (editing) {
+    const control = ([key, label, type]) => {
+      const value = editing.details?.[key];
+      if (type === 'check') return h('label', { class: 'check', style: 'align-self:end' }, h('input', { type: 'checkbox', name: `d.${key}`, checked: Boolean(value) }), ` ${label}`);
+      if (type && typeof type === 'object') return field(label, h('select', { name: `d.${key}` }, Object.entries(type).map(([v, l]) => h('option', { value: v, selected: (value ?? '') === v }, l))));
+      return field(label, h('input', { name: `d.${key}`, value: value ?? '', maxlength: 200 }));
+    };
+    form = h('form', { class: 'card', onsubmit: action(async () => {
+      const data = new FormData(form);
+      const details = {};
+      for (const [key, , type] of INV_FIELDS[kind]) details[key] = type === 'check' ? form.elements[`d.${key}`].checked : data.get(`d.${key}`) ?? '';
+      const priceText = String(data.get('price') ?? '').trim().replace(',', '.');
+      const body = { kind, name: data.get('name'), quantity: Number(data.get('quantity') ?? 1) || 0, status: data.get('status') ?? 'in_use',
+        priceCents: priceText === '' ? null : Math.round(Number(priceText) * 100), details, notes: data.get('notes') ?? '', expiresOn: data.get('expiresOn') || null };
+      if (Number.isNaN(body.priceCents)) throw new Error('Vul bij de prijs een bedrag in, bijvoorbeeld 19,95.');
+      if (editing.id) await patchJson(`/inventory/${editing.id}`, body);
+      else await post('/inventory', body);
+      invState.editing = null;
+    }, 'Opgeslagen.') },
+      h('h2', {}, editing.id ? `${editing.name} wijzigen` : `Toevoegen aan ${INV_KINDS[kind].toLowerCase()}`),
+      h('div', { class: 'row', style: 'grid-template-columns:repeat(auto-fit,minmax(200px,1fr))' },
+        field(kind === 'station' ? 'Naam of nummer' : 'Naam', h('input', { name: 'name', required: true, maxlength: 200, value: editing.name })),
+        (kind === 'station' || kind === 'other') && field('Aantal', h('input', { name: 'quantity', type: 'number', min: 0, value: editing.quantity })),
+        kind !== 'game' && field('Status', h('select', { name: 'status' }, Object.entries(INV_STATUS).map(([v, [l]]) => h('option', { value: v, selected: editing.status === v }, l)))),
+        (kind === 'subscription' || kind === 'station') && field(kind === 'station' ? 'Game Pass loopt tot' : 'Loopt tot', h('input', { name: 'expiresOn', type: 'date', value: editing.expiresOn ?? '' }),
+          'Je krijgt 14 en 3 dagen vooraf een melding.'),
+        field(kind === 'subscription' ? 'Kosten (€)' : 'Aankoopprijs (€)', h('input', { name: 'price', inputmode: 'decimal', placeholder: 'bijv. 19,95', value: editing.priceCents === null ? '' : euroInput(editing.priceCents) })),
+        ...INV_FIELDS[kind].map(control)),
+      field('Notitie', h('textarea', { name: 'notes', rows: 2, maxlength: 2000 }, editing.notes)),
+      h('p', { class: 'muted small' }, 'Zet hier geen wachtwoorden in. Die horen in een wachtwoordmanager.'),
+      h('div', { class: 'inline' },
+        h('button', { class: 'btn primary', type: 'submit' }, 'Opslaan'),
+        h('button', { class: 'btn', type: 'button', onclick: () => { invState.editing = null; render(); } }, 'Annuleren'),
+        editing.id && h('button', { class: 'btn danger', type: 'button', style: 'margin-left:auto', onclick: action(async () => {
+          if (!confirm(`${editing.name} uit de inventaris verwijderen?`)) return false;
+          await del(`/inventory/${editing.id}`);
+          invState.editing = null;
+        }, 'Verwijderd.') }, 'Verwijderen')));
+  }
+
+  const soonCard = soon.length ? card('Verloopt binnenkort', soon.map((i) => h('div', { class: 'status-row' },
+    h('div', {}, h('strong', {}, i.kind === 'station' ? `Game Pass van ${i.name}` : i.name)), expiryBadge(i.expiresOn)))) : null;
+  view.replaceChildren(...[
+    importInput, soonCard, tabs, form,
+    card(null, table(headers, list.map((i) => h('tr', {}, cells(i))), 'Nog niets in deze lijst. Voeg iets toe of importeer een bestand.'),
+      total > 0 && h('p', { class: 'muted small', style: 'margin-top:10px' },
+        kind === 'subscription' ? `Vaste kosten per jaar: ${euro.format(total / 100)}` : `Aankoopwaarde in deze lijst: ${euro.format(total / 100)}`)),
+    history,
+  ].filter(Boolean));
+}
+
 async function systemView(fresh) {
   const status = await api(fresh ? '/status?fresh=1' : '/status');
   setPage('Systeem', h('button', { class: 'btn', onclick: async () => { flash('ok', 'Bezig met controleren…'); await systemView(true); updateCounts(); } }, '↻ Opnieuw controleren'));
@@ -1480,6 +1645,7 @@ async function render() {
     else if (parts[0] === 'reviews') await reviewsView();
     else if (parts[0] === 'availability') await availabilityView();
     else if (parts[0] === 'packages') await packagesView();
+    else if (parts[0] === 'inventory') await inventoryView();
     else if (parts[0] === 'users') await usersView();
     else if (parts[0] === 'system') await systemView();
     else if (parts[0] === 'account') await accountView();

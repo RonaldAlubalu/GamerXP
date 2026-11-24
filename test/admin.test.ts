@@ -480,3 +480,64 @@ describe('adding a booking by hand', () => {
     expect(again.json().code).toBe('slot_unavailable');
   });
 });
+
+describe('inventory', () => {
+  let ctx: TestContext;
+  let token: string;
+  const call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', url: string, payload?: object) =>
+    ctx.app.inject({ method, url: `/api/admin${url}`, headers: { authorization: `Bearer ${token}` }, payload });
+
+  beforeEach(async () => {
+    ctx = await setupApp();
+    token = await loginAdmin(ctx);
+  });
+  afterEach(() => teardown(ctx));
+
+  it('keeps stations, imports a list without doubles and refuses passwords', async () => {
+    const added = await call('POST', '/inventory', { kind: 'station', name: 'Station 1', details: { consoleSerial: 'X1', gamePass: true } });
+    expect(added.statusCode).toBe(201);
+    const imported = await call('POST', '/inventory/import', {
+      items: [
+        { kind: 'station', name: 'station 1', details: { consoleSerial: 'X1-new', gamePass: true, gamePassNote: 'Per 22-10' } },
+        { kind: 'game', name: 'Minecraft', priceCents: 1000, details: { source: 'gamepass_or_bought' } },
+      ],
+    });
+    expect(imported.json()).toEqual({ added: 1, updated: 1 });
+    const list = (await call('GET', '/inventory')).json();
+    expect(list).toHaveLength(2);
+    expect(list.find((i: { kind: string }) => i.kind === 'station').details.consoleSerial).toBe('X1-new');
+
+    const secret = await call('POST', '/inventory/import', { items: [{ kind: 'station', name: 'S2', details: { epicPassword: 'x' } }] });
+    expect(secret.statusCode).toBe(400);
+    expect(secret.json().code).toBe('secrets_in_import');
+  });
+
+  it('remembers which gear went to which party and flags a station used twice on one day', async () => {
+    const station = (await call('POST', '/inventory', { kind: 'station', name: 'Station 1' })).json();
+    const { termsAccepted: _t, ...body } = bookingBody(ctx, { partyDate: futureDate(ctx, 20) });
+    const a = (await call('POST', '/bookings', body)).json();
+    const b = (await call('POST', '/bookings', { ...body, timeSlot: 'avond', email: 'ander@example.com' })).json();
+
+    expect((await call('PUT', `/bookings/${a.id}/inventory`, { itemIds: [station.id] })).statusCode).toBe(200);
+    const forB = (await call('GET', `/bookings/${b.id}/inventory`)).json();
+    expect(forB[0]).toMatchObject({ name: 'Station 1', assigned: false });
+    expect(forB[0].alsoAt).toContain(a.reference);
+
+    const history = (await call('GET', `/inventory/${station.id}/history`)).json();
+    expect(history).toHaveLength(1);
+    expect(history[0].reference).toBe(a.reference);
+  });
+
+  it('warns the owner once, two weeks and three days before a subscription runs out', async () => {
+    const { sendExpiryNotices } = await import('../src/services/inventory.js');
+    await call('POST', '/inventory', { kind: 'subscription', name: 'Game Pass', expiresOn: futureDate(ctx, 10) });
+    await call('POST', '/inventory', { kind: 'subscription', name: 'Domein', expiresOn: futureDate(ctx, 60) });
+    expect(await sendExpiryNotices(ctx.app)).toBe(1);
+    expect(ctx.sent.at(-1)!.subject).toContain('Game Pass verloopt op');
+    expect(await sendExpiryNotices(ctx.app)).toBe(0);
+
+    await ctx.db.query(`UPDATE inventory_items SET expires_on = current_date + 2 WHERE name = 'Game Pass'`);
+    expect(await sendExpiryNotices(ctx.app)).toBe(1);
+    expect(await sendExpiryNotices(ctx.app)).toBe(0);
+  });
+});

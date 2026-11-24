@@ -12,6 +12,7 @@ import { createMailer, type Mailer } from './lib/mailer.js';
 import { createDistanceService, type DistanceService } from './services/distance.js';
 import { createImapSource, runMailImport, type MailSource } from './services/mail-import.js';
 import { createMollieClient, type MollieClient } from './services/mollie.js';
+import { sendExpiryNotices } from './services/inventory.js';
 import { paymentRoutes } from './routes/payments.js';
 import { publicRoutes } from './routes/public.js';
 import { adminRoutes } from './routes/admin/index.js';
@@ -115,6 +116,8 @@ export async function buildApp({ config, db, mailer, distance, mollie, mailSourc
         .then(() => syncInvoicePayments(app))
         // And ask for a review a few days after a party, when real email is set up.
         .then(() => (config.SMTP_HOST ? sendDueReviewRequests(app) : 0))
+        // And warn when a subscription is about to run out.
+        .then(() => sendExpiryNotices(app))
         .catch((err) => app.log.error({ err }, 'System check failed'));
     const timer = setInterval(refresh, 10 * 60_000);
     app.addHook('onReady', async () => void refresh());

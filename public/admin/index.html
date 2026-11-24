@@ -15,10 +15,20 @@
 <body>
   <div class="app" id="app">
     <aside class="sidebar" id="sidebar" hidden>
-      <div class="brand">
-        <img src="/assets/img/logo-small.webp" alt="" width="36" height="38">
-        <div><strong>Gamer Xperience</strong><span>Admin</span></div>
-      </div>
+      <!-- The name at the top opens the account menu. -->
+      <details class="brand-menu" id="brand-menu">
+        <summary class="brand" aria-label="Accountmenu">
+          <img src="/assets/img/logo-small.webp" alt="" width="36" height="38">
+          <div><strong>Gamer Xperience</strong><span id="me">Admin</span></div>
+          <span class="brand-caret" aria-hidden="true">▾</span>
+        </summary>
+        <div class="brand-items">
+          <a href="#/account">🔔 Meldingen en account</a>
+          <button type="button" id="theme-toggle">Donker thema</button>
+          <a href="/" target="_blank" rel="noopener">↗ Website bekijken</a>
+          <button type="button" id="logout">Uitloggen</button>
+        </div>
+      </details>
       <nav class="side-nav" id="side-nav">
         <a href="#/board" data-route="board"><span class="ico">▦</span> Pipeline</a>
         <a href="#/list" data-route="list"><span class="ico">☰</span> Boekingen</a>
@@ -32,13 +42,6 @@
         <a href="#/users" data-route="users" data-owner><span class="ico">☺</span> Gebruikers</a>
         <a href="#/system" data-route="system" data-owner><span class="ico">◉</span> Systeem <span class="count" id="count-system" hidden></span></a>
       </nav>
-      <div class="side-footer">
-        <a href="/" target="_blank" rel="noopener">Website bekijken ↗</a>
-        <button type="button" class="link-btn" id="theme-toggle">Donker thema</button>
-        <a href="#/account">🔔 Meldingen en account</a>
-        <a class="muted small" id="me" href="#/account" title="Mijn account en wachtwoord"></a>
-        <button type="button" class="btn ghost small" id="logout">Uitloggen</button>
-      </div>
     </aside>
     <div class="main">
       <header class="topbar" id="topbar" hidden>

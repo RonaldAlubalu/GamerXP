@@ -1815,6 +1815,10 @@ themeToggle.addEventListener('click', () => {
   applyThemeLabel();
 });
 applyThemeLabel();
+// The account menu closes after a choice, and when moving to another page.
+const brandMenu = document.getElementById('brand-menu');
+brandMenu.addEventListener('click', (event) => { if (event.target.closest('.brand-items a, #logout')) brandMenu.open = false; });
+window.addEventListener('hashchange', () => { brandMenu.open = false; });
 
 document.getElementById('menu-btn').addEventListener('click', () => sidebar.classList.toggle('open'));
 document.getElementById('logout').addEventListener('click', async () => {

@@ -61,6 +61,14 @@ export async function setupApp(overrides: Partial<Config> = {}, mollie: MollieCl
       ping: async () => 'Administratie: test.',
       nextNumberBase: async () => 'F00015',
       paidCents: async (number) => received.get(number) ?? 0,
+      // Two invoices that were made in the bookkeeping itself, before the site.
+      existingInvoices: async () => [
+        { id: '901', number: 'F00013-2', date: '2026-11-10', customer: 'Tom Binnendijk' },
+        { id: '900', number: 'F00013-1', date: '2026-10-28', customer: 'Tom Binnendijk' },
+      ],
+      findInvoice: async (number) =>
+        ({ 'f00013-1': { id: '900', number: 'F00013-1', pdfUrl: 'https://boekhouding.example/900.pdf', amountCents: 10000 },
+           'f00013-2': { id: '901', number: 'F00013-2', pdfUrl: 'https://boekhouding.example/901.pdf', amountCents: null } })[number.trim().toLowerCase()] ?? null,
       createInvoice: async (invoice) => {
         invoiced.push(invoice);
         return { id: String(invoiced.length), number: invoice.number, pdfUrl: `https://boekhouding.example/${invoiced.length}.pdf` };

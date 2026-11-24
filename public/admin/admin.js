@@ -646,7 +646,8 @@ function invoicesBox(b, me) {
         : [h('span', { class: 'muted' }, `${label}: nog geen factuur`),
            h('button', { class: 'btn small', onclick: action(
              () => confirm(`Factuur voor ${label.toLowerCase()} aanmaken in e-Boekhouden?\n\nDit maakt een echte factuur met een factuurnummer in je boekhouding.`) ? post(`/bookings/${b.id}/invoices`, { kind }) : false,
-             'Factuur gemaakt in e-Boekhouden.') }, 'Factuur maken')]));
+             'Factuur gemaakt in e-Boekhouden.') }, 'Factuur maken'),
+           h('button', { class: 'btn small ghost', onclick: (e) => linkExistingInvoice(b, kind, label, e.currentTarget.parentElement) }, 'Bestaande koppelen')]));
   }
   if (b.invoices.some((i) => i.paidCents < i.amountCents)) {
     box.append(h('button', { class: 'btn small', onclick: action(async () => {
@@ -656,6 +657,30 @@ function invoicesBox(b, me) {
   }
   box.append(h('p', { class: 'muted small' }, 'De site vraagt elke tien minuten bij e-Boekhouden na of een factuur is betaald. De factuur voor het restbedrag bevat alle prijsregels en trekt de gefactureerde aanbetaling eraf.'));
   return box;
+}
+
+// Pick an invoice that already exists in e-Boekhouden and link it to this booking.
+async function linkExistingInvoice(b, kind, label, row) {
+  let invoices;
+  try {
+    invoices = await api('/invoices/unlinked');
+  } catch (err) {
+    return flash('error', err.message);
+  }
+  const form = h('form', { class: 'inline link-invoice', onsubmit: action(() => {
+    const amount = String(form.elements.amount.value).trim().replace(',', '.');
+    if (amount && !(Number(amount) > 0)) throw new Error('Vul een bedrag in, bijvoorbeeld 100,00.');
+    return post(`/bookings/${b.id}/invoices/link`, { kind, number: form.elements.number.value, amountCents: amount ? Math.round(Number(amount) * 100) : null });
+  }, 'Factuur gekoppeld.') },
+    field(`Bestaande factuur voor ${label.toLowerCase()}`, invoices.length
+      ? h('select', { name: 'number', required: true }, invoices.map((i) =>
+          h('option', { value: i.number }, [i.number, i.date && fmtDate(i.date), i.customer].filter(Boolean).join(' · '))))
+      : h('input', { name: 'number', required: true, placeholder: 'bijv. F00013-1' })),
+    field('Bedrag (€)', h('input', { name: 'amount', inputmode: 'decimal', placeholder: 'uit de boekhouding', style: 'width:140px' }),
+      'Leeg laten neemt het bedrag van de factuur over.'),
+    h('button', { class: 'btn small primary', type: 'submit' }, 'Koppelen'),
+    h('button', { class: 'btn small', type: 'button', onclick: () => render() }, 'Annuleren'));
+  row.replaceChildren(form);
 }
 
 // Mollie: payment links for the customer and the status of online payments.

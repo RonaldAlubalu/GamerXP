@@ -30,12 +30,25 @@ export interface CreatedInvoice {
   pdfUrl: string;
 }
 
+export interface ExistingInvoice {
+  id: string;
+  number: string;
+  // YYYY-MM-DD, or empty when the bookkeeping does not say.
+  date: string;
+  // Who it was sent to, when the bookkeeping says so.
+  customer: string;
+}
+
 export interface Bookkeeping {
   createInvoice(invoice: NewInvoice): Promise<CreatedInvoice>;
   // What the bookkeeping has booked as received on this invoice, in cents.
   paidCents(invoiceNumber: string): Promise<number>;
   // The next free base number, like F00015. A party's invoices are F00015-1 (deposit) and F00015-2 (rest).
   nextNumberBase(): Promise<string>;
+  // Invoices that already exist in the bookkeeping, newest first, to link one to a booking.
+  existingInvoices(): Promise<ExistingInvoice[]>;
+  // One existing invoice by its number: its total and the link to the PDF. Null when it is not there.
+  findInvoice(number: string): Promise<(CreatedInvoice & { amountCents: number | null }) | null>;
   // Asks the bookkeeping whether the token is accepted, and says what it sees there.
   ping(): Promise<string>;
 }
@@ -118,15 +131,29 @@ export function createBookkeeping(config: Config): Bookkeeping | null {
     return Number(created.id);
   }
 
-  // Every invoice number in the bookkeeping.
-  async function invoiceNumbers(): Promise<string[]> {
-    const numbers: string[] = [];
+  // Every invoice in the bookkeeping, as the list endpoint gives them.
+  async function allInvoices(): Promise<Json[]> {
+    const all: Json[] = [];
     for (let offset = 0; offset < 20_000; offset += 2000) {
       const page = list(await call('GET', `/invoice?limit=2000&offset=${offset}`));
-      numbers.push(...page.map((i) => String(i.invoiceNumber ?? '')));
+      all.push(...page);
       if (page.length < 2000) break;
     }
-    return numbers;
+    return all;
+  }
+  const invoiceNumbers = async () => (await allInvoices()).map((i) => String(i.invoiceNumber ?? ''));
+
+  // The total of an invoice, in cents. The API is not explicit about the field, so the usual
+  // names are tried first and the lines are added up otherwise.
+  function totalCents(invoice: Json): number | null {
+    for (const key of ['totalAmount', 'totalInclVat', 'amountInclVat', 'totalInVat', 'total', 'amount']) {
+      const value = Number(invoice[key]);
+      if (invoice[key] !== undefined && invoice[key] !== null && Number.isFinite(value)) return Math.round(value * 100);
+    }
+    const items = Array.isArray(invoice.items) ? (invoice.items as Json[]) : [];
+    if (!items.length) return null;
+    const sum = items.reduce((total, item) => total + (Number(item.quantity) || 0) * (Number(item.pricePerUnit) || 0), 0);
+    return Number.isFinite(sum) ? Math.round(sum * 100) : null;
   }
 
   return {
@@ -140,6 +167,25 @@ export function createBookkeeping(config: Config): Bookkeeping | null {
       } catch (err) {
         return `Verbonden, maar het overzicht kon niet worden opgehaald: ${(err as Error).message}`;
       }
+    },
+
+    async existingInvoices() {
+      return (await allInvoices())
+        .filter((i) => i.invoiceNumber)
+        .map((i) => ({
+          id: String(i.id),
+          number: String(i.invoiceNumber),
+          date: String(i.date ?? '').slice(0, 10),
+          customer: String(i.relationName ?? (i.relation as Json | undefined)?.name ?? i.name ?? ''),
+        }))
+        .sort((a, b) => b.number.localeCompare(a.number, 'nl', { numeric: true }));
+    },
+
+    async findInvoice(number) {
+      const found = (await allInvoices()).find((i) => String(i.invoiceNumber ?? '').toLowerCase() === number.trim().toLowerCase());
+      if (!found) return null;
+      const full = ((await call('GET', `/invoice/${found.id}`)) ?? {}) as Json;
+      return { id: String(found.id), number: String(full.invoiceNumber ?? found.invoiceNumber), pdfUrl: String(full.urlPdfFile ?? ''), amountCents: totalCents(full) ?? totalCents(found) };
     },
 
     async paidCents(invoiceNumber) {

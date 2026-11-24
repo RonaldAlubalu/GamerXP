@@ -121,6 +121,55 @@ export async function createInvoice(app: FastifyInstance, bookingId: string, kin
   return listInvoices(app, bookingId);
 }
 
+// Invoices in the bookkeeping that are not linked to any booking yet.
+export async function unlinkedInvoices(app: FastifyInstance) {
+  if (!app.bookkeeping) throw new HttpError(409, 'De koppeling met e-Boekhouden is nog niet ingesteld.', 'not_configured');
+  const all = await app.bookkeeping.existingInvoices().catch((err: Error) => {
+    throw new HttpError(502, `De facturen konden niet worden opgehaald. ${err.message}`, 'bookkeeping_failed');
+  });
+  const { rows } = await app.db.query<{ number: string }>('SELECT lower(number) AS number FROM invoices');
+  const linked = new Set(rows.map((r) => r.number));
+  return all.filter((i) => !linked.has(i.number.toLowerCase())).slice(0, 200);
+}
+
+// Links an invoice that was made in the bookkeeping itself (before the site, or by hand) to a
+// booking, as its deposit or its final invoice. Nothing changes in the bookkeeping.
+export async function linkInvoice(app: FastifyInstance, bookingId: string, kind: InvoiceKind, number: string, amountCents: number | null, actor: string) {
+  if (!app.bookkeeping) throw new HttpError(409, 'De koppeling met e-Boekhouden is nog niet ingesteld.', 'not_configured');
+  const booking = await app.db.query<{ depositCents: number; priceCents: number }>(
+    'SELECT deposit_cents AS "depositCents", price_cents AS "priceCents" FROM bookings WHERE id = $1',
+    [bookingId],
+  );
+  if (!booking.rows[0]) throw new HttpError(404, 'Boeking niet gevonden.', 'not_found');
+  const existing = await listInvoices(app, bookingId);
+  if (existing.some((i) => i.kind === kind)) throw new HttpError(409, 'Deze boeking heeft al zo\'n factuur. Koppel die eerst los.', 'exists');
+  const elsewhere = await app.db.query('SELECT 1 FROM invoices WHERE lower(number) = lower($1)', [number.trim()]);
+  if (elsewhere.rowCount) throw new HttpError(409, `Factuur ${number.trim()} is al aan een boeking gekoppeld.`, 'linked_elsewhere');
+
+  const found = await app.bookkeeping.findInvoice(number).catch((err: Error) => {
+    throw new HttpError(502, `De factuur kon niet worden opgezocht. ${err.message}`, 'bookkeeping_failed');
+  });
+  if (!found) throw new HttpError(404, `Factuur ${number.trim()} staat niet in e-Boekhouden.`, 'invoice_not_found');
+
+  // The amount: what was typed in, else what the bookkeeping says, else what the booking expects.
+  const { depositCents, priceCents } = booking.rows[0];
+  const deposit = existing.find((i) => i.kind === 'deposit');
+  const expected = kind === 'deposit' ? depositCents : priceCents - (deposit?.amountCents ?? 0);
+  const amount = amountCents ?? found.amountCents ?? expected;
+  if (amount <= 0) throw new HttpError(422, 'Vul het bedrag van de factuur in.', 'no_amount');
+
+  await app.db.query(
+    'INSERT INTO invoices (booking_id, kind, external_id, number, amount_cents, pdf_url) VALUES ($1, $2, $3, $4, $5, $6)',
+    [bookingId, kind, found.id, found.number, amount, found.pdfUrl],
+  );
+  await addEvent(app.db, bookingId, {
+    type: 'payment',
+    message: `Bestaande factuur ${found.number} gekoppeld (${kind === 'deposit' ? 'aanbetaling' : 'restbedrag'}, ${formatEuro(amount)})`,
+    actor,
+  });
+  return listInvoices(app, bookingId);
+}
+
 // Asks the bookkeeping what has been received on the invoices that are still open (for one
 // booking, or all of them) and registers new payments, e.g. after the customer paid with the
 // QR code on the invoice. Returns how many payments were registered.

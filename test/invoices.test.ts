@@ -104,3 +104,40 @@ describe('invoices in the bookkeeping', () => {
     expect((await call('GET', `/bookings/${id}`)).json().invoices).toEqual([]);
   });
 });
+
+describe('linking an invoice that already exists in the bookkeeping', () => {
+  let ctx: TestContext;
+  let token: string;
+  let bookingId: string;
+  const call = (method: 'GET' | 'POST', url: string, payload?: object) =>
+    ctx.app.inject({ method, url: `/api/admin${url}`, headers: { authorization: `Bearer ${token}` }, payload });
+
+  beforeEach(async () => {
+    ctx = await setupApp();
+    token = await loginAdmin(ctx);
+    const { termsAccepted: _t, ...body } = bookingBody(ctx);
+    bookingId = (await call('POST', '/bookings', body)).json().id;
+  });
+  afterEach(() => teardown(ctx));
+
+  it('lists the free invoices, links one with its amount and picks up a payment', async () => {
+    expect((await call('GET', '/invoices/unlinked')).json().map((i: { number: string }) => i.number)).toEqual(['F00013-2', 'F00013-1']);
+
+    const linked = await call('POST', `/bookings/${bookingId}/invoices/link`, { kind: 'deposit', number: 'f00013-1' });
+    expect(linked.statusCode).toBe(201);
+    expect(linked.json()[0]).toMatchObject({ kind: 'deposit', number: 'F00013-1', amountCents: 10000 });
+    expect(ctx.invoiced).toHaveLength(0);
+    expect((await call('GET', '/invoices/unlinked')).json()).toHaveLength(1);
+
+    // The same invoice can't belong to two bookings, and a number that doesn't exist is refused.
+    expect((await call('POST', `/bookings/${bookingId}/invoices/link`, { kind: 'final', number: 'F00013-1' })).json().code).toBe('linked_elsewhere');
+    expect((await call('POST', `/bookings/${bookingId}/invoices/link`, { kind: 'final', number: 'F99999-9' })).json().code).toBe('invoice_not_found');
+
+    // Without a total in the bookkeeping, a typed amount is used.
+    const rest = await call('POST', `/bookings/${bookingId}/invoices/link`, { kind: 'final', number: 'F00013-2', amountCents: 27500 });
+    expect(rest.json().find((i: { kind: string }) => i.kind === 'final').amountCents).toBe(27500);
+
+    ctx.received.set('F00013-1', 10000);
+    expect((await call('POST', `/bookings/${bookingId}/invoices/sync`)).json().registered).toBe(1);
+  });
+});

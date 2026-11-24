@@ -12,7 +12,7 @@ import { createBooking, getBookingMailData, recalculatePaid, recalculatePrice } 
 import { logCommunication, sendAndLog } from '../../services/communications.js';
 import { addEvent, createDefaultTasks, STAGE_INFO, STATUSES, type Status } from '../../services/pipeline.js';
 import { calculatePrice, type PriceExtra } from '../../services/pricing.js';
-import { createInvoice, listInvoices, syncInvoicePayments } from '../../services/invoices.js';
+import { createInvoice, linkInvoice, listInvoices, syncInvoicePayments, unlinkedInvoices } from '../../services/invoices.js';
 import { amountsDue, loadDue, paymentLink, syncOpenPayments } from '../../services/online-payments.js';
 
 const BOOKING_COLUMNS = `
@@ -509,6 +509,18 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
     const { id } = idParam.parse(req.params);
     const { kind } = z.object({ kind: z.enum(['deposit', 'final']) }).parse(req.body);
     return reply.status(201).send(await createInvoice(app, id, kind, actorOf(req)));
+  });
+
+  // Invoices that exist in the bookkeeping and belong to no booking yet.
+  app.get('/invoices/unlinked', async () => unlinkedInvoices(app));
+
+  // Link an invoice that already exists in the bookkeeping, instead of making a new one.
+  app.post('/bookings/:id/invoices/link', async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const body = z
+      .object({ kind: z.enum(['deposit', 'final']), number: z.string().trim().min(1).max(40), amountCents: z.number().int().positive().nullable().default(null) })
+      .parse(req.body);
+    return reply.status(201).send(await linkInvoice(app, id, body.kind, body.number, body.amountCents, actorOf(req)));
   });
 
   // Ask the bookkeeping right now whether this booking's invoices have been paid.

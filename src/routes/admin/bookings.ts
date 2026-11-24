@@ -7,8 +7,8 @@ import {
 } from '../../lib/emails.js';
 import { HttpError } from '../../lib/errors.js';
 import { daySchedule, estimateTravelMinutes } from '../../lib/schedule.js';
-import { bookingStatus, dateString, TIME_SLOTS, timeString } from '../../lib/schemas.js';
-import { getBookingMailData, recalculatePaid, recalculatePrice } from '../../services/bookings.js';
+import { bookingRequest, bookingStatus, dateString, TIME_SLOTS, timeString } from '../../lib/schemas.js';
+import { createBooking, getBookingMailData, recalculatePaid, recalculatePrice } from '../../services/bookings.js';
 import { logCommunication, sendAndLog } from '../../services/communications.js';
 import { addEvent, createDefaultTasks, STAGE_INFO, STATUSES, type Status } from '../../services/pipeline.js';
 import { calculatePrice, type PriceExtra } from '../../services/pricing.js';
@@ -126,6 +126,23 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
       label: STAGE_INFO[key].label,
       bookings: rows.filter((b) => b.status === key),
     }));
+  });
+
+  // A booking that was made elsewhere (phone, WhatsApp, the old site). No emails go out.
+  app.post('/bookings', async (req, reply) => {
+    if (req.admin!.role !== 'owner') throw new HttpError(403, 'Je hebt geen rechten voor deze actie.', 'forbidden');
+    const input = bookingRequest.omit({ termsAccepted: true, website: true }).parse(req.body);
+    const booking = await createBooking(app.db, app.config, input, { actor: req.admin!.name || req.admin!.email });
+    const lookup = app.distance.drivingKm(input.postalCode, input.city).then(async (km) => {
+      if (km === null) return;
+      const minutes = app.distance.drivingMinutes?.(input.postalCode, input.city) ?? estimateTravelMinutes(km);
+      await app.db.query('UPDATE bookings SET travel_km = $2, travel_minutes = $3 WHERE id = $1 AND travel_km IS NULL', [booking.id, km, minutes]);
+      await recalculatePrice(app.db, app.config, booking.id);
+    });
+    await Promise.race([lookup, new Promise((r) => setTimeout(r, 4000))]).catch((err) =>
+      req.log.warn({ err }, 'Travel distance lookup failed'),
+    );
+    return reply.status(201).send({ id: booking.id, reference: booking.reference });
   });
 
   app.get('/bookings', async (req) => {

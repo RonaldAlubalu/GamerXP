@@ -264,6 +264,55 @@ async function loginFromLink(token) {
   }
 }
 
+// A booking that came in outside the website: phone, WhatsApp or the old site.
+async function newBookingView() {
+  const packages = (await api('/packages')).filter((p) => p.active !== false);
+  setPage('Boeking toevoegen', h('a', { class: 'btn ghost', href: '#/list' }, 'Annuleren'));
+  const input = (name, attrs = {}) => h('input', { name, ...attrs });
+  const select = (name, options) => h('select', { name }, Object.entries(options).map(([v, l]) => h('option', { value: v }, l)));
+  const startStatuses = Object.fromEntries(['new', 'contacted', 'confirmed', 'deposit_paid', 'scheduled'].map((s) => [s, STATUS_LABELS[s]]));
+  const form = h('form', { class: 'card', style: 'max-width:720px' },
+    h('p', { class: 'muted' }, 'Voor een boeking die via telefoon, WhatsApp of de oude site is gemaakt. De klant krijgt hier geen e-mail van.'),
+    h('div', { class: 'row', style: 'grid-template-columns:repeat(auto-fit,minmax(220px,1fr))' },
+      field('Pakket', h('select', { name: 'packageId', required: true }, packages.map((p) => h('option', { value: p.id }, `${p.name} (${euro.format(p.priceCents / 100)})`)))),
+      field('Fase', select('status', startStatuses), 'Waar staat deze boeking nu?'),
+      field('Datum', input('partyDate', { type: 'date', required: true })),
+      field('Tijdslot', select('timeSlot', SLOT_LABELS)),
+      field('Naam ouder of contactpersoon', input('parentName', { required: true, maxlength: 100 })),
+      field('E-mail', input('email', { type: 'email', required: true })),
+      field('Telefoon', input('phone', { type: 'tel' })),
+      field('Naam jarige', input('childName', { maxlength: 50 })),
+      field('Leeftijd', input('childAge', { type: 'number', min: 1, max: 18 })),
+      field('Aantal kinderen', input('guestCount', { type: 'number', min: 1, max: 40 })),
+      field('Straat en huisnummer', input('street', { required: true })),
+      field('Postcode', input('postalCode', { required: true, placeholder: '1234 AB' })),
+      field('Plaats', input('city', { required: true })),
+      field('Extra gamestations', select('extraStations', { 0: 'Geen', 1: '1 extra', 2: '2 extra' })),
+      field('Parkeren', select('parking', { '': 'Onbekend', free: 'Gratis', paid: 'Betaald' }))),
+    h('label', { class: 'check' }, h('input', { type: 'checkbox', name: 'decoration' }), ' Decoratie erbij (alleen bij Standaard een meerprijs)'),
+    field('Afspraken en bijzonderheden', h('textarea', { name: 'notes', rows: 3, maxlength: 2000 })),
+    h('button', { class: 'btn primary', type: 'submit' }, 'Boeking toevoegen'));
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(form));
+    const { status, ...body } = data;
+    body.decoration = form.elements.decoration.checked;
+    for (const key of ['childAge', 'guestCount']) if (!body[key]) delete body[key];
+    const button = form.querySelector('button[type=submit]');
+    button.disabled = true;
+    try {
+      const created = await post('/bookings', body);
+      if (status !== 'new') await patchJson(`/bookings/${created.id}`, { status, notifyCustomer: false });
+      flash('ok', `Boeking ${created.reference} toegevoegd.`);
+      location.hash = `#/bookings/${created.id}`;
+    } catch (err) {
+      button.disabled = false;
+      flash('error', err.message);
+    }
+  });
+  view.replaceChildren(form);
+}
+
 async function boardView() {
   const [columns, o] = await Promise.all([api('/pipeline'), api('/overview')]);
   setPage('Pipeline', h('a', { class: 'btn', href: '#/calendar' }, 'Agenda'));
@@ -327,7 +376,7 @@ async function listView() {
   const keys = ['status', 'from', 'q', 'waitingOn', 'payment', 'review'];
   const query = new URLSearchParams(keys.filter((k) => params.get(k)).map((k) => [k, params.get(k)]));
   const bookings = await api(`/bookings?${query}`);
-  setPage('Boekingen');
+  setPage('Boekingen', me.role === 'owner' && h('a', { class: 'btn primary', href: '#/bookings/new' }, '+ Boeking toevoegen'));
 
   const filter = (key, value) => {
     value ? params.set(key, value) : params.delete(key);
@@ -1401,7 +1450,8 @@ async function render() {
   }
   updateCounts();
   try {
-    if (parts[0] === 'bookings' && parts[1]) await bookingDetailView(parts[1]);
+    if (parts[0] === 'bookings' && parts[1] === 'new') await newBookingView();
+    else if (parts[0] === 'bookings' && parts[1]) await bookingDetailView(parts[1]);
     else if (parts[0] === 'list') await listView();
     else if (parts[0] === 'calendar') await calendarView();
     else if (parts[0] === 'messages') await messagesView(parts[1] ? Number(parts[1]) : null);

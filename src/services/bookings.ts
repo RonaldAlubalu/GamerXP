@@ -33,9 +33,12 @@ export async function createBooking(
   db: Db,
   config: Config,
   input: NewBooking,
+  // Set when the owner adds a booking that was made elsewhere (phone, WhatsApp, the old site):
+  // the booking period and the opening times don't apply, a slot that is already taken does.
+  manual?: { actor: string },
 ): Promise<BookingMailData & { id: string; status: string }> {
   const { minDate, maxDate } = await bookingWindow(db, config);
-  if (input.partyDate < minDate || input.partyDate > maxDate) {
+  if (!manual && (input.partyDate < minDate || input.partyDate > maxDate)) {
     throw new HttpError(422, `Je kunt boeken van ${minDate} tot en met ${maxDate}.`, 'date_out_of_range');
   }
 
@@ -51,8 +54,15 @@ export async function createBooking(
     );
     if (!pkg.rows[0]) throw new HttpError(422, 'Dit pakket bestaat niet (meer).', 'unknown_package');
 
-    const free = await availableSlots(client, config, input.partyDate, input.partyDate);
-    if (!free[input.partyDate]?.includes(input.timeSlot)) {
+    if (manual) {
+      const taken = await client.query(
+        "SELECT 1 FROM bookings WHERE party_date = $1 AND time_slot = $2 AND status <> 'cancelled' LIMIT 1",
+        [input.partyDate, input.timeSlot],
+      );
+      if (taken.rowCount) throw new HttpError(409, 'Op deze datum staat in dit tijdslot al een boeking.', 'slot_unavailable');
+    }
+    const free = manual ? {} : await availableSlots(client, config, input.partyDate, input.partyDate);
+    if (!manual && !free[input.partyDate]?.includes(input.timeSlot)) {
       throw new HttpError(
         409,
         'Dit tijdslot is helaas niet (meer) beschikbaar. Kies een ander moment.',
@@ -98,12 +108,16 @@ export async function createBooking(
         );
         const booking = rows[0]!;
         await createDefaultTasks(client, booking.id);
-        await addEvent(client, booking.id, { type: 'created', toStatus: booking.status, actor: input.parentName });
-        // The website request is the first message in the conversation.
+        await addEvent(client, booking.id, { type: 'created', toStatus: booking.status, actor: manual?.actor ?? input.parentName });
+        // The request is the first message in the conversation.
         await client.query(
           `INSERT INTO communications (booking_id, direction, channel, subject, body, actor)
-           VALUES ($1, 'in', 'website', 'Aanvraag via de website', $2, $3)`,
-          [booking.id, input.notes || '(geen details)', input.parentName],
+           VALUES ($1, 'in', $2, $3, $4, $5)`,
+          [
+            booking.id, manual ? 'other' : 'website',
+            manual ? `Boeking toegevoegd door ${manual.actor}` : 'Aanvraag via de website',
+            input.notes || '(geen details)', input.parentName,
+          ],
         );
         await client.query('COMMIT');
         return {

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { bookingBody, loginAdmin, setupApp, teardown, type TestContext } from './helpers.js';
+import { bookingBody, futureDate, loginAdmin, setupApp, teardown, type TestContext } from './helpers.js';
 
 let ctx: TestContext;
 let token: string;
@@ -450,5 +450,33 @@ describe('admin API', () => {
 
     await ctx.app.inject({ method: 'DELETE', url: `/api/admin/availability/overrides/${date}/ochtend`, headers: auth() });
     expect((await ctx.app.inject({ url: '/api/admin/availability/overrides', headers: auth() })).json()).toEqual([]);
+  });
+});
+
+describe('adding a booking by hand', () => {
+  let ctx: TestContext;
+  let token: string;
+  const add = (payload: object) =>
+    ctx.app.inject({ method: 'POST', url: '/api/admin/bookings', headers: { authorization: `Bearer ${token}` }, payload });
+
+  beforeEach(async () => {
+    ctx = await setupApp();
+    token = await loginAdmin(ctx);
+  });
+  afterEach(() => teardown(ctx));
+
+  it('adds it without emailing anyone, even outside the booking period, and guards a taken slot', async () => {
+    const { termsAccepted: _t, ...body } = bookingBody(ctx, { partyDate: futureDate(ctx, 1), notes: 'Via WhatsApp afgesproken' });
+    const res = await add(body);
+    expect(res.statusCode).toBe(201);
+    expect(res.json().reference).toMatch(/^GXP-/);
+    expect(ctx.sent).toHaveLength(0);
+
+    const detail = await ctx.app.inject({ method: 'GET', url: `/api/admin/bookings/${res.json().id}`, headers: { authorization: `Bearer ${token}` } });
+    expect(detail.json().status).toBe('new');
+
+    const again = await add(body);
+    expect(again.statusCode).toBe(409);
+    expect(again.json().code).toBe('slot_unavailable');
   });
 });

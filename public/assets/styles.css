@@ -591,3 +591,7 @@ body:has(#booking-form) .wa-float, body:has(#status-view) .wa-float { display: n
 }
 }
 .wa-float { transition: bottom .25s; }
+
+/* Two buttons side by side, centred; on a phone they stack at equal width. */
+.button-row { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 24px; }
+@media (max-width: 640px) { .button-row { flex-direction: column; align-items: stretch; max-width: 320px; margin-inline: auto; } .button-row .btn { text-align: center; } }

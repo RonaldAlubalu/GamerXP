@@ -44,8 +44,10 @@ services:
     environment:
       DOMAIN: ${DOMAIN:?Set DOMAIN in .env}
       EXTRA_DOMAINS: ${EXTRA_DOMAINS:-unused.localhost}
+      GATRA_DOMAIN: ${GATRA_DOMAIN:-gatra.37-97-128-88.sslip.io}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./gatra-site/public:/srv/gatra:ro
       - caddy-data:/data
       - caddy-config:/config
     depends_on:

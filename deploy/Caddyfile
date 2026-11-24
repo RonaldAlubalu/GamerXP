@@ -13,3 +13,12 @@ www.{$DOMAIN} {
 {$EXTRA_DOMAINS:unused.localhost} {
 	redir https://{$DOMAIN}{uri} temporary
 }
+
+# A second, separate site on the same server: plain pages from a folder. For now on a test address,
+# kept out of search engines.
+{$GATRA_DOMAIN:gatra.localhost} {
+	encode zstd gzip
+	header X-Robots-Tag "noindex, nofollow"
+	root * /srv/gatra
+	file_server
+}

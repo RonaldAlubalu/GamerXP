@@ -493,3 +493,18 @@ tr.picked > td { background: color-mix(in srgb, var(--primary, #2563eb) 9%, tran
 .list-totals strong { font-size: 1.15rem; }
 .list-totals strong.warn { color: var(--warning); }
 .list-totals p { flex-basis: 100%; margin: 0; }
+
+/* Pipeline: drag a card to another phase, and see that there is more to the side. */
+.board-nav { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 8px; min-height: 0; }
+.board-arrow { visibility: hidden; }
+.board-arrow.right { margin-left: auto; }
+.board-wrap.more-left .board-arrow.left, .board-wrap.more-right .board-arrow.right { visibility: visible; }
+.board-wrap:not(.more-left):not(.more-right) .board-nav { display: none; }
+.board-fade { position: relative; }
+.board-fade::before, .board-fade::after { content: ''; position: absolute; top: 0; bottom: 8px; width: 56px; pointer-events: none; opacity: 0; transition: opacity .2s; z-index: 1; }
+.board-fade::before { left: 0; background: linear-gradient(to right, var(--bg), transparent); }
+.board-fade::after { right: 0; background: linear-gradient(to left, var(--bg), transparent); }
+.board-wrap.more-left .board-fade::before, .board-wrap.more-right .board-fade::after { opacity: 1; }
+.board-card[draggable=true] { cursor: grab; }
+.board-card.dragging { opacity: .45; }
+.board-col.drop { border-color: var(--primary); background: var(--primary-soft); outline: 2px dashed var(--primary); outline-offset: -2px; }

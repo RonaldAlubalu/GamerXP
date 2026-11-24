@@ -356,11 +356,22 @@ async function boardView() {
 
   const stat = (num, label, href, tone) =>
     h('a', { class: `stat ${tone === 'quiet' ? 'quiet' : num && num !== fmtEuro(0) ? tone : ''}`, href }, h('div', { class: 'num' }, num), h('div', { class: 'lbl' }, label));
+  // Only an owner moves bookings. The card being dragged, while it is.
+  const canMove = me.role === 'owner';
+  let dragged = null;
   const bookingCard = (b, column) => {
     const i = STAGES.indexOf(column.key);
     const next = i >= 0 && i < STAGES.length - 1 ? STAGES[i + 1] : null;
     return h('article', {
       class: `board-card ${b.waitingOn === 'me' && isOpen(b) ? 'me' : ''}`,
+      draggable: canMove ? 'true' : null,
+      ondragstart: (e) => {
+        dragged = b;
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', b.reference);
+        e.currentTarget.classList.add('dragging');
+      },
+      ondragend: (e) => { dragged = null; e.currentTarget.classList.remove('dragging'); for (const el of view.querySelectorAll('.board-col.drop')) el.classList.remove('drop'); },
       // Anywhere on the card opens the booking; the button below keeps its own job.
       onclick: (e) => { if (!e.target.closest('button, a')) location.hash = `#/bookings/${b.id}`; },
     },
@@ -371,6 +382,44 @@ async function boardView() {
       progressBar(b.tasksDone, b.tasksTotal),
       next && h('button', { class: 'btn small', onclick: action(() => moveBooking(b.id, next)) }, `→ ${STATUS_LABELS[next]}`));
   };
+
+  // The board: a column per phase. A card can be dragged to another column (with a mouse), and
+  // arrows and a fade at the edge show that there are more phases to the side.
+  const board = h('div', { class: 'board' },
+    columns.map((c) => {
+      const col = h('section', { class: 'board-col' },
+        h('header', {}, h('span', {}, c.label), h('span', { class: 'count' }, c.bookings.length)),
+        c.bookings.length ? c.bookings.map((b) => bookingCard(b, c)) : h('p', { class: 'empty' }, '–'));
+      if (canMove) {
+        col.addEventListener('dragover', (e) => {
+          if (!dragged || dragged.status === c.key) return;
+          e.preventDefault();
+          col.classList.add('drop');
+        });
+        col.addEventListener('dragleave', (e) => { if (!col.contains(e.relatedTarget)) col.classList.remove('drop'); });
+        col.addEventListener('drop', (e) => {
+          e.preventDefault();
+          col.classList.remove('drop');
+          const moved = dragged;
+          dragged = null;
+          if (!moved || moved.status === c.key) return;
+          if (c.key === 'cancelled' && !confirm(`${displayName(moved)} annuleren?`)) return;
+          action(() => moveBooking(moved.id, c.key))();
+        });
+      }
+      return col;
+    }));
+  // Above the board, so they stay in sight however long the columns are.
+  const toLeft = h('button', { class: 'btn small board-arrow left', type: 'button', onclick: () => board.scrollBy({ left: -board.clientWidth * 0.8, behavior: 'smooth' }) }, '‹ Eerdere fases');
+  const toRight = h('button', { class: 'btn small board-arrow right', type: 'button', onclick: () => board.scrollBy({ left: board.clientWidth * 0.8, behavior: 'smooth' }) }, 'Meer fases ›');
+  const boardWrap = h('div', { class: 'board-wrap' }, h('div', { class: 'board-nav' }, toLeft, toRight), h('div', { class: 'board-fade' }, board));
+  function updateEdges() {
+    const more = board.scrollWidth - board.clientWidth;
+    boardWrap.classList.toggle('more-left', board.scrollLeft > 4);
+    boardWrap.classList.toggle('more-right', more - board.scrollLeft > 4);
+  }
+  board.addEventListener('scroll', updateEdges, { passive: true });
+  new ResizeObserver(updateEdges).observe(board);
 
   view.replaceChildren(
     ...(reminderCard ? [reminderCard] : []),
@@ -384,12 +433,10 @@ async function boardView() {
       stat(o.nextSevenDays, 'feestjes komende 7 dagen', '#/calendar', 'quiet'),
       stat(o.waitingOnCustomer, 'wachten op klant', '#/list?waitingOn=customer', 'quiet'),
       stat(fmtEuro(o.outstandingCents), 'nog te ontvangen', '#/list?payment=outstanding', 'quiet')),
-    h('div', { class: 'board' },
-      columns.map((c) => h('section', { class: 'board-col' },
-        h('header', {}, h('span', {}, c.label), h('span', { class: 'count' }, c.bookings.length)),
-        c.bookings.length ? c.bookings.map((b) => bookingCard(b, c)) : h('p', { class: 'empty' }, '–')))),
-    h('p', { class: 'muted small' }, 'Afgeronde en geannuleerde boekingen worden 30 dagen getoond. Alle boekingen staan onder "Boekingen".'),
+    boardWrap,
+    h('p', { class: 'muted small' }, `${canMove ? 'Sleep een kaartje naar een andere fase, of gebruik de knop op het kaartje. ' : ''}Afgeronde en geannuleerde boekingen worden 30 dagen getoond. Alle boekingen staan onder "Boekingen".`),
   );
+  updateEdges();
 }
 
 async function listView() {

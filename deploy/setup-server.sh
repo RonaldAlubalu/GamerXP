@@ -145,7 +145,10 @@ fi
 # Switch to the new domain once it really works, so the site is never left on a dead address.
 if [ -n "${SITE_DOMAIN:-}" ] && [ "$SITE_DOMAIN" != "$CURRENT" ]; then
   MY_IP=$(curl -4 -fsS --max-time 10 https://api.ipify.org || true)
-  DNS_IP=$(getent ahostsv4 "$SITE_DOMAIN" | awk '{print $1; exit}')
+  # Ask a public DNS service: the server's own resolver can lag behind a fresh change.
+  DNS_IP=$(curl -fsS --max-time 10 "https://dns.google/resolve?name=$SITE_DOMAIN&type=A" 2>/dev/null |
+    grep -o '"data":"[0-9.]*"' | head -n 1 | cut -d'"' -f4 || true)
+  [ -n "$DNS_IP" ] || DNS_IP=$(getent ahostsv4 "$SITE_DOMAIN" | awk '{print $1; exit}')
   if [ -z "$MY_IP" ] || [ "$DNS_IP" != "$MY_IP" ]; then
     echo "::notice title=$SITE_DOMAIN not in use yet::Its DNS points to ${DNS_IP:-nothing}, not to this server ($MY_IP). The site stays at https://$CURRENT. Point the A records here and deploy again."
   else
@@ -154,7 +157,8 @@ if [ -n "${SITE_DOMAIN:-}" ] && [ "$SITE_DOMAIN" != "$CURRENT" ]; then
     WORKS=0
     for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18; do
       sleep 5
-      if curl -sS -o /dev/null --max-time 10 "https://$SITE_DOMAIN/api/health" 2>/dev/null; then WORKS=1; break; fi
+      # Straight to this server, so a lagging resolver cannot send the test elsewhere.
+      if curl -sS -o /dev/null --max-time 10 --resolve "$SITE_DOMAIN:443:127.0.0.1" "https://$SITE_DOMAIN/api/health" 2>/dev/null; then WORKS=1; break; fi
     done
     if [ "$WORKS" = 1 ]; then
       echo "==> Switching the site to https://$SITE_DOMAIN (the old address leads there)"

@@ -578,3 +578,14 @@ body:has(#booking-form) .wa-float, body:has(#status-view) .wa-float { display: n
 /* Phone: room under the footer, so the booking bar does not cover its last line. */
 @media (max-width: 640px) { body.cta-visible .site-footer { padding-bottom: 84px; } }
 .video-split .prose h2 { font-size: clamp(1.8rem, 3.4vw, 2.6rem); }
+
+/* Phone, home page: the button to the packages sits right under the headline, so it is on the
+   first screen. The explanation follows below it. */
+@media (max-width: 640px) {
+  .intro-block { display: flex; flex-direction: column; }
+  .intro-block > p { order: 2; margin-block: 0 14px; }
+  .intro-block > .kicker, .intro-block > h2 { order: 0; }
+  .intro-block > .intro-action { order: 1; margin: 4px 0 22px; }
+  main > .hero:first-child { padding-bottom: 28px; }
+  main > .hero:first-child + .section { padding-top: 54px; }
+}

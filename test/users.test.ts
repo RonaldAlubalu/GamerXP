@@ -266,3 +266,25 @@ describe('remember this device for 30 days', () => {
     expect(after.json().step).toBe('email');
   });
 });
+
+describe('profile', () => {
+  let ctx: TestContext;
+  beforeEach(async () => { ctx = await setupApp(); });
+  afterEach(() => teardown(ctx));
+
+  it('lets a user set a name and a small photo, and lists who works here by address', async () => {
+    const token = await loginAdmin(ctx);
+    const headers = { authorization: `Bearer ${token}` };
+    const photo = `data:image/jpeg;base64,${Buffer.from('foto').toString('base64')}`;
+    const saved = await ctx.app.inject({ method: 'POST', url: '/api/admin/me/profile', headers, payload: { name: 'Ronald', avatar: photo } });
+    expect(saved.json()).toMatchObject({ name: 'Ronald', avatar: photo });
+    // A name alone keeps the photo; an empty one removes it; anything that is not an image is refused.
+    expect((await ctx.app.inject({ method: 'POST', url: '/api/admin/me/profile', headers, payload: { name: 'Ronald Kers' } })).json().avatar).toBe(photo);
+    expect((await ctx.app.inject({ method: 'POST', url: '/api/admin/me/profile', headers, payload: { name: 'Ronald Kers', avatar: 'javascript:alert(1)' } })).statusCode).toBe(400);
+    const me = (await ctx.app.inject({ url: '/api/admin/me', headers })).json();
+    expect(me).toMatchObject({ name: 'Ronald Kers', avatar: photo });
+    const staff = (await ctx.app.inject({ url: '/api/admin/staff', headers })).json();
+    expect(staff).toEqual([{ email: me.email, name: 'Ronald Kers', avatar: photo }]);
+    expect((await ctx.app.inject({ method: 'POST', url: '/api/admin/me/profile', headers, payload: { name: 'Ronald Kers', avatar: '' } })).json().avatar).toBe('');
+  });
+});

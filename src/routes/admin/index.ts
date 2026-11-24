@@ -198,6 +198,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       id: req.admin!.id,
       email: req.admin!.email,
       name: req.admin!.name,
+      avatar: (await app.db.query<{ avatar: string }>('SELECT avatar FROM admin_users WHERE id = $1', [req.admin!.id])).rows[0]?.avatar ?? '',
       role: req.admin!.role,
       twoFactor: req.admin!.twoFactor,
       // Lets the admin page point out missing setup.

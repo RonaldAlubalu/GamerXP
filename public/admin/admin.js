@@ -581,7 +581,7 @@ function messageThread(items) {
       h('div', { class: 'msg-meta' },
         badge(c.direction === 'in' ? `↓ ${CHANNELS[c.channel]}` : `↑ ${CHANNELS[c.channel]}`, c.direction === 'in' ? 'warning' : 'primary'),
         c.delivery === 'failed' && badge('Versturen mislukt', 'danger'),
-        h('span', {}, `${fmtDateTime(c.createdAt)} · ${c.actor}`)),
+        h('span', {}, `${fmtDateTime(c.createdAt)} · `, who(c.actor))),
       c.subject && h('div', { class: 'msg-subject' }, c.subject),
       body);
   }));
@@ -1121,7 +1121,7 @@ async function bookingDetailView(id) {
     h('ol', { class: 'timeline', style: 'margin-top:12px' },
       b.events.map((e) => h('li', {},
         h('span', { class: 'ev-icon' }, EVENT_ICONS[e.type] ?? '•'),
-        h('div', {}, h('div', { class: 'pre' }, eventText(e)), h('div', { class: 'muted small' }, `${fmtDateTime(e.createdAt)} · ${e.actor}`))))));
+        h('div', {}, h('div', { class: 'pre' }, eventText(e)), h('div', { class: 'muted small' }, `${fmtDateTime(e.createdAt)} · `, who(e.actor)))))));
 
   // Gear that goes along to this party (owners only; shown once the inventory has stations or gear).
   const gear = me.role === 'owner' ? await api(`/bookings/${id}/inventory`) : [];
@@ -1840,6 +1840,42 @@ function twoFactorCard() {
   return box;
 }
 
+// Name and photo: shown instead of the e-mail address wherever it says who did something.
+function profileCard() {
+  let avatar; // undefined = unchanged, '' = removed, else the new picture
+  const preview = h('img', { class: 'profile-photo', src: me.avatar || '', alt: '', hidden: !me.avatar });
+  const file = h('input', { type: 'file', accept: 'image/*', hidden: true, onchange: async () => {
+    const picked = file.files[0];
+    file.value = '';
+    if (!picked) return;
+    try {
+      // Cut to a square and made small here, so only a tiny picture is stored.
+      const image = await createImageBitmap(picked);
+      const side = Math.min(image.width, image.height);
+      const canvas = Object.assign(document.createElement('canvas'), { width: 128, height: 128 });
+      canvas.getContext('2d').drawImage(image, (image.width - side) / 2, (image.height - side) / 2, side, side, 0, 0, 128, 128);
+      avatar = canvas.toDataURL('image/jpeg', 0.85);
+      preview.src = avatar;
+      preview.hidden = false;
+      remove.hidden = false;
+    } catch {
+      flash('error', 'Deze foto kan ik niet lezen. Kies een jpg of png.');
+    }
+  } });
+  const remove = h('button', { class: 'btn', type: 'button', hidden: !me.avatar, onclick: () => { avatar = ''; preview.hidden = true; remove.hidden = true; } }, 'Foto weghalen');
+  const form = h('form', { class: 'card', style: 'max-width:480px', onsubmit: action(async () => {
+    await post('/me/profile', { name: form.elements.name.value, ...(avatar === undefined ? {} : { avatar }) });
+    await loadStaff();
+  }, 'Profiel opgeslagen.') },
+    h('h2', {}, 'Profiel'),
+    h('p', { class: 'muted' }, 'Je naam en foto staan bij wat je in de admin doet, bijvoorbeeld op de tijdlijn van een boeking.'),
+    field('Naam', h('input', { name: 'name', maxlength: 100, value: me.name ?? '', placeholder: 'Bijv. Ronald', autocomplete: 'name' })),
+    h('div', { class: 'inline', style: 'margin-bottom:14px' }, preview, file,
+      h('button', { class: 'btn', type: 'button', onclick: () => file.click() }, 'Foto kiezen'), remove),
+    h('button', { class: 'btn primary', type: 'submit' }, 'Opslaan'));
+  return form;
+}
+
 async function accountView() {
   setPage('Mijn account');
   const form = h('form', { class: 'card', style: 'max-width:480px', onsubmit: action(async () => {
@@ -1853,7 +1889,7 @@ async function accountView() {
     field('Nieuw wachtwoord (minimaal 12 tekens)', h('input', { name: 'password', type: 'password', required: true, minlength: 12, autocomplete: 'new-password' })),
     field('Herhaal nieuw wachtwoord', h('input', { name: 'repeat', type: 'password', required: true, minlength: 12, autocomplete: 'new-password' })),
     h('button', { class: 'btn primary', type: 'submit' }, 'Opslaan'));
-  view.replaceChildren(...[twoFactorCard(), devicesCard(), await pushCard(), form].filter(Boolean));
+  view.replaceChildren(...[profileCard(), twoFactorCard(), devicesCard(), await pushCard(), form].filter(Boolean));
 }
 
 // Assistants can look at bookings but not change them: switch the controls off.
@@ -1867,6 +1903,16 @@ function lockView() {
 
 // The logged-in user: { id, email, name, role, ... }.
 let me = null;
+// Everyone who works here, by e-mail address: what someone did is stored by address and shown by name.
+let staff = new Map();
+async function loadStaff() {
+  staff = new Map((await api('/staff')).map((s) => [s.email, s]));
+}
+function who(actor) {
+  const person = staff.get(actor);
+  if (!person) return actor;
+  return h('span', { class: 'who', title: actor }, person.avatar && h('img', { src: person.avatar, alt: '' }), person.name || actor);
+}
 
 async function updateCounts() {
   try {
@@ -1896,6 +1942,10 @@ async function render() {
   }
   const assistant = me.role === 'assistant';
   document.getElementById('me').textContent = me.name || me.email;
+  const photo = document.getElementById('me-photo');
+  photo.hidden = !me.avatar;
+  if (me.avatar) photo.src = me.avatar;
+  if (!staff.size) await loadStaff().catch(() => {});
   for (const el of document.querySelectorAll('[data-owner]')) el.hidden = assistant;
   const [path] = location.hash.slice(1).split('?');
   const parts = (path || '/board').split('/').filter(Boolean);

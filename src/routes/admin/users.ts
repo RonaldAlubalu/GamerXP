@@ -9,8 +9,8 @@ import { notify, vapidKeys } from '../../services/push.js';
 export type Role = 'owner' | 'assistant';
 
 // What an assistant may do: look at bookings and the calendar, and change the availability.
-const ASSISTANT_READ = [/^\/me$/, /^\/push\/key$/, /^\/stages$/, /^\/overview$/, /^\/pipeline$/, /^\/bookings(\/[^/]+)?$/, /^\/calendar$/, /^\/packages$/, /^\/availability(\/|$)/, /^\/blocked-dates(\/|$)/];
-const ASSISTANT_WRITE = [/^\/logout$/, /^\/me\/password$/, /^\/me\/2fa\//, /^\/me\/devices\//, /^\/push\//, /^\/availability(\/|$)/, /^\/blocked-dates(\/|$)/];
+const ASSISTANT_READ = [/^\/me$/, /^\/staff$/, /^\/push\/key$/, /^\/stages$/, /^\/overview$/, /^\/pipeline$/, /^\/bookings(\/[^/]+)?$/, /^\/calendar$/, /^\/packages$/, /^\/availability(\/|$)/, /^\/blocked-dates(\/|$)/];
+const ASSISTANT_WRITE = [/^\/logout$/, /^\/me\/password$/, /^\/me\/profile$/, /^\/me\/2fa\//, /^\/me\/devices\//, /^\/push\//, /^\/availability(\/|$)/, /^\/blocked-dates(\/|$)/];
 
 export function assistantMayCall(method: string, path: string): boolean {
   return (method === 'GET' ? ASSISTANT_READ : ASSISTANT_WRITE).some((allowed) => allowed.test(path));
@@ -26,6 +26,28 @@ function requireOwner(req: FastifyRequest) {
 }
 
 export const userRoutes: FastifyPluginAsync = async (app) => {
+  // Who works here, by e-mail address: the timeline stores who did something by address, and
+  // shows the name and photo that belong to it.
+  app.get('/staff', async () => {
+    const { rows } = await app.db.query('SELECT email, name, avatar FROM admin_users ORDER BY id');
+    return rows;
+  });
+
+  // Everyone can set their own name and photo. The photo is made small in the browser first.
+  app.post('/me/profile', async (req) => {
+    const body = z
+      .object({
+        name: z.string().trim().max(100),
+        avatar: z.union([z.literal(''), z.string().max(90_000).regex(/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/, 'Deze foto kan niet worden gebruikt.')]).optional(),
+      })
+      .parse(req.body);
+    const { rows } = await app.db.query(
+      'UPDATE admin_users SET name = $2, avatar = COALESCE($3, avatar) WHERE id = $1 RETURNING email, name, avatar',
+      [req.admin!.id, body.name, body.avatar ?? null],
+    );
+    return rows[0];
+  });
+
   // Everyone can change their own password. Other sessions of that user are logged out.
   app.post('/me/password', async (req, reply) => {
     const body = z.object({ current: z.string().min(1), password }).parse(req.body);

@@ -479,3 +479,9 @@ tr.picked > td { background: color-mix(in srgb, var(--primary, #2563eb) 9%, tran
 
 .contact-edit h3 { margin: 18px 0 8px; font-size: .95rem; }
 .contact-edit h3:first-child { margin-top: 0; }
+
+/* Who did something: a small round photo and the name. */
+.who { display: inline-flex; align-items: center; gap: 5px; vertical-align: middle; }
+.who img { width: 18px; height: 18px; border-radius: 50%; object-fit: cover; }
+.brand img.me-photo { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; flex: none; }
+.profile-photo { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; }

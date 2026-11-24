@@ -36,6 +36,16 @@ jobs:
       - name: Build the site
         run: docker build -t gamerxp-app .
 
+      # A mistake in the web server's settings would take the site down; catch it here.
+      - name: Check the web server settings
+        run: |
+          docker run --rm -e DOMAIN=example.com -e "EXTRA_DOMAINS=example.org, www.example.org" \
+            -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine \
+            caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+          docker run --rm -e DOMAIN=example.com \
+            -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine \
+            caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+
       - name: Update the server
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
@@ -52,6 +62,10 @@ jobs:
           # Where customers leave a Google review (public link, not a secret).
           GOOGLE_REVIEW_URL: https://g.page/r/CelcATNY-Po9EAE/review
           BACKUP_PEER_PUBKEY: ${{ secrets.BACKUP_PEER_PUBKEY }}
+          # The domain the test site moves to as soon as its DNS points at the server.
+          SITE_DOMAIN: gamefeestjethuis.nl
+          # A test address stays out of search engines. Remove at go-live.
+          SITE_NOINDEX: 'true'
           GMAIL_APP_PASSWORD: ${{ secrets.GOOGLE_PWD || secrets.GMAIL_APP_PASSWORD }}
         run: |
           if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_SSH_KEY" ]; then
@@ -92,6 +106,7 @@ jobs:
           clean() { printf %s "$1" | LC_ALL=C sed 's/\xc2\xa0//g' | tr -d '[:space:]'; }
           printf "export GMAIL_USER='%s' GMAIL_APP_PASSWORD='%s'\n" "$(clean "$GMAIL_USER")" "$(clean "$GMAIL_APP_PASSWORD")"
           printf "export EBOEKHOUDEN_TOKEN='%s'\n" "$(clean "$EBOEKHOUDEN_TOKEN")"
+          printf "export SITE_DOMAIN='%s' SITE_NOINDEX='%s'\n" "$SITE_DOMAIN" "$SITE_NOINDEX"
           cat <<'REMOTE'
           set -e
           export FILES_DELIVERED=1

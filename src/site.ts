@@ -110,7 +110,7 @@ function includePartials(html: string, partials: Map<string, string>, depth = 0)
   });
 }
 
-export async function loadSite(publicUrl: string, dir: string = SITE_DIR): Promise<Site> {
+export async function loadSite(publicUrl: string, dir: string = SITE_DIR, hidden = false): Promise<Site> {
   const layout = await readFile(path.join(dir, 'layout.html'), 'utf8');
   const partials = new Map<string, string>();
   for (const file of await listHtml(path.join(dir, 'partials'))) {
@@ -123,7 +123,7 @@ export async function loadSite(publicUrl: string, dir: string = SITE_DIR): Promi
       description: escapeAttr(meta.description),
       canonical: `${publicUrl}${route}`,
       image: `${publicUrl}/assets/img/${meta.image ?? 'nummer-1-game-feestje.webp'}`,
-      robots: meta.noindex ? 'noindex' : 'index, follow',
+      robots: meta.noindex || hidden ? 'noindex' : 'index, follow',
       lang: meta.lang ?? 'nl',
       scripts: (meta.scripts ?? []).map((s) => `<script type="module" src="${escapeAttr(s)}"></script>`).join('\n  '),
       year: String(new Date().getFullYear()),
@@ -156,10 +156,16 @@ export async function loadSite(publicUrl: string, dir: string = SITE_DIR): Promi
 }
 
 export async function registerSite(app: FastifyInstance): Promise<void> {
-  const { PUBLIC_URL, NODE_ENV } = app.config;
-  let site = await loadSite(PUBLIC_URL);
+  const { PUBLIC_URL, NODE_ENV, SITE_NOINDEX } = app.config;
+  let site = await loadSite(PUBLIC_URL, SITE_DIR, SITE_NOINDEX);
+  // A test address stays out of search engines: every answer says so, pages and files alike.
+  if (SITE_NOINDEX) {
+    app.addHook('onSend', async (_req, reply) => {
+      reply.header('x-robots-tag', 'noindex, nofollow');
+    });
+  }
   // In development pages are re-read on every request, so edits show up without a restart.
-  const current = async () => (NODE_ENV === 'development' ? (site = await loadSite(PUBLIC_URL)) : site);
+  const current = async () => (NODE_ENV === 'development' ? (site = await loadSite(PUBLIC_URL, SITE_DIR, SITE_NOINDEX)) : site);
 
   for (const route of site.pages.keys()) {
     app.get(route, async (req, reply) => {

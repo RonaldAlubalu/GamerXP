@@ -7,3 +7,9 @@
 www.{$DOMAIN} {
 	redir https://{$DOMAIN}{uri} permanent
 }
+
+# Other addresses of this site (an earlier test address, a second domain) lead to the main one.
+# Temporary on purpose: which address is the main one changes when a domain is taken into use.
+{$EXTRA_DOMAINS:unused.localhost} {
+	redir https://{$DOMAIN}{uri} temporary
+}

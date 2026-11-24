@@ -125,12 +125,48 @@ if [ -n "${BACKUP_PEER_HOST:-}${BACKUP_PEER_PUBKEY:-}" ]; then
   echo "::notice title=Backup key of this server::$(sh deploy/backup-peer.sh key || echo 'could not be made')"
 fi
 
+if [ -n "${SITE_NOINDEX:-}" ]; then
+  set_env SITE_NOINDEX "$SITE_NOINDEX"
+fi
+# A domain to take into use (SITE_DOMAIN). Until its DNS points here and its certificate works,
+# the site keeps its current address and the new domain is only prepared.
+CURRENT=$(grep '^DOMAIN=' .env | cut -d= -f2)
+if [ -n "${SITE_DOMAIN:-}" ] && [ "$SITE_DOMAIN" != "$CURRENT" ]; then
+  set_env EXTRA_DOMAINS "$SITE_DOMAIN, www.$SITE_DOMAIN"
+fi
+
 if [ "${APP_IMAGE_LOADED:-}" = 1 ]; then
   echo "==> Starting the site with the version built by the deploy"
   docker compose up -d --no-build
 else
   echo "==> Building and starting the site (this takes a few minutes)"
   docker compose up -d --build
+fi
+# Switch to the new domain once it really works, so the site is never left on a dead address.
+if [ -n "${SITE_DOMAIN:-}" ] && [ "$SITE_DOMAIN" != "$CURRENT" ]; then
+  MY_IP=$(curl -4 -fsS --max-time 10 https://api.ipify.org || true)
+  DNS_IP=$(getent ahostsv4 "$SITE_DOMAIN" | awk '{print $1; exit}')
+  if [ -z "$MY_IP" ] || [ "$DNS_IP" != "$MY_IP" ]; then
+    echo "::notice title=$SITE_DOMAIN not in use yet::Its DNS points to ${DNS_IP:-nothing}, not to this server ($MY_IP). The site stays at https://$CURRENT. Point the A records here and deploy again."
+  else
+    echo "==> $SITE_DOMAIN points here; fetching its HTTPS certificate"
+    docker compose restart caddy >/dev/null
+    WORKS=0
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18; do
+      sleep 5
+      if curl -sS -o /dev/null --max-time 10 "https://$SITE_DOMAIN/api/health" 2>/dev/null; then WORKS=1; break; fi
+    done
+    if [ "$WORKS" = 1 ]; then
+      echo "==> Switching the site to https://$SITE_DOMAIN (the old address leads there)"
+      set_env DOMAIN "$SITE_DOMAIN"
+      set_env PUBLIC_URL "https://$SITE_DOMAIN"
+      set_env EXTRA_DOMAINS "$CURRENT"
+      docker compose up -d --no-build
+      echo "::notice title=Site moved::The site now lives at https://$SITE_DOMAIN. https://$CURRENT leads there."
+    else
+      echo "::warning title=$SITE_DOMAIN has no certificate yet::Its DNS points here, but HTTPS does not work yet. Often an AAAA record still points elsewhere. The site stays at https://$CURRENT."
+    fi
+  fi
 fi
 # Old versions of the site would otherwise fill the disk.
 docker image prune -f >/dev/null 2>&1 || true

@@ -10,6 +10,9 @@ const schema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
   DATABASE_URL: z.string().min(1),
   PUBLIC_URL: z.url().default('http://localhost:3000'),
+  // On for a test address: asks search engines not to list the site, so it does not compete
+  // with the live one. Off at go-live.
+  SITE_NOINDEX: bool.default(false),
   TIMEZONE: z.string().default('Europe/Amsterdam'),
   TRUST_PROXY: bool.default(false),
 

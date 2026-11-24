@@ -102,3 +102,19 @@ describe('website routes', () => {
     expect((await ctx.app.inject('/admin/')).headers['cache-control']).toBe('no-cache');
   });
 });
+
+describe('a test address stays out of search engines', () => {
+  let ctx: TestContext;
+  beforeAll(async () => {
+    ctx = await setupApp({ SITE_NOINDEX: true });
+  });
+  afterAll(() => teardown(ctx));
+
+  it('marks pages and files as not to be listed', async () => {
+    const page = await ctx.app.inject({ method: 'GET', url: '/' });
+    expect(page.headers['x-robots-tag']).toBe('noindex, nofollow');
+    expect(page.body).toContain('<meta name="robots" content="noindex">');
+    const file = await ctx.app.inject({ method: 'GET', url: '/assets/styles.css' });
+    expect(file.headers['x-robots-tag']).toBe('noindex, nofollow');
+  });
+});

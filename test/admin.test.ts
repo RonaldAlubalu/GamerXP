@@ -84,6 +84,15 @@ describe('admin API', () => {
     expect(cleared.durationHours).toBe(cleared.packageHours);
   });
 
+  it('keeps the location name and the own address of a customer whose party is somewhere else', async () => {
+    const res = await ctx.app.inject({ method: 'POST', url: '/api/bookings', payload: bookingBody(ctx, { locationName: 'Zaal De Hoek', billingStreet: 'Thuisstraat 9', billingPostalCode: '5611 AA', billingCity: 'Eindhoven' }) });
+    expect(res.statusCode).toBe(201);
+    const [booking] = (await ctx.app.inject({ url: '/api/admin/bookings', headers: auth() })).json();
+    expect(booking).toMatchObject({ locationName: 'Zaal De Hoek', billingStreet: 'Thuisstraat 9', billingPostalCode: '5611 AA', billingCity: 'Eindhoven' });
+    const bad = await ctx.app.inject({ method: 'POST', url: '/api/bookings', payload: bookingBody(ctx, { billingPostalCode: 'nee' }) });
+    expect(bad.statusCode).toBe(400);
+  });
+
   it('removes a booking with everything under it, for the owner only', async () => {
     const booking = await createBooking();
     await ctx.app.inject({ method: 'POST', url: `/api/admin/bookings/${booking.id}/payments`, headers: { authorization: `Bearer ${token}` }, payload: { kind: 'deposit', amountCents: 10000, method: 'bank', paidOn: '2026-11-01' } });

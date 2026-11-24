@@ -71,6 +71,17 @@ async function updateTravel() {
   }
   updatePrice();
 }
+// A party somewhere else: show the fields for the location's name and the customer's own address.
+const elsewhere = document.getElementById('b-elsewhere');
+const elsewhereFields = document.getElementById('b-elsewhere-fields');
+elsewhere.addEventListener('change', () => {
+  elsewhereFields.hidden = !elsewhere.checked;
+  for (const input of elsewhereFields.querySelectorAll('input')) {
+    if (!elsewhere.checked) input.value = '';
+    // With the box ticked, the invoice address is needed.
+    if (input.name !== 'locationName') input.required = elsewhere.checked;
+  }
+});
 form.elements.postalCode.addEventListener('change', updateTravel);
 form.elements.city.addEventListener('change', updateTravel);
 

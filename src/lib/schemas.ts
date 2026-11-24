@@ -47,6 +47,12 @@ export const bookingRequest = z.object({
   childName: text(50).default(''),
   childAge: optionalInt(1, 18, 'Leeftijd moet tussen 1 en 18 zijn.'),
   guestCount: optionalInt(1, 40, 'Aantal kinderen moet tussen 1 en 40 zijn.'),
+  // A party somewhere else than at home (a hall, the grandparents): the address above is then where
+  // the party is, and this is the customer's own address for the invoice.
+  locationName: text(100).default(''),
+  billingStreet: text(200).default(''),
+  billingPostalCode: z.union([postalCode, z.literal('')]).default(''),
+  billingCity: text(100).default(''),
   // Parking at the party address: free, paid or unknown.
   parking: z.enum(['', 'free', 'paid', 'unknown']).default(''),
   notes: text(2000).default(''),

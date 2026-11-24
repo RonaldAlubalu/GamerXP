@@ -83,6 +83,16 @@
                 <div class="field"><label for="b-postal">Postcode</label><input id="b-postal" name="postalCode" required maxlength="7" autocomplete="postal-code" placeholder="1234 AB"></div>
                 <div class="field"><label for="b-city">Plaats</label><input id="b-city" name="city" required maxlength="100" autocomplete="address-level2"></div>
               </div>
+              <label class="check"><input type="checkbox" id="b-elsewhere"> <span>Het feest is niet op ons eigen adres (bijvoorbeeld in een zaal of bij opa en oma)</span></label>
+              <div id="b-elsewhere-fields" hidden>
+                <div class="field"><label for="b-location">Naam van de locatie <small>(optioneel)</small></label><input id="b-location" name="locationName" maxlength="100" placeholder="Bijv. Zaal De Hoek"></div>
+                <p class="hint">Vul hierboven het adres van de locatie in. Hieronder je eigen adres, voor de factuur.</p>
+                <div class="row">
+                  <div class="field"><label for="b-bill-street">Je eigen straat en huisnummer</label><input id="b-bill-street" name="billingStreet" maxlength="200"></div>
+                  <div class="field"><label for="b-bill-postal">Postcode</label><input id="b-bill-postal" name="billingPostalCode" maxlength="7" placeholder="1234 AB"></div>
+                  <div class="field"><label for="b-bill-city">Plaats</label><input id="b-bill-city" name="billingCity" maxlength="100"></div>
+                </div>
+              </div>
               <div class="field">
                 <label for="b-parking">Parkeren bij het adres</label>
                 <select id="b-parking" name="parking">

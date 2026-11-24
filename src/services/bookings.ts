@@ -19,6 +19,11 @@ export interface NewBooking {
   street: string;
   postalCode: string;
   city: string;
+  // Only for a party that is not at the customer's own address.
+  locationName?: string;
+  billingStreet?: string;
+  billingPostalCode?: string;
+  billingCity?: string;
   childName: string;
   childAge?: number;
   guestCount?: number;
@@ -96,14 +101,16 @@ export async function createBooking(
         const { rows } = await client.query<{ id: string; status: string }>(
           `INSERT INTO bookings (reference, package_id, extra_stations, party_date, time_slot, parent_name, email,
                                  phone, street, postal_code, city, child_name, child_age, guest_count, notes,
-                                 price_cents, deposit_cents, status_token, evening_surcharge, package_price_cents, parking, price_extras)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+                                 price_cents, deposit_cents, status_token, evening_surcharge, package_price_cents, parking, price_extras,
+                                 location_name, billing_street, billing_postal_code, billing_city)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
            RETURNING id, status`,
           [
             reference, input.packageId, input.extraStations, input.partyDate, input.timeSlot, input.parentName,
             input.email, input.phone, input.street, input.postalCode, input.city, input.childName,
             input.childAge ?? null, input.guestCount ?? null, input.notes, priceCents, config.DEPOSIT_CENTS,
             statusToken, eveningSurcharge, pkg.rows[0].price_cents, input.parking ?? '', JSON.stringify(extras),
+            input.locationName ?? '', input.billingStreet ?? '', input.billingPostalCode ?? '', input.billingCity ?? '',
           ],
         );
         const booking = rows[0]!;

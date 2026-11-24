@@ -582,7 +582,7 @@ body:has(#booking-form) .wa-float, body:has(#status-view) .wa-float { display: n
 /* Phone, home page: the title sits high in the photo, right under the logo. That leaves room
    to breathe below it and keeps the packages button under the first text on the first screen. */
 @media (max-width: 640px) {
-  body:has(main > .hero:first-child):has(.intro-block) main > .hero:first-child { padding-top: calc(var(--header-h) + 20px); padding-bottom: 40px; }
+  body:has(main > .hero:first-child):has(.intro-block) main > .hero:first-child { padding-top: calc(var(--header-h) + 8px); padding-bottom: 40px; }
   body:has(.intro-block) main > .hero:first-child .stats { margin-top: 18px; }
   body:has(.intro-block) main > .hero:first-child + .section { padding-top: 56px; }
   .intro-block h2 { margin-bottom: 14px; }
@@ -590,3 +590,4 @@ body:has(#booking-form) .wa-float, body:has(#status-view) .wa-float { display: n
 }
 }
 }
+.wa-float { transition: bottom .25s; }

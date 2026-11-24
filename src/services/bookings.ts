@@ -149,7 +149,7 @@ export async function createBooking(
 // Loads a booking in the shape the email templates expect.
 export async function getBookingMailData(db: Db, id: string): Promise<BookingMailData | undefined> {
   const { rows } = await db.query<BookingMailData>(
-    `SELECT b.reference, p.name AS "packageName", b.party_date AS "partyDate", to_char(b.start_time, 'HH24:MI') AS "startTime",
+    `SELECT b.reference, p.name AS "packageName", b.party_date AS "partyDate", to_char(b.start_time, 'HH24:MI') AS "startTime", to_char(b.end_time, 'HH24:MI') AS "endTime",
             b.time_slot AS "timeSlot", b.extra_stations AS "extraStations",
             b.parent_name AS "parentName", b.email, b.phone, b.street, b.postal_code AS "postalCode", b.city,
             b.child_name AS "childName", b.child_age AS "childAge", b.guest_count AS "guestCount", b.notes, b.parking,

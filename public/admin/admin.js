@@ -842,13 +842,14 @@ async function bookingDetailView(id) {
   const planForm = h('form', { class: 'inline', onsubmit: action(() => {
     const f = planForm.elements;
     return patchJson(`/bookings/${id}`, {
-      partyDate: f.partyDate.value, timeSlot: f.timeSlot.value, startTime: f.startTime.value || null,
+      partyDate: f.partyDate.value, timeSlot: f.timeSlot.value, startTime: f.startTime.value || null, endTime: f.endTime.value || null,
       travelMinutes: f.travelMinutes.value === '' ? null : Number(f.travelMinutes.value),
     });
   }, 'Planning opgeslagen.') },
     field('Datum', h('input', { type: 'date', name: 'partyDate', value: b.partyDate, required: true })),
     field('Dagdeel', h('select', { name: 'timeSlot' }, Object.entries(SLOT_LABELS).map(([k, l]) => h('option', { value: k, selected: k === b.timeSlot }, l)))),
     field('Starttijd', h('input', { type: 'time', name: 'startTime', value: b.startTime ?? '' })),
+    field('Eindtijd', h('input', { type: 'time', name: 'endTime', value: b.endTime ?? '' }), `Leeg = ${String(b.packageHours ?? '').replace('.', ',') || 'de'} uur van het pakket`),
     field('Reistijd enkele reis (min)', h('input', { type: 'number', name: 'travelMinutes', min: 0, max: 600, value: b.travelMinutes ?? '', style: 'width:110px' })),
     h('button', { class: 'btn', type: 'submit' }, 'Opslaan'));
   const phoneDigits = b.phone.replace(/\D/g, '').replace(/^0/, '31');
@@ -895,7 +896,7 @@ async function bookingDetailView(id) {
       b.phone2 && h('dt', {}, 'Tweede telefoon'), b.phone2 && h('dd', {}, phoneLinks(b.phone2)),
       h('dt', {}, 'Adres'), h('dd', {},
         h('a', { href: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`, target: '_blank', rel: 'noopener' }, address)),
-      h('dt', {}, 'Wanneer'), h('dd', {}, `${fmtLongDate(b.partyDate)}, ${SLOT_LABELS[b.timeSlot].toLowerCase()}${b.startTime ? ` om ${b.startTime}` : ''}`),
+      h('dt', {}, 'Wanneer'), h('dd', {}, `${fmtLongDate(b.partyDate)}, ${SLOT_LABELS[b.timeSlot].toLowerCase()}${b.startTime ? ` ${b.endTime ? `van ${b.startTime} tot ${b.endTime}` : `om ${b.startTime}`}` : ''}`),
       h('dt', {}, 'Pakket'), h('dd', {}, `${b.packageName}${b.extraStations ? ` + ${b.extraStations} extra station(s)` : ''}`),
       h('dt', {}, 'Jarige'), h('dd', {}, b.childName ? `${b.childName}${b.childAge ? `, wordt ${b.childAge}` : ''}` : '–'),
       h('dt', {}, 'Kinderen'), h('dd', {}, b.guestCount ?? '–'),
@@ -1029,7 +1030,7 @@ async function bookingDetailView(id) {
     const sheet = h('div', { class: 'print-sheet' },
       h('h1', {}, `Checklist ${b.parentName}`, h('small', {}, ` ${b.reference}`)),
       h('div', { class: 'print-facts' },
-        line('Datum', `${fmtDate(b.partyDate)}${b.startTime ? `, ${b.startTime} uur` : ''}`),
+        line('Datum', `${fmtDate(b.partyDate)}${b.startTime ? `, ${b.startTime}${b.endTime ? `–${b.endTime}` : ''} uur` : ''}`),
         line('Pakket', `${b.packageName}${b.extraStations ? ` + ${b.extraStations} extra station(s)` : ''}`),
         line('Adres', [b.street, [b.postalCode, b.city].filter(Boolean).join(' ')].filter(Boolean).join(', ')),
         line('Telefoon', b.phone),

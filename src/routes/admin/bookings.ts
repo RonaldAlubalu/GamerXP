@@ -17,13 +17,15 @@ import { amountsDue, loadDue, paymentLink, syncOpenPayments } from '../../servic
 
 const BOOKING_COLUMNS = `
   b.id, b.reference, b.package_id AS "packageId", p.name AS "packageName",
-  b.party_date AS "partyDate", b.time_slot AS "timeSlot", to_char(b.start_time, 'HH24:MI') AS "startTime",
+  b.party_date AS "partyDate", b.time_slot AS "timeSlot", to_char(b.start_time, 'HH24:MI') AS "startTime", to_char(b.end_time, 'HH24:MI') AS "endTime",
   b.extra_stations AS "extraStations",
   b.parent_name AS "parentName", b.email, b.phone, b.email2, b.phone2, b.street, b.postal_code AS "postalCode", b.city,
   b.child_name AS "childName", b.child_age AS "childAge", b.guest_count AS "guestCount",
   b.notes, b.parking, b.status, b.admin_notes AS "adminNotes", b.waiting_on AS "waitingOn",
   b.package_price_cents AS "packagePriceCents", b.travel_km::float AS "travelKm", b.travel_minutes AS "travelMinutes",
-  p.duration_hours::float AS "durationHours",
+  p.duration_hours::float AS "packageHours",
+  -- How long the party lasts: what was agreed for this booking, else what the package says.
+  CASE WHEN b.start_time IS NOT NULL AND b.end_time > b.start_time THEN extract(epoch FROM (b.end_time - b.start_time)) / 3600 ELSE p.duration_hours END::float AS "durationHours",
   (SELECT to_char(ts.start_time, 'HH24:MI') FROM time_slots ts WHERE ts.key = b.time_slot) AS "slotStart",
   b.evening_surcharge AS "eveningSurcharge", b.price_extras AS "priceExtras",
   b.price_cents AS "priceCents", b.deposit_cents AS "depositCents", b.paid_cents AS "paidCents",
@@ -367,6 +369,8 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
         timeSlot: z.enum(TIME_SLOTS).optional(),
         // The exact start time is agreed with the parent; null clears it.
         startTime: timeString.nullable().optional(),
+        // An agreed end time, when the party is shorter or longer than the package; null clears it.
+        endTime: timeString.nullable().optional(),
         extraStations: z.number().int().min(0).max(2).optional(),
         travelKm: z.number().min(0).max(2000).nullable().optional(),
         travelMinutes: z.number().int().min(0).max(600).nullable().optional(),
@@ -385,6 +389,10 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
 
     const before = await loadBooking(id);
     const by = actorOf(req);
+    const start = body.startTime !== undefined ? body.startTime : before.startTime;
+    const end = body.endTime !== undefined ? body.endTime : before.endTime;
+    if (end && !start) throw new HttpError(422, 'Vul bij een eindtijd ook de starttijd in.', 'end_without_start');
+    if (end && start && end <= start) throw new HttpError(422, 'De eindtijd moet na de starttijd liggen.', 'end_before_start');
 
     await app.db.query(
       `UPDATE bookings SET
@@ -392,6 +400,7 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
          admin_notes       = COALESCE($3, admin_notes),
          party_date        = COALESCE($4, party_date),
          start_time        = CASE WHEN $5 THEN $6::time ELSE start_time END,
+         end_time          = CASE WHEN $18 THEN $19::time ELSE end_time END,
          time_slot         = COALESCE($7, time_slot),
          extra_stations    = COALESCE($8, extra_stations),
          travel_km         = CASE WHEN $9 THEN $10::numeric ELSE travel_km END,
@@ -412,6 +421,7 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
         // A new distance typed by hand gets an estimated driving time, unless one is given too.
         body.travelMinutes !== undefined || (body.travelKm !== undefined && body.travelKm !== before.travelKm),
         body.travelMinutes !== undefined ? body.travelMinutes : body.travelKm == null ? null : estimateTravelMinutes(body.travelKm),
+        body.endTime !== undefined, body.endTime ?? null,
       ],
     );
     await recalculatePrice(app.db, app.config, id);
@@ -423,6 +433,7 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
     if (body.startTime !== undefined && body.startTime !== before.startTime) {
       changes.push(`Starttijd: ${before.startTime ?? '–'} → ${body.startTime ?? '–'}`);
     }
+    if (body.endTime !== undefined && body.endTime !== before.endTime) changes.push(`Eindtijd: ${before.endTime ?? '–'} → ${body.endTime ?? '–'}`);
     if (body.timeSlot && body.timeSlot !== before.timeSlot) changes.push(`Tijdslot: ${before.timeSlot} → ${body.timeSlot}`);
     if (body.extraStations !== undefined && body.extraStations !== before.extraStations) {
       changes.push(`Extra gamestations: ${before.extraStations} → ${body.extraStations}`);

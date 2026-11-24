@@ -108,7 +108,7 @@ export const availabilityRoutes: FastifyPluginAsync = async (app) => {
         `SELECT b.id, b.reference, b.party_date AS "partyDate", b.time_slot AS "timeSlot",
                 to_char(b.start_time, 'HH24:MI') AS "startTime", b.status, b.parent_name AS "parentName",
                 b.child_name AS "childName", b.city, p.name AS "packageName",
-                b.travel_minutes AS "travelMinutes", p.duration_hours::float AS "durationHours",
+                b.travel_minutes AS "travelMinutes", CASE WHEN b.start_time IS NOT NULL AND b.end_time > b.start_time THEN extract(epoch FROM (b.end_time - b.start_time)) / 3600 ELSE p.duration_hours END::float AS "durationHours",
                 (SELECT to_char(ts.start_time, 'HH24:MI') FROM time_slots ts WHERE ts.key = b.time_slot) AS "slotStart"
            FROM bookings b JOIN packages p ON p.id = b.package_id
           WHERE b.party_date BETWEEN $1 AND $2 AND b.status <> 'cancelled'

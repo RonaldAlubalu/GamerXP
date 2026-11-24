@@ -61,6 +61,7 @@ export const STAGE_INFO: Record<Status, StageInfo> = {
     tasks: [
       'Starttijd en gewenste games/thema afgestemd',
       'Alle games geüpdatet (uiterlijk 48 uur vooraf)',
+      'Dag vooraf: consoles en games gecontroleerd op updates',
       'Bus ingeladen: gamestations, extra stations en netwerk',
       'Ultimate: neonverlichting, prijzen en toernooischema mee',
     ],

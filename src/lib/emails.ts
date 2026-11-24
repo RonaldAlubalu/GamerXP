@@ -8,6 +8,8 @@ export interface BookingMailData {
   partyDate: string;
   timeSlot: string;
   startTime: string | null;
+  // An agreed end time, when the party is shorter or longer than its package.
+  endTime?: string | null;
   extraStations: number;
   parentName: string;
   email: string;
@@ -60,7 +62,7 @@ export function statusUrl(publicUrl: string, token: string): string {
 
 function summary(b: BookingMailData): string {
   const when = b.startTime
-    ? `${formatDutchDate(b.partyDate)} om ${b.startTime}`
+    ? `${formatDutchDate(b.partyDate)} ${b.endTime ? `van ${b.startTime} tot ${b.endTime}` : `om ${b.startTime}`}`
     : `${formatDutchDate(b.partyDate)} (${(TIME_SLOT_LABELS[b.timeSlot] ?? b.timeSlot).toLowerCase()})`;
   return [
     `Referentie: ${b.reference}`,

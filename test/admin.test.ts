@@ -71,6 +71,19 @@ describe('admin API', () => {
     expect(detail.events.map((e: { message: string }) => e.message).join(' | ')).toContain('Gegevens gewijzigd: Naam, Tweede e-mail, Tweede telefoon, Postcode, Plaats, Leeftijd');
   });
 
+  it('takes an agreed end time: the party then lasts from start to end, not the package hours', async () => {
+    const booking = await createBooking();
+    expect((await patch(booking.id, { endTime: '19:00' })).json().code).toBe('end_without_start');
+    expect((await patch(booking.id, { startTime: '16:00', endTime: '15:00' })).json().code).toBe('end_before_start');
+    const changed = (await patch(booking.id, { startTime: '16:00', endTime: '19:00' })).json();
+    expect(changed).toMatchObject({ startTime: '16:00', endTime: '19:00', durationHours: 3 });
+    const detail = (await ctx.app.inject({ url: `/api/admin/bookings/${booking.id}`, headers: auth() })).json();
+    expect(detail.schedule).toMatchObject({ start: '16:00', end: '19:00' });
+    const cleared = (await patch(booking.id, { endTime: null })).json();
+    expect(cleared.endTime).toBeNull();
+    expect(cleared.durationHours).toBe(cleared.packageHours);
+  });
+
   it('removes a booking with everything under it, for the owner only', async () => {
     const booking = await createBooking();
     await ctx.app.inject({ method: 'POST', url: `/api/admin/bookings/${booking.id}/payments`, headers: { authorization: `Bearer ${token}` }, payload: { kind: 'deposit', amountCents: 10000, method: 'bank', paidOn: '2026-11-01' } });

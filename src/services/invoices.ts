@@ -196,15 +196,36 @@ export async function syncInvoicePayments(app: FastifyInstance, bookingId?: stri
   for (const invoice of rows) {
     // Only an invoice that is still open needs a question to the bookkeeping.
     const open = invoice.paidCents < invoice.amountCents;
-    const paid = open ? Math.min(await app.bookkeeping.paidCents(invoice.number), invoice.amountCents) : invoice.paidCents;
+    let paid = invoice.paidCents;
+    if (open) {
+      try {
+        paid = Math.min(await app.bookkeeping.paidCents(invoice.number), invoice.amountCents);
+      } catch (err) {
+        // One invoice the bookkeeping cannot answer for must not hold up all the others.
+        if (bookingId) throw err;
+        app.log.warn({ err, invoice: invoice.number }, 'Could not ask the bookkeeping about an invoice');
+      }
+    }
     const news = paid > invoice.paidCents;
     if (news) await app.db.query('UPDATE invoices SET paid_cents = $2 WHERE id = $1', [invoice.id, paid]);
     heard.push({ ...invoice, paid, news });
   }
   let registered = 0;
   for (const invoice of heard) {
+    try {
+      if (await register(invoice)) registered++;
+    } catch (err) {
+      if (bookingId) throw err;
+      app.log.error({ err, invoice: invoice.number }, 'Could not register the payment of an invoice');
+    }
+  }
+  return registered;
+
+  // Registers what came in on one invoice. Returns whether a payment was added.
+  async function register(invoice: (typeof heard)[number]): Promise<boolean> {
+    let registered = 0;
     const { paid, news } = invoice;
-    if (!news && paid <= invoice.registered) continue;
+    if (!news && paid <= invoice.registered) return false;
 
     // Register only what the admin doesn't know yet: a payment noted by hand or paid
     // through the site must not be counted twice.
@@ -226,7 +247,7 @@ export async function syncInvoicePayments(app: FastifyInstance, bookingId?: stri
     }
     if (!news) {
       if (fresh > 0) await addEvent(app.db, invoice.bookingId, { type: 'payment', message: `Factuur ${invoice.number}: ${formatEuro(fresh)} alsnog als betaling geregistreerd`, actor: 'e-Boekhouden' });
-      continue;
+      return registered > 0;
     }
     await addEvent(app.db, invoice.bookingId, {
       type: 'payment',
@@ -248,6 +269,6 @@ export async function syncInvoicePayments(app: FastifyInstance, bookingId?: stri
       if (mail) await sendAndLog(app, { bookingId: invoice.bookingId }, mail, 'e-Boekhouden');
       await app.db.query("UPDATE bookings SET waiting_on = 'me' WHERE id = $1", [invoice.bookingId]);
     }
+    return registered > 0;
   }
-  return registered;
 }

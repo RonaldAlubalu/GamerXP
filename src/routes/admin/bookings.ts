@@ -616,7 +616,10 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
     const body = z
       .object({ kind: z.enum(['deposit', 'final']), number: z.string().trim().min(1).max(40), amountCents: z.number().int().positive().nullable().default(null) })
       .parse(req.body);
-    return reply.status(201).send(await linkInvoice(app, id, body.kind, body.number, body.amountCents, actorOf(req)));
+    await linkInvoice(app, id, body.kind, body.number, body.amountCents, actorOf(req));
+    // An existing invoice may already be (partly) paid: note that right away.
+    await syncInvoicePayments(app, id).catch((err) => req.log.warn({ err }, 'Could not check the payment of a linked invoice'));
+    return reply.status(201).send(await listInvoices(app, id));
   });
 
   // Ask the bookkeeping right now whether this booking's invoices have been paid.

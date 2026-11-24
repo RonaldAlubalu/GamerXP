@@ -150,6 +150,40 @@ describe('linking an invoice that already exists in the bookkeeping', () => {
     expect((await call('POST', `/bookings/${bookingId}/invoices/sync`)).json().registered).toBe(1);
   });
 
+  it('registers a part of an invoice that was paid, and the rest later', async () => {
+    const price = (await call('GET', `/bookings/${bookingId}`)).json().priceCents;
+    await call('POST', `/bookings/${bookingId}/invoices/link`, { kind: 'final', number: 'F00013-2', amountCents: price });
+    ctx.received.set('F00013-2', 10000);
+    expect((await call('POST', `/bookings/${bookingId}/invoices/sync`)).json()).toEqual({ registered: 1 });
+    let detail = (await call('GET', `/bookings/${bookingId}`)).json();
+    expect(detail).toMatchObject({ paidCents: 10000, outstandingCents: price - 10000 });
+    expect(detail.payments).toHaveLength(1);
+
+    ctx.received.set('F00013-2', price);
+    expect((await call('POST', `/bookings/${bookingId}/invoices/sync`)).json()).toEqual({ registered: 1 });
+    detail = (await call('GET', `/bookings/${bookingId}`)).json();
+    expect(detail).toMatchObject({ paidCents: price, outstandingCents: 0 });
+    expect(detail.payments.map((p: { amountCents: number }) => p.amountCents).sort((a: number, b: number) => a - b)).toEqual([10000, price - 10000]);
+  });
+
+  it('still registers the other invoices when the bookkeeping fails on one', async () => {
+    const { syncInvoicePayments } = await import('../src/services/invoices.js');
+    const price = (await call('GET', `/bookings/${bookingId}`)).json().priceCents;
+    await call('POST', `/bookings/${bookingId}/invoices/link`, { kind: 'deposit', number: 'F00013-1' });
+    await call('POST', `/bookings/${bookingId}/invoices/link`, { kind: 'final', number: 'F00013-2', amountCents: price - 10000 });
+    ctx.received.set('F00013-2', 5000);
+    const ask = ctx.app.bookkeeping!.paidCents;
+    ctx.app.bookkeeping!.paidCents = async (number) => {
+      if (number === 'F00013-1') throw new Error('e-Boekhouden is even niet bereikbaar');
+      return ask(number);
+    };
+    // The round every ten minutes goes on with the rest; a look at one booking reports the problem.
+    expect(await syncInvoicePayments(ctx.app)).toBe(1);
+    expect((await call('GET', `/bookings/${bookingId}`)).json().paidCents).toBe(5000);
+    expect((await call('POST', `/bookings/${bookingId}/invoices/sync`)).statusCode).toBe(502);
+    ctx.app.bookkeeping!.paidCents = ask;
+  });
+
   it('counts every paid invoice once, also after unlinking and linking again', async () => {
     const rest = (await call('GET', `/bookings/${bookingId}`)).json().priceCents - 10000;
     // The rest was linked and paid first, then unlinked; its payment stays.

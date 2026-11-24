@@ -1379,19 +1379,36 @@ async function inventoryView() {
   // What runs out within two weeks, across all lists.
   const soon = items.filter((i) => i.expiresOn && i.status !== 'gone' && (new Date(`${i.expiresOn}T00:00:00Z`) - Date.now()) / 864e5 <= 14);
 
-  const importInput = h('input', { type: 'file', accept: '.json,application/json', hidden: true, onchange: async () => {
+  // Reads the file here, in the browser: the file itself does not go to the server, and columns
+  // with passwords are not read at all.
+  const importInput = h('input', { type: 'file', accept: '.xlsx,.csv,.json', hidden: true, onchange: async () => {
     const file = importInput.files[0];
+    importInput.value = '';
     if (!file) return;
     try {
-      const data = JSON.parse(await file.text());
-      const r = await post('/inventory/import', { items: Array.isArray(data) ? data : data.items });
+      const { readInventoryFile, matchExisting } = await import('/admin/inventory-file.js');
+      const found = await readInventoryFile(file);
+      if (!found.items?.length) throw new Error('In dit bestand heb ik geen inventaris gevonden. Gebruik de kolommen uit "Exporteren", of je eigen lijst met een rij per station.');
+      const list = matchExisting(found.items, items);
+      const count = (k) => list.filter((i) => i.kind === k).length;
+      const parts = Object.entries(INV_KINDS).filter(([k]) => count(k)).map(([k, label]) => `${count(k)} ${label.toLowerCase()}`);
+      const note = found.skipped ? `\n\n${found.skipped} kolom(men) met wachtwoorden sla ik over; die horen in een wachtwoordmanager.` : '';
+      if (!confirm(`Gevonden in ${file.name}: ${parts.join(', ')}.${note}\n\nWat al bestaat wordt bijgewerkt, de rest wordt toegevoegd. Doorgaan?`)) return;
+      const r = await post('/inventory/import', { items: list });
       flash('ok', `${r.added} toegevoegd, ${r.updated} bijgewerkt.`);
       await render();
     } catch (err) {
-      flash('error', err instanceof SyntaxError ? 'Dit is geen geldig importbestand.' : err.message);
+      flash('error', err instanceof SyntaxError ? 'Dit bestand kan ik niet lezen.' : err.message);
     }
   } });
+  const exportList = async () => {
+    const { inventoryCsv } = await import('/admin/inventory-file.js');
+    const link = h('a', { href: URL.createObjectURL(new Blob([inventoryCsv(items)], { type: 'text/csv' })), download: 'inventaris.csv' });
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
   setPage('Inventaris',
+    h('button', { class: 'btn', onclick: exportList }, 'Exporteren'),
     h('button', { class: 'btn', onclick: () => importInput.click() }, 'Importeren'),
     h('button', { class: 'btn primary', onclick: () => { invState.editing = 'new'; render(); } }, '+ Toevoegen'));
 
@@ -1478,7 +1495,7 @@ async function inventoryView() {
     h('div', {}, h('strong', {}, i.kind === 'station' ? `Game Pass van ${i.name}` : i.name)), expiryBadge(i.expiresOn)))) : null;
   view.replaceChildren(...[
     importInput, soonCard, tabs, form,
-    card(null, table(headers, list.map((i) => h('tr', {}, cells(i))), 'Nog niets in deze lijst. Voeg iets toe of importeer een bestand.'),
+    card(null, table(headers, list.map((i) => h('tr', {}, cells(i))), 'Nog niets in deze lijst. Voeg iets toe of importeer een Excel- of CSV-bestand.'),
       total > 0 && h('p', { class: 'muted small', style: 'margin-top:10px' },
         kind === 'subscription' ? `Vaste kosten per jaar: ${euro.format(total / 100)}` : `Aankoopwaarde in deze lijst: ${euro.format(total / 100)}`)),
     history,

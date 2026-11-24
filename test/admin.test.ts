@@ -541,3 +541,13 @@ describe('inventory', () => {
     expect(await sendExpiryNotices(ctx.app)).toBe(0);
   });
 });
+
+describe('inventory that comes with the site', () => {
+  it('holds the stations, games and subscriptions, and no account names or passwords', async () => {
+    const sql = (await import('node:fs')).readFileSync('migrations/020_inventory_seed.sql', 'utf8');
+    expect(sql.match(/\('station'/g)).toHaveLength(10);
+    expect(sql.match(/\('game'/g)).toHaveLength(12);
+    expect(sql.match(/\('subscription'/g)).toHaveLength(2);
+    expect(sql).not.toMatch(/password|passwd|wachtwoord|@|gamertag|consoleSerial/i);
+  });
+});

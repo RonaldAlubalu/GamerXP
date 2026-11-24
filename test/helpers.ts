@@ -35,6 +35,8 @@ export async function setupApp(overrides: Partial<Config> = {}, mollie: MollieCl
   await migrate(db, () => {});
   // Open every slot so tests don't depend on the starting schedule.
   await db.query('UPDATE weekly_availability SET open = true');
+  // The owner's own inventory comes with the migrations; tests start with an empty one.
+  await db.query('DELETE FROM inventory_items');
   // Migrations create the real packages: Standaard (€275) and Ultimate (€350).
   const { rows } = await db.query<{ id: number }>("SELECT id FROM packages WHERE slug = 'standaard'");
   const sent: Mail[] = [];
@@ -63,8 +65,8 @@ export async function setupApp(overrides: Partial<Config> = {}, mollie: MollieCl
       paidCents: async (number) => received.get(number) ?? 0,
       // Two invoices that were made in the bookkeeping itself, before the site.
       existingInvoices: async () => [
-        { id: '901', number: 'F00013-2', date: '2026-11-10', customer: 'Tom Binnendijk' },
-        { id: '900', number: 'F00013-1', date: '2026-10-28', customer: 'Tom Binnendijk' },
+        { id: '901', number: 'F00013-2', date: '2026-11-10', customer: 'Jan Jansen' },
+        { id: '900', number: 'F00013-1', date: '2026-10-28', customer: 'Jan Jansen' },
       ],
       findInvoice: async (number) =>
         ({ 'f00013-1': { id: '900', number: 'F00013-1', pdfUrl: 'https://boekhouding.example/900.pdf', amountCents: 10000 },

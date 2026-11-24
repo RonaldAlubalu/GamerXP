@@ -857,30 +857,45 @@ async function bookingDetailView(id) {
   const phoneLinks = (number) => [h('a', { href: `tel:${number.replace(/[^\d+]/g, '')}` }, number), ' · ',
     h('a', { href: `https://wa.me/${number.replace(/\D/g, '').replace(/^0/, '31')}`, target: '_blank', rel: 'noopener' }, 'WhatsApp')];
   const address = [b.street, [b.postalCode, b.city].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+  // The customer's own address, when the party is somewhere else.
+  const billing = [b.billingStreet, [b.billingPostalCode, b.billingCity].filter(Boolean).join(' ')].filter(Boolean).join(', ');
   // Name, contact details and address can be corrected or completed here.
   const contactForm = () => {
     const input = (name, attrs = {}) => h('input', { name, value: b[name] ?? '', ...attrs });
+    const grid = 'grid-template-columns:repeat(auto-fit,minmax(200px,1fr))';
     const form = h('form', { class: 'contact-edit', onsubmit: action(async () => {
       const data = Object.fromEntries(new FormData(form));
       for (const key of ['childAge', 'guestCount']) data[key] = data[key] ? Number(data[key]) : null;
       await patchJson(`/bookings/${id}/contact`, data);
       contactEditing = false;
     }, 'Gegevens opgeslagen.') },
-      h('div', { class: 'row', style: 'grid-template-columns:repeat(auto-fit,minmax(200px,1fr))' },
+      h('h3', {}, 'Klant'),
+      h('div', { class: 'row', style: grid },
         field('Naam ouder of contactpersoon', input('parentName', { required: true, maxlength: 100 })),
         field('E-mail', input('email', { type: 'email' })),
         field('Telefoon', input('phone', { type: 'tel' })),
         field('Tweede e-mail', input('email2', { type: 'email' }), 'Bijvoorbeeld van de andere ouder.'),
-        field('Tweede telefoon', input('phone2', { type: 'tel' })),
+        field('Tweede telefoon', input('phone2', { type: 'tel' }))),
+      h('h3', {}, 'Locatie van het feest'),
+      h('div', { class: 'row', style: grid },
+        field('Naam locatie', input('locationName', { maxlength: 100, placeholder: 'Bijv. Zaal Villa Festa' }), 'Leeg laten bij een feest thuis.'),
         field('Straat en huisnummer', input('street', { maxlength: 200 })),
         field('Postcode', input('postalCode', { placeholder: '1234 AB' })),
-        field('Plaats', input('city', { required: true })),
+        field('Plaats', input('city', { required: true }))),
+      h('p', { class: 'muted small' }, 'Hier rijden we naartoe: bij een andere postcode of plaats worden de afstand en de reiskosten opnieuw berekend.'),
+      h('h3', {}, 'Factuuradres'),
+      h('p', { class: 'muted small' }, 'Het eigen adres van de klant. Alleen invullen als het afwijkt van de locatie; anders gaat de factuur naar het adres hierboven.'),
+      h('div', { class: 'row', style: grid },
+        field('Straat en huisnummer', input('billingStreet', { maxlength: 200 })),
+        field('Postcode', input('billingPostalCode', { placeholder: '1234 AB' })),
+        field('Plaats', input('billingCity', { maxlength: 100 }))),
+      h('h3', {}, 'Feest'),
+      h('div', { class: 'row', style: grid },
         field('Naam jarige', input('childName', { maxlength: 50 })),
         field('Leeftijd', input('childAge', { type: 'number', min: 1, max: 18 })),
         field('Aantal kinderen', input('guestCount', { type: 'number', min: 1, max: 40 })),
         field('Parkeren', h('select', { name: 'parking' }, Object.entries({ '': 'Onbekend', free: 'Gratis', paid: 'Betaald', unknown: 'Weet de klant niet' }).map(([v, l]) => h('option', { value: v, selected: v === b.parking }, l))))),
       field('Details van de klant', h('textarea', { name: 'notes', rows: 3, maxlength: 2000 }, b.notes)),
-      h('p', { class: 'muted small' }, 'Bij een andere postcode of plaats worden de afstand en de reiskosten opnieuw berekend.'),
       h('div', { class: 'inline' },
         h('button', { class: 'btn primary', type: 'submit' }, 'Opslaan'),
         h('button', { class: 'btn', type: 'button', onclick: () => { contactEditing = false; render(); } }, 'Annuleren')));
@@ -895,8 +910,9 @@ async function bookingDetailView(id) {
       b.email2 && h('dt', {}, 'Tweede e-mail'), b.email2 && h('dd', {}, h('a', { href: `mailto:${b.email2}` }, b.email2)),
       h('dt', {}, 'Telefoon'), h('dd', {}, b.phone ? phoneLinks(b.phone) : '–'),
       b.phone2 && h('dt', {}, 'Tweede telefoon'), b.phone2 && h('dd', {}, phoneLinks(b.phone2)),
-      h('dt', {}, 'Adres'), h('dd', {},
-        h('a', { href: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`, target: '_blank', rel: 'noopener' }, address)),
+      h('dt', {}, 'Locatie'), h('dd', {}, b.locationName && [h('strong', {}, b.locationName), h('br')],
+        h('a', { href: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([b.locationName, address].filter(Boolean).join(', '))}`, target: '_blank', rel: 'noopener' }, address)),
+      billing && h('dt', {}, 'Factuuradres'), billing && h('dd', {}, billing),
       h('dt', {}, 'Wanneer'), h('dd', {}, `${fmtLongDate(b.partyDate)}, ${SLOT_LABELS[b.timeSlot].toLowerCase()}${b.startTime ? ` ${b.endTime ? `van ${b.startTime} tot ${b.endTime}` : `om ${b.startTime}`}` : ''}`),
       h('dt', {}, 'Pakket'), h('dd', {}, `${b.packageName}${b.extraStations ? ` + ${b.extraStations} extra station(s)` : ''}`),
       h('dt', {}, 'Jarige'), h('dd', {}, b.childName ? `${b.childName}${b.childAge ? `, wordt ${b.childAge}` : ''}` : '–'),
@@ -1033,7 +1049,7 @@ async function bookingDetailView(id) {
       h('div', { class: 'print-facts' },
         line('Datum', `${fmtDate(b.partyDate)}${b.startTime ? `, ${b.startTime}${b.endTime ? `–${b.endTime}` : ''} uur` : ''}`),
         line('Pakket', `${b.packageName}${b.extraStations ? ` + ${b.extraStations} extra station(s)` : ''}`),
-        line('Adres', [b.street, [b.postalCode, b.city].filter(Boolean).join(' ')].filter(Boolean).join(', ')),
+        line('Locatie', [b.locationName, b.street, [b.postalCode, b.city].filter(Boolean).join(' ')].filter(Boolean).join(', ')),
         line('Telefoon', b.phone),
         line('Jarige', [b.childName, b.childAge && `${b.childAge} jaar`].filter(Boolean).join(', ')),
         line('Kinderen', b.guestCount && String(b.guestCount)),

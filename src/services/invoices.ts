@@ -68,7 +68,11 @@ export async function createInvoice(app: FastifyInstance, bookingId: string, kin
     `SELECT b.id, b.reference, b.status, p.slug, p.name AS "packageName", b.package_price_cents AS "packagePriceCents",
             b.extra_stations AS "extraStations", b.travel_km::float AS "travelKm", b.evening_surcharge AS "eveningSurcharge",
             b.price_extras AS "priceExtras", b.deposit_cents AS "depositCents", b.party_date AS "partyDate", b.child_name AS "childName",
-            b.parent_name AS "parentName", b.email, b.street, b.postal_code AS "postalCode", b.city
+            b.parent_name AS "parentName", b.email,
+            -- The invoice goes to the customer's own address when one is given, else to where the party is.
+            CASE WHEN b.billing_street <> '' OR b.billing_city <> '' THEN b.billing_street ELSE b.street END AS street,
+            CASE WHEN b.billing_street <> '' OR b.billing_city <> '' THEN b.billing_postal_code ELSE b.postal_code END AS "postalCode",
+            CASE WHEN b.billing_street <> '' OR b.billing_city <> '' THEN b.billing_city ELSE b.city END AS city
        FROM bookings b JOIN packages p ON p.id = b.package_id WHERE b.id = $1`,
     [bookingId],
   );

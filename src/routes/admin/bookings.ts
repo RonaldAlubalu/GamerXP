@@ -20,6 +20,7 @@ const BOOKING_COLUMNS = `
   b.party_date AS "partyDate", b.time_slot AS "timeSlot", to_char(b.start_time, 'HH24:MI') AS "startTime", to_char(b.end_time, 'HH24:MI') AS "endTime",
   b.extra_stations AS "extraStations",
   b.parent_name AS "parentName", b.email, b.phone, b.email2, b.phone2, b.street, b.postal_code AS "postalCode", b.city,
+  b.location_name AS "locationName", b.billing_street AS "billingStreet", b.billing_postal_code AS "billingPostalCode", b.billing_city AS "billingCity",
   b.child_name AS "childName", b.child_age AS "childAge", b.guest_count AS "guestCount",
   b.notes, b.parking, b.status, b.admin_notes AS "adminNotes", b.waiting_on AS "waitingOn",
   b.package_price_cents AS "packagePriceCents", b.travel_km::float AS "travelKm", b.travel_minutes AS "travelMinutes",
@@ -316,6 +317,11 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
         street: z.string().trim().max(200),
         postalCode: z.union([shape.postalCode, z.literal('')]),
         city: shape.city,
+        // Where the party is can have a name (a hall), and the invoice can go to another address.
+        locationName: z.string().trim().max(100),
+        billingStreet: z.string().trim().max(200),
+        billingPostalCode: z.union([shape.postalCode, z.literal('')]),
+        billingCity: z.string().trim().max(100),
         childName: shape.childName,
         childAge: z.number().int().min(1).max(18).nullable(),
         guestCount: z.number().int().min(1).max(40).nullable(),
@@ -328,10 +334,12 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
     const before = (await loadBooking(id)) as unknown as Record<Key, unknown>;
     const columns: Record<Key, string> = {
       parentName: 'parent_name', email: 'email', email2: 'email2', phone: 'phone', phone2: 'phone2', street: 'street', postalCode: 'postal_code',
+      locationName: 'location_name', billingStreet: 'billing_street', billingPostalCode: 'billing_postal_code', billingCity: 'billing_city',
       city: 'city', childName: 'child_name', childAge: 'child_age', guestCount: 'guest_count', parking: 'parking', notes: 'notes',
     };
     const labels: Record<Key, string> = {
       parentName: 'Naam', email: 'E-mail', email2: 'Tweede e-mail', phone: 'Telefoon', phone2: 'Tweede telefoon', street: 'Straat', postalCode: 'Postcode',
+      locationName: 'Naam locatie', billingStreet: 'Factuuradres straat', billingPostalCode: 'Factuuradres postcode', billingCity: 'Factuuradres plaats',
       city: 'Plaats', childName: 'Jarige', childAge: 'Leeftijd', guestCount: 'Aantal kinderen', parking: 'Parkeren', notes: 'Details',
     };
     // Only what was actually sent: a field left out keeps its value (some have an empty default).

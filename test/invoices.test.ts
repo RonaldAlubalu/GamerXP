@@ -29,6 +29,15 @@ describe('invoices in the bookkeeping', () => {
     expect(sent!.lines).toEqual([{ description: 'Ultimate Xperience - Aanbetaling', quantity: 1, priceCents: 10000, productCode: 'GE262' }]);
   });
 
+  it('sends the invoice to the customer\'s own address when the party is somewhere else', async () => {
+    await call('PATCH', `/bookings/${id}/contact`, { locationName: 'Zaal De Hoek', billingStreet: 'Thuisstraat 9', billingPostalCode: '5611 AA', billingCity: 'Eindhoven' });
+    await call('POST', `/bookings/${id}/invoices`, { kind: 'deposit' });
+    expect(ctx.invoiced[0]!.customer).toMatchObject({ street: 'Thuisstraat 9', postalCode: '5611 AA', city: 'Eindhoven' });
+    const detail = (await call('GET', `/bookings/${id}`)).json();
+    expect(detail).toMatchObject({ locationName: 'Zaal De Hoek', billingCity: 'Eindhoven' });
+    expect(detail.city).not.toBe('');
+  });
+
   it('makes the final invoice with every price line minus the invoiced deposit', async () => {
     await call('POST', `/bookings/${id}/invoices`, { kind: 'deposit' });
     await call('PATCH', `/bookings/${id}`, { priceExtras: [{ label: 'Parkeerkosten', amountCents: 1500 }] });

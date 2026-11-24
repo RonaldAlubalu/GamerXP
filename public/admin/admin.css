@@ -476,3 +476,6 @@ tr.picked > td { background: color-mix(in srgb, var(--primary, #2563eb) 9%, tran
   .print-lines { height: 90pt; background: repeating-linear-gradient(transparent 0 21pt, #999 21pt 22pt); }
   @page { margin: 14mm; }
 }
+
+.contact-edit h3 { margin: 18px 0 8px; font-size: .95rem; }
+.contact-edit h3:first-child { margin-top: 0; }

@@ -109,7 +109,7 @@ describe('linking an invoice that already exists in the bookkeeping', () => {
   let ctx: TestContext;
   let token: string;
   let bookingId: string;
-  const call = (method: 'GET' | 'POST', url: string, payload?: object) =>
+  const call = (method: 'GET' | 'POST' | 'DELETE', url: string, payload?: object) =>
     ctx.app.inject({ method, url: `/api/admin${url}`, headers: { authorization: `Bearer ${token}` }, payload });
 
   beforeEach(async () => {
@@ -139,5 +139,29 @@ describe('linking an invoice that already exists in the bookkeeping', () => {
 
     ctx.received.set('F00013-1', 10000);
     expect((await call('POST', `/bookings/${bookingId}/invoices/sync`)).json().registered).toBe(1);
+  });
+
+  it('counts every paid invoice once, also after unlinking and linking again', async () => {
+    const rest = (await call('GET', `/bookings/${bookingId}`)).json().priceCents - 10000;
+    // The rest was linked and paid first, then unlinked; its payment stays.
+    await call('POST', `/bookings/${bookingId}/invoices/link`, { kind: 'final', number: 'F00013-2', amountCents: rest });
+    ctx.received.set('F00013-2', rest);
+    ctx.received.set('F00013-1', 10000);
+    await call('POST', `/bookings/${bookingId}/invoices/sync`);
+    await call('DELETE', `/bookings/${bookingId}/invoices/final`);
+
+    // The deposit invoice is linked while the booking already holds more than that.
+    await call('POST', `/bookings/${bookingId}/invoices/link`, { kind: 'deposit', number: 'F00013-1' });
+    await call('POST', `/bookings/${bookingId}/invoices/sync`);
+    await call('POST', `/bookings/${bookingId}/invoices/link`, { kind: 'final', number: 'F00013-2', amountCents: rest });
+    await call('POST', `/bookings/${bookingId}/invoices/sync`);
+
+    const detail = (await call('GET', `/bookings/${bookingId}`)).json();
+    expect(detail.invoices.map((i: { paidCents: number }) => i.paidCents).sort((a: number, b: number) => a - b)).toEqual([10000, rest]);
+    expect(detail.paidCents).toBe(rest + 10000);
+    expect(detail.payments.map((p: { amountCents: number; note: string }) => `${p.amountCents} ${p.note}`).sort()).toEqual(['10000 Factuur F00013-1 betaald', `${rest} Factuur F00013-2 betaald`]);
+    // And nothing more on a later look.
+    expect((await call('POST', `/bookings/${bookingId}/invoices/sync`)).json()).toEqual({ registered: 0 });
+    expect((await call('GET', `/bookings/${bookingId}`)).json().paidCents).toBe(rest + 10000);
   });
 });

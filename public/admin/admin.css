@@ -445,3 +445,22 @@ tr.picked > td { background: color-mix(in srgb, var(--primary, #2563eb) 9%, tran
   .card-table tr.picked > td { background: none; }
   .bulk-bar select, .bulk-bar input[type=date] { flex: 1 1 140px; }
 }
+
+/* The checklist on paper: only the sheet, black on white. */
+.print-sheet { display: none; }
+@media print {
+  body > *:not(.print-sheet) { display: none !important; }
+  body { background: #fff !important; }
+  .print-sheet { display: block; color: #000; font: 11pt/1.4 system-ui, sans-serif; padding: 0; }
+  .print-sheet h1 { font-size: 18pt; margin: 0 0 8pt; }
+  .print-sheet h1 small { font-weight: 400; font-size: 11pt; color: #444; }
+  .print-sheet h2 { font-size: 11pt; margin: 12pt 0 4pt; padding-bottom: 2pt; border-bottom: 1px solid #000; break-after: avoid; }
+  .print-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 2pt 18pt; padding: 6pt 8pt; border: 1px solid #000; }
+  .print-facts div { display: flex; gap: 6pt; }
+  .print-facts span { flex: none; width: 82pt; color: #444; }
+  .print-sheet section { break-inside: avoid; }
+  .print-task { display: flex; gap: 8pt; align-items: flex-start; padding: 2.5pt 0; }
+  .print-box { flex: none; width: 11pt; height: 11pt; border: 1px solid #000; font-size: 9pt; line-height: 10pt; text-align: center; margin-top: 1.5pt; }
+  .print-lines { height: 90pt; background: repeating-linear-gradient(transparent 0 21pt, #999 21pt 22pt); }
+  @page { margin: 14mm; }
+}

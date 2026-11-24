@@ -175,35 +175,54 @@ export async function linkInvoice(app: FastifyInstance, bookingId: string, kind:
 // QR code on the invoice. Returns how many payments were registered.
 export async function syncInvoicePayments(app: FastifyInstance, bookingId?: string): Promise<number> {
   if (!app.bookkeeping) return 0;
-  const { rows } = await app.db.query<{ id: number; bookingId: string; kind: InvoiceKind; number: string; amountCents: number; paidCents: number }>(
-    `SELECT i.id, i.booking_id AS "bookingId", i.kind, i.number, i.amount_cents AS "amountCents", i.paid_cents AS "paidCents"
+  // Open invoices, plus paid ones whose money was never registered here (that happens when the
+  // booking already seemed paid at the time, e.g. through a payment that was removed later).
+  const { rows } = await app.db.query<{ id: number; bookingId: string; kind: InvoiceKind; number: string; amountCents: number; paidCents: number; registered: number }>(
+    `SELECT i.id, i.booking_id AS "bookingId", i.kind, i.number, i.amount_cents AS "amountCents", i.paid_cents AS "paidCents",
+            coalesce((SELECT sum(p.amount_cents) FROM payments p WHERE p.booking_id = i.booking_id AND p.invoice_number = i.number), 0)::int AS registered
        FROM invoices i JOIN bookings b ON b.id = i.booking_id
-      WHERE i.paid_cents < i.amount_cents AND b.status <> 'cancelled' AND ($1::uuid IS NULL OR i.booking_id = $1)`,
+      WHERE b.status <> 'cancelled' AND ($1::uuid IS NULL OR i.booking_id = $1)
+        AND (i.paid_cents < i.amount_cents OR b.paid_cents < b.price_cents)
+      ORDER BY i.kind = 'deposit' DESC, i.id`,
     [bookingId ?? null],
   );
-  let registered = 0;
+  // First hear what has come in on every open invoice, then register: that way the order of a
+  // booking's invoices does not matter.
+  const heard: ((typeof rows)[number] & { paid: number; news: boolean })[] = [];
   for (const invoice of rows) {
-    const paid = Math.min(await app.bookkeeping.paidCents(invoice.number), invoice.amountCents);
-    if (paid <= invoice.paidCents) continue;
-    await app.db.query('UPDATE invoices SET paid_cents = $2 WHERE id = $1', [invoice.id, paid]);
+    // Only an invoice that is still open needs a question to the bookkeeping.
+    const open = invoice.paidCents < invoice.amountCents;
+    const paid = open ? Math.min(await app.bookkeeping.paidCents(invoice.number), invoice.amountCents) : invoice.paidCents;
+    const news = paid > invoice.paidCents;
+    if (news) await app.db.query('UPDATE invoices SET paid_cents = $2 WHERE id = $1', [invoice.id, paid]);
+    heard.push({ ...invoice, paid, news });
+  }
+  let registered = 0;
+  for (const invoice of heard) {
+    const { paid, news } = invoice;
+    if (!news && paid <= invoice.registered) continue;
 
     // Register only what the admin doesn't know yet: a payment noted by hand or paid
     // through the site must not be counted twice.
-    const totals = await app.db.query<{ invoiced: number; known: number; status: string; deposit: number }>(
+    const totals = await app.db.query<{ invoiced: number; known: number; status: string; deposit: number; price: number }>(
       `SELECT (SELECT coalesce(sum(paid_cents), 0)::int FROM invoices WHERE booking_id = b.id) AS invoiced,
-              b.paid_cents AS known, b.status, b.deposit_cents AS deposit FROM bookings b WHERE b.id = $1`,
+              b.paid_cents AS known, b.status, b.deposit_cents AS deposit, b.price_cents AS price FROM bookings b WHERE b.id = $1`,
       [invoice.bookingId],
     );
-    const { invoiced, known, status, deposit } = totals.rows[0]!;
-    const fresh = Math.min(paid - invoice.paidCents, Math.max(0, invoiced - known));
+    const { invoiced, known, status, deposit, price } = totals.rows[0]!;
+    const fresh = Math.min(paid - invoice.registered, Math.max(0, invoiced - known), Math.max(0, price - known));
     if (fresh > 0) {
       await app.db.query(
-        `INSERT INTO payments (booking_id, kind, amount_cents, method, paid_on, note, actor)
-         VALUES ($1, $2, $3, 'bank', $4, $5, 'e-Boekhouden')`,
-        [invoice.bookingId, invoice.kind === 'deposit' ? 'deposit' : 'payment', fresh, today(app.config.TIMEZONE), `Factuur ${invoice.number} betaald`],
+        `INSERT INTO payments (booking_id, kind, amount_cents, method, paid_on, note, actor, invoice_number)
+         VALUES ($1, $2, $3, 'bank', $4, $5, 'e-Boekhouden', $6)`,
+        [invoice.bookingId, invoice.kind === 'deposit' ? 'deposit' : 'payment', fresh, today(app.config.TIMEZONE), `Factuur ${invoice.number} betaald`, invoice.number],
       );
       await recalculatePaid(app.db, invoice.bookingId);
       registered++;
+    }
+    if (!news) {
+      if (fresh > 0) await addEvent(app.db, invoice.bookingId, { type: 'payment', message: `Factuur ${invoice.number}: ${formatEuro(fresh)} alsnog als betaling geregistreerd`, actor: 'e-Boekhouden' });
+      continue;
     }
     await addEvent(app.db, invoice.bookingId, {
       type: 'payment',

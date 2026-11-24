@@ -933,17 +933,44 @@ async function bookingDetailView(id) {
     h('select', { name: 'stage', style: 'width:auto' }, STAGES.map((s) => h('option', { value: s, selected: s === b.status }, STATUS_LABELS[s]))),
     h('input', { name: 'label', required: true, maxlength: 200, placeholder: 'Nieuwe taak…', style: 'flex:1;width:auto' }),
     h('button', { class: 'btn', type: 'submit' }, 'Toevoegen'));
-  const checklist = card(cardHead('Checklist', h('span', { class: 'muted' }, `${b.tasksDone}/${b.tasksTotal}`)),
+  if (taskGroups.id !== id) taskGroups = { id, open: {} };
+  // A sheet for on paper: the party's details and every task with a box to tick.
+  const printChecklist = () => {
+    const line = (label, value) => value && h('div', {}, h('span', {}, label), h('strong', {}, value));
+    const sheet = h('div', { class: 'print-sheet' },
+      h('h1', {}, `Checklist ${b.parentName}`, h('small', {}, ` ${b.reference}`)),
+      h('div', { class: 'print-facts' },
+        line('Datum', `${fmtDate(b.partyDate)}${b.startTime ? `, ${b.startTime} uur` : ''}`),
+        line('Pakket', `${b.packageName}${b.extraStations ? ` + ${b.extraStations} extra station(s)` : ''}`),
+        line('Adres', [b.street, [b.postalCode, b.city].filter(Boolean).join(' ')].filter(Boolean).join(', ')),
+        line('Telefoon', b.phone),
+        line('Jarige', [b.childName, b.childAge && `${b.childAge} jaar`].filter(Boolean).join(', ')),
+        line('Kinderen', b.guestCount && String(b.guestCount)),
+        line('Parkeren', b.parking),
+        line('Opmerking klant', b.notes),
+        line('Eigen notitie', b.adminNotes)),
+      tasksByStage.map((g) => h('section', {},
+        h('h2', {}, STATUS_LABELS[g.stage]),
+        g.tasks.map((t) => h('div', { class: 'print-task' }, h('span', { class: `print-box ${t.done ? 'done' : ''}` }, t.done ? '✓' : ''), h('span', {}, t.label))))),
+      h('section', {}, h('h2', {}, 'Notities'), h('div', { class: 'print-lines' })));
+    document.body.append(sheet);
+    window.addEventListener('afterprint', () => sheet.remove(), { once: true });
+    window.print();
+  };
+  const checklist = card(cardHead('Checklist', h('span', { class: 'muted' }, `${b.tasksDone}/${b.tasksTotal}`), h('button', { class: 'btn small', type: 'button', onclick: printChecklist }, 'Afdrukken')),
     progressBar(b.tasksDone, b.tasksTotal),
     tasksByStage.map((g) => {
       const done = g.tasks.filter((t) => t.done).length;
       // The stage the booking is in stays open; the others fold away.
-      return h('details', { class: `task-group ${g.stage === b.status ? 'active' : ''}`, open: g.stage === b.status },
+      // ... until one is opened or closed by hand: that choice stays while working in this booking.
+      const group = h('details', { class: `task-group ${g.stage === b.status ? 'active' : ''}`, open: taskGroups.open[g.stage] ?? g.stage === b.status,
+        ontoggle: () => { taskGroups.open[g.stage] = group.open; } },
         h('summary', {}, STATUS_LABELS[g.stage], h('span', { class: 'muted small' }, ` ${done}/${g.tasks.length}`)),
         g.tasks.map((t) => h('label', { class: `task ${t.done ? 'is-done' : ''}` },
           h('input', { type: 'checkbox', checked: t.done, onchange: action(() => patchJson(`/bookings/${id}/tasks/${t.id}`, { done: !t.done })) }),
           h('span', {}, t.label),
           t.doneAt && h('small', {}, fmtDateTime(t.doneAt)))));
+      return group;
     }),
     newTask);
 
@@ -1368,6 +1395,8 @@ const INV_FIELDS = {
   other: [['category', 'Soort'], ['serial', 'Serienummer']],
   subscription: [['provider', 'Bij wie'], ['period', 'Betaling', SUB_PERIOD], ['autoRenew', 'Verlengt automatisch', 'check']],
 };
+// Which checklist groups were opened or closed by hand, for the booking being looked at.
+let taskGroups = { id: null, open: {} };
 let invState = { kind: 'station', editing: null, selected: new Set() };
 
 async function inventoryView() {

@@ -579,13 +579,14 @@ body:has(#booking-form) .wa-float, body:has(#status-view) .wa-float { display: n
 @media (max-width: 640px) { body.cta-visible .site-footer { padding-bottom: 84px; } }
 .video-split .prose h2 { font-size: clamp(1.8rem, 3.4vw, 2.6rem); }
 
-/* Phone, home page: the photo is shorter and the spacing tighter, so the button to the packages
-   under the first text is on the first screen. */
+/* Phone, home page: the title sits high in the photo, right under the logo. That leaves room
+   to breathe below it and keeps the packages button under the first text on the first screen. */
 @media (max-width: 640px) {
-  main > .hero:first-child { padding-top: 104px; padding-bottom: 22px; }
-  main > .hero:first-child .stats { margin-top: 14px; }
-  main > .hero:first-child + .section { padding-top: 44px; }
-  .intro-block h2 { margin-bottom: 10px; }
-  .intro-block > p { margin-block: 0 12px; }
+  body:has(main > .hero:first-child):has(.intro-block) main > .hero:first-child { padding-top: calc(var(--header-h) + 20px); padding-bottom: 40px; }
+  body:has(.intro-block) main > .hero:first-child .stats { margin-top: 18px; }
+  body:has(.intro-block) main > .hero:first-child + .section { padding-top: 56px; }
+  .intro-block h2 { margin-bottom: 14px; }
+  .intro-block > p { margin-block: 0 14px; }
+}
 }
 }

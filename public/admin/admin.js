@@ -135,10 +135,12 @@ const waitingBadge = (w) => badge(WAITING[w]?.label ?? w, WAITING[w]?.tone);
 const progressBar = (done, total) =>
   h('div', { class: 'progress', title: `${done} van ${total} taken klaar` },
     h('div', { class: 'progress-fill', style: `width: ${total ? Math.round((done / total) * 100) : 0}%` }));
-const table = (headers, rows, empty = 'Niets gevonden.') =>
-  rows.length
-    ? h('div', { class: 'table-wrap' }, h('table', {}, h('thead', {}, h('tr', {}, headers.map((t) => h('th', {}, t)))), h('tbody', {}, rows)))
-    : h('p', { class: 'empty' }, empty);
+// Every cell knows its column name, so on a phone a row can be shown as a card with labels.
+const table = (headers, rows, empty = 'Niets gevonden.') => {
+  if (!rows.length) return h('p', { class: 'empty' }, empty);
+  for (const row of rows) [...(row?.children ?? [])].forEach((cell, i) => (cell.dataset.label = headers[i] ?? ''));
+  return h('div', { class: 'table-wrap card-table' }, h('table', {}, h('thead', {}, h('tr', {}, headers.map((t) => h('th', {}, t)))), h('tbody', {}, rows)));
+};
 const field = (label, input, hint) => h('div', { class: 'field' }, h('label', {}, label), input, hint && h('small', {}, hint));
 const card = (title, ...children) =>
   h('section', { class: 'card' },
@@ -777,7 +779,7 @@ async function bookingDetailView(id) {
 
   const stepper = h('ol', { class: 'stepper' },
     STAGES.map((s, i) => h('li', { class: b.status === 'cancelled' ? 'todo' : i < current ? 'done' : i === current ? 'current' : 'todo' },
-      h('button', { type: 'button', disabled: s === b.status, onclick: action(() => moveBooking(id, s)) },
+      h('button', { type: 'button', disabled: s === b.status, 'aria-label': STATUS_LABELS[s], title: STATUS_LABELS[s], onclick: action(() => moveBooking(id, s)) },
         h('span', { class: 'dot' }, i < current && b.status !== 'cancelled' ? '✓' : i + 1), h('span', {}, STATUS_LABELS[s])))));
 
   // Customer and party.
@@ -1009,6 +1011,7 @@ async function bookingDetailView(id) {
       panels[i].hidden = k !== key;
       tabButtons[i].classList.toggle('on', k === key);
     });
+    tabButtons[TABS.findIndex(([k]) => k === key)]?.scrollIntoView({ inline: 'center', block: 'nearest' });
   }
 
   // What to do next, depending on the stage.
@@ -1036,7 +1039,7 @@ async function bookingDetailView(id) {
 
   view.replaceChildren(
     head,
-    card(null, stepper),
+    card(null, stepper, h('p', { class: 'stepper-caption' }, b.status === 'cancelled' ? 'Geannuleerd' : `Stap ${current + 1} van ${STAGES.length}: `, b.status !== 'cancelled' && h('strong', {}, STATUS_LABELS[b.status]), h('span', { class: 'muted' }, ' · tik op een stap om te verplaatsen'))),
     ...(next ? [next] : []),
     h('div', { class: 'tabs page-tabs' }, tabButtons),
     ...panels,

@@ -368,3 +368,62 @@ pre.codes { background: var(--surface-2); border: 1px solid var(--border); borde
 
 /* Gear of a party: a list of tick boxes in columns. */
 .gear-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px 14px; }
+
+/* Phone --------------------------------------------------------------------------
+   One hand, one thumb: the title on one line, actions and tabs in a row you can swipe,
+   the steps as dots, and fields large enough to tap without the screen zooming in. */
+.stepper-caption { display: none; }
+@media (max-width: 700px) {
+  .topbar { flex-wrap: wrap; row-gap: 8px; padding: 10px 12px; }
+  .topbar h1 { flex: 1; min-width: 0; font-size: 1.02rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .menu-btn { width: 40px; height: 40px; margin-left: -6px; }
+  .topbar-actions { order: 3; flex-basis: 100%; margin-left: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+  .topbar-actions::-webkit-scrollbar, .tabs::-webkit-scrollbar { display: none; }
+  .topbar-actions:empty { display: none; }
+  .topbar-actions .btn { flex: none; white-space: nowrap; }
+  .content { padding: 12px 12px 56px; }
+  .card { padding: 14px; }
+
+  /* Tabs: one row that scrolls sideways instead of wrapping. */
+  .tabs, .page-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; gap: 0; }
+  .tabs button, .page-tabs button { flex: none; white-space: nowrap; padding: 11px 12px; font-size: .95rem; }
+  .page-tabs { margin: 14px -12px 12px; padding-inline: 12px; }
+
+  /* Steps: dots only, with the current step named underneath. */
+  .stepper { overflow: visible; }
+  .stepper li { min-width: 0; }
+  .stepper button { min-height: 44px; padding: 0; justify-content: center; }
+  .stepper button > span:not(.dot) { display: none; }
+  .stepper li + li::before { top: 21px; }
+  .stepper-caption { display: block; margin: 8px 0 0; font-size: .9rem; text-align: center; }
+
+  /* Easy to tap; 16px text keeps iOS from zooming in on a field. */
+  input, select, textarea { font-size: 16px; }
+  .btn { min-height: 40px; }
+  .btn.small { min-height: 36px; }
+  .field input, .field select, .field textarea { min-height: 44px; }
+  .inline { flex-wrap: wrap; }
+  dl.details { grid-template-columns: 1fr; gap: 0 0; }
+  dl.details dt { margin-top: 8px; font-size: .8rem; }
+  .toast { left: 12px; right: 12px; bottom: 12px; text-align: center; }
+}
+
+/* Phone: a table row becomes a card, each value with its column name in front. */
+@media (max-width: 700px) {
+  .card-table { border: 0; background: none; overflow: visible; }
+  .card-table table, .card-table tbody { display: block; }
+  .card-table thead { display: none; }
+  .card-table tr { display: block; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
+  .card-table td { display: flex; justify-content: space-between; align-items: baseline; gap: 14px; padding: 3px 0; border: 0; text-align: right; }
+  .card-table td::before { content: attr(data-label); flex: none; color: var(--muted); font-size: .8rem; text-align: left; }
+  .card-table td[data-label=""]::before { display: none; }
+  .card-table td:first-child { text-align: left; font-size: 1.02rem; padding-bottom: 6px; }
+  .card-table td:first-child::before { display: none; }
+  .card-table td:empty { display: none; }
+  .card-table td.inline { justify-content: flex-start; padding-top: 8px; }
+  /* Filters: two per row, the search field full width. */
+  .toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .toolbar .field { min-width: 0; }
+  .toolbar .field:first-child { grid-column: 1 / -1; }
+  .toolbar .field input, .toolbar .field select { width: 100%; }
+}

@@ -78,23 +78,33 @@ if (header) {
 // appears once the visitor scrolls past the first screen.
 const stickyCta = document.querySelector('.sticky-cta');
 if (stickyCta && !/^\/(reserveer|status|betalen)/.test(location.pathname)) {
-  const showCta = (visible) => {
+  // The bar shows once the visitor is past the first screen, and steps aside whenever a green
+  // button of the page itself is in view: one call to action at a time.
+  let past = false;
+  const inView = new Set();
+  const update = () => {
+    const visible = past && inView.size === 0;
     stickyCta.classList.toggle('show', visible);
     stickyCta.tabIndex = visible ? 0 : -1;
     document.body.classList.toggle('cta-visible', visible);
   };
   stickyCta.hidden = false;
-  showCta(false);
-  const firstButton = document.querySelector('.intro-action .btn');
-  if (firstButton && 'IntersectionObserver' in window) {
-    // The top margin stands for the header the button slides under.
-    new IntersectionObserver(([entry]) => showCta(!entry.isIntersecting && entry.boundingClientRect.top < 100), { rootMargin: '-76px 0px 0px 0px' })
-      .observe(firstButton);
-  } else {
-    const toggleCta = () => showCta(scrollY >= 220);
-    addEventListener('scroll', toggleCta, { passive: true });
-    toggleCta();
+  update();
+  if ('IntersectionObserver' in window) {
+    const buttons = new IntersectionObserver((entries) => {
+      for (const entry of entries) entry.isIntersecting ? inView.add(entry.target) : inView.delete(entry.target);
+      update();
+    }, { rootMargin: '-76px 0px 0px 0px' });
+    for (const button of document.querySelectorAll('main .btn:not(.secondary)')) buttons.observe(button);
   }
+  const firstButton = document.querySelector('.intro-action .btn');
+  const track = () => {
+    // On the home page the bar takes over when the first green button has scrolled away.
+    past = firstButton ? firstButton.getBoundingClientRect().bottom < 76 : scrollY >= 220;
+    update();
+  };
+  addEventListener('scroll', track, { passive: true });
+  track();
 }
 
 // The Google score opens a panel with reviews. Without JavaScript the link goes to the reviews page.

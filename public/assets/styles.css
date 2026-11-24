@@ -306,7 +306,9 @@ legend { font-family: var(--font-head); font-weight: 600; color: var(--cyan); pa
   .steps-bar li { flex-direction: column; text-align: center; font-size: .78rem; padding: 8px 4px; gap: 4px; }
   .sticky-cta:not([hidden]) {
     display: block; position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 40; text-align: center;
-    background: var(--green); color: var(--bg); font: 700 1.05rem var(--font-head); padding: 14px; border-radius: 999px;
+    /* Dark with a green edge: present, but quieter than the green buttons in the page. */
+    background: rgba(7, 11, 31, .94); color: var(--green); border: 2px solid var(--green);
+    font: 700 1rem var(--font-head); padding: 11px; border-radius: 999px;
     text-decoration: none; box-shadow: 0 8px 30px rgba(0, 0, 0, .55);
     /* Slides in from below and fades, instead of popping up. */
     opacity: 0; transform: translateY(140%) scale(.92); pointer-events: none;

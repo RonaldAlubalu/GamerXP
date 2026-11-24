@@ -118,3 +118,20 @@ describe('a test address stays out of search engines', () => {
     expect(file.headers['x-robots-tag']).toBe('noindex, nofollow');
   });
 });
+
+describe('stylesheets', () => {
+  // One stray "}" silently switches off the rule that follows it.
+  it('have balanced braces', async () => {
+    const { readFile } = await import('node:fs/promises');
+    for (const file of ['assets/styles.css', 'admin/admin.css']) {
+      const css = (await readFile(path.join(PUBLIC_DIR, file), 'utf8')).replace(/\/\*[\s\S]*?\*\//g, '');
+      let depth = 0;
+      for (const ch of css) {
+        if (ch === '{') depth++;
+        if (ch === '}') depth--;
+        expect(depth, `${file}: a "}" without a "{"`).toBeGreaterThanOrEqual(0);
+      }
+      expect(depth, `${file}: a "{" is never closed`).toBe(0);
+    }
+  });
+});

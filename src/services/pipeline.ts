@@ -38,7 +38,7 @@ export const STAGE_INFO: Record<Status, StageInfo> = {
     tasks: [
       'Reiskosten berekend (€0,50 per km retour vanaf Eindhoven, max. €100)',
       'Avondtoeslag nodig? (€50 bij eindtijd na 19:30)',
-      'Ruimte besproken: grote tafel en stopcontacten',
+      'Ruimte besproken: grote tafel, stopcontacten en internet (klant regelt internet)',
     ],
   },
   confirmed: {

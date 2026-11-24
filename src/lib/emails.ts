@@ -183,7 +183,7 @@ export function reminderText(b: BookingMailData): string {
     : `We zijn er in de ${(TIME_SLOT_LABELS[b.timeSlot] ?? b.timeSlot).toLowerCase()} en komen ruim op tijd om alles op te bouwen.`;
   return (
     `Hoi ${b.parentName.split(' ')[0]}! Morgen is het zover: ${party} 🎮 ${time} ` +
-    `Zorg je voor een vrije tafel en een stopcontact in de buurt? We kijken ernaar uit!\n\nGroetjes, Ronald – Gamer Xperience`
+    `Zorg je voor een vrije tafel, een stopcontact in de buurt en werkend internet? We kijken ernaar uit!\n\nGroetjes, Ronald – Gamer Xperience`
   );
 }
 

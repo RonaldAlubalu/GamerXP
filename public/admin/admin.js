@@ -866,6 +866,17 @@ async function bookingDetailView(id) {
   const contactForm = () => {
     const input = (name, attrs = {}) => h('input', { name, value: b[name] ?? '', ...attrs });
     const grid = 'grid-template-columns:repeat(auto-fit,minmax(200px,1fr))';
+    const hasBilling = Boolean(b.billingStreet || b.billingPostalCode || b.billingCity);
+    const billingFields = h('div', { hidden: !hasBilling },
+      h('p', { class: 'muted small' }, 'Het eigen adres van de klant, voor de factuur.'),
+      h('div', { class: 'row', style: grid },
+        field('Straat en huisnummer', input('billingStreet', { maxlength: 200 })),
+        field('Postcode', input('billingPostalCode', { placeholder: '1234 AB' })),
+        field('Plaats', input('billingCity', { maxlength: 100 }))));
+    const sameAddress = h('input', { type: 'checkbox', checked: !hasBilling, onchange: () => {
+      billingFields.hidden = sameAddress.checked;
+      if (sameAddress.checked) for (const el of billingFields.querySelectorAll('input')) el.value = '';
+    } });
     const form = h('form', { class: 'contact-edit', onsubmit: action(async () => {
       const data = Object.fromEntries(new FormData(form));
       for (const key of ['childAge', 'guestCount']) data[key] = data[key] ? Number(data[key]) : null;
@@ -887,11 +898,9 @@ async function bookingDetailView(id) {
         field('Plaats', input('city', { required: true }))),
       h('p', { class: 'muted small' }, 'Hier rijden we naartoe: bij een andere postcode of plaats worden de afstand en de reiskosten opnieuw berekend.'),
       h('h3', {}, 'Factuuradres'),
-      h('p', { class: 'muted small' }, 'Het eigen adres van de klant. Alleen invullen als het afwijkt van de locatie; anders gaat de factuur naar het adres hierboven.'),
-      h('div', { class: 'row', style: grid },
-        field('Straat en huisnummer', input('billingStreet', { maxlength: 200 })),
-        field('Postcode', input('billingPostalCode', { placeholder: '1234 AB' })),
-        field('Plaats', input('billingCity', { maxlength: 100 }))),
+      // Ticked: the invoice goes to the address above and there is nothing to type.
+      h('label', { class: 'check' }, sameAddress, ' Factuuradres is gelijk aan de locatie van het feest'),
+      billingFields,
       h('h3', {}, 'Feest'),
       h('div', { class: 'row', style: grid },
         field('Naam jarige', input('childName', { maxlength: 50 })),

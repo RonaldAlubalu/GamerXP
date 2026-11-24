@@ -47,7 +47,7 @@ services:
       GATRA_DOMAIN: ${GATRA_DOMAIN:-gatra.37-97-128-88.sslip.io}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./gatra-site/public:/srv/gatra:ro
+      - /srv/gatra/public:/srv/gatra:ro
       - caddy-data:/data
       - caddy-config:/config
     depends_on:

@@ -14,8 +14,9 @@ www.{$DOMAIN} {
 	redir https://{$DOMAIN}{uri} temporary
 }
 
-# A second, separate site on the same server: plain pages from the folder gatra-site/public next to
-# this one. Its files come from their own repository (RonaldAlubalu/GatraNL), not from this one.
+# A second, separate site on the same server: plain pages from /srv/gatra/public on the server
+# (read-only in this container). Its files come from a deploy of their own repository
+# (RonaldAlubalu/GatraNL), not from this one.
 # For now on a test address, kept out of search engines.
 {$GATRA_DOMAIN:gatra.localhost} {
 	encode zstd gzip

@@ -135,6 +135,14 @@ if [ -n "${SITE_DOMAIN:-}" ] && [ "$SITE_DOMAIN" != "$CURRENT" ]; then
   set_env EXTRA_DOMAINS "$SITE_DOMAIN, www.$SITE_DOMAIN"
 fi
 
+# The second site on this server (Gatra) is served from /srv/gatra/public. Its own repository puts
+# the files there; the first time, the copy that used to travel with this site is moved over, so
+# its test address keeps working.
+mkdir -p /srv/gatra/public
+if [ -z "$(ls -A /srv/gatra/public)" ] && [ -d "$DIR/gatra-site/public" ]; then
+  cp -a "$DIR/gatra-site/public/." /srv/gatra/public/
+fi
+
 if [ "${APP_IMAGE_LOADED:-}" = 1 ]; then
   echo "==> Starting the site with the version built by the deploy"
   docker compose up -d --no-build

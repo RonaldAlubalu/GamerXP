@@ -83,6 +83,7 @@ export const STAGE_INFO: Record<Status, StageInfo> = {
       'Restbedrag ontvangen (overboeking of contant)',
       'Standaard: borg terugbetaald',
       'Bedankmail en Google-reviewverzoek verstuurd',
+      'Social post gemaakt (alleen met toestemming van de ouders)',
     ],
   },
   cancelled: {

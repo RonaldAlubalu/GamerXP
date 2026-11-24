@@ -298,7 +298,10 @@ async function newBookingView() {
       field('Extra gamestations', select('extraStations', { 0: 'Geen', 1: '1 extra', 2: '2 extra' })),
       field('Parkeren', select('parking', { '': 'Onbekend', free: 'Gratis', paid: 'Betaald' }))),
     h('label', { class: 'check' }, h('input', { type: 'checkbox', name: 'decoration' }), ' Decoratie erbij (alleen bij Standaard een meerprijs)'),
-    h('label', { class: 'check', id: 'review-choice', hidden: true }, h('input', { type: 'checkbox', name: 'askReview', checked: true }), ' Deze klant automatisch om een Google-review vragen (per e-mail)'),
+    h('div', { id: 'review-choice', class: 'next-step', style: 'display:none' },
+      h('strong', {}, 'Dit feest is al geweest. Nog te doen:'),
+      h('label', { class: 'check', style: 'display:flex;margin-top:8px' }, h('input', { type: 'checkbox', name: 'askReview', checked: true }), ' Om een Google-review vragen (de klant krijgt automatisch een e-mail)'),
+      h('p', { class: 'muted small', style: 'margin:6px 0 0' }, 'Op de checklist van de boeking blijven "reviewverzoek verstuurd" en "social post gemaakt" open staan tot je ze afvinkt.')),
     field('Afspraken en bijzonderheden', h('textarea', { name: 'notes', rows: 3, maxlength: 2000 })),
     h('button', { class: 'btn primary', type: 'submit' }, 'Boeking toevoegen'));
   form.addEventListener('submit', async (e) => {
@@ -324,7 +327,7 @@ async function newBookingView() {
     }
   });
   form.elements.status.addEventListener('change', (e) => {
-    form.querySelector('#review-choice').hidden = !['party_held', 'completed'].includes(e.target.value);
+    form.querySelector('#review-choice').style.display = ['party_held', 'completed'].includes(e.target.value) ? 'block' : 'none';
   });
   view.replaceChildren(form);
 }

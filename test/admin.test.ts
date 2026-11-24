@@ -56,6 +56,21 @@ describe('admin API', () => {
     expect(detail.events).toEqual([expect.objectContaining({ type: 'created', toStatus: 'new', actor: 'Sanne de Vries' })]);
   });
 
+  it('lets the customer details be corrected and completed, with a second phone and e-mail', async () => {
+    const booking = await createBooking();
+    const change = (payload: object) => ctx.app.inject({ method: 'PATCH', url: `/api/admin/bookings/${booking.id}/contact`, headers: auth(), payload });
+    const res = await change({ email2: 'andere.ouder@example.com', phone2: '06 87654321', parentName: 'Nieuwe Naam', city: 'Helmond', postalCode: '5701 AB', childAge: 10 });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ email2: 'andere.ouder@example.com', phone2: '06 87654321', parentName: 'Nieuwe Naam', city: 'Helmond', postalCode: '5701 AB', childAge: 10, email: booking.email });
+    // The distance is looked up again for the new address.
+    expect(res.json().travelKm).toBe(30);
+    expect((await change({ email2: 'geen-adres' })).statusCode).toBe(400);
+    const cleared = (await change({ email: '' })).json();
+    expect(cleared).toMatchObject({ email: '', phone: booking.phone, phone2: '06 87654321' });
+    const detail = (await ctx.app.inject({ url: `/api/admin/bookings/${booking.id}`, headers: auth() })).json();
+    expect(detail.events.map((e: { message: string }) => e.message).join(' | ')).toContain('Gegevens gewijzigd: Naam, Tweede e-mail, Tweede telefoon, Postcode, Plaats, Leeftijd');
+  });
+
   it('removes a booking with everything under it, for the owner only', async () => {
     const booking = await createBooking();
     await ctx.app.inject({ method: 'POST', url: `/api/admin/bookings/${booking.id}/payments`, headers: { authorization: `Bearer ${token}` }, payload: { kind: 'deposit', amountCents: 10000, method: 'bank', paidOn: '2026-11-01' } });

@@ -852,16 +852,49 @@ async function bookingDetailView(id) {
     field('Reistijd enkele reis (min)', h('input', { type: 'number', name: 'travelMinutes', min: 0, max: 600, value: b.travelMinutes ?? '', style: 'width:110px' })),
     h('button', { class: 'btn', type: 'submit' }, 'Opslaan'));
   const phoneDigits = b.phone.replace(/\D/g, '').replace(/^0/, '31');
-  const customer = card('Klant en feest',
-    h('dl', { class: 'details' },
+  const phoneLinks = (number) => [h('a', { href: `tel:${number.replace(/[^\d+]/g, '')}` }, number), ' · ',
+    h('a', { href: `https://wa.me/${number.replace(/\D/g, '').replace(/^0/, '31')}`, target: '_blank', rel: 'noopener' }, 'WhatsApp')];
+  const address = [b.street, [b.postalCode, b.city].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+  // Name, contact details and address can be corrected or completed here.
+  const contactForm = () => {
+    const input = (name, attrs = {}) => h('input', { name, value: b[name] ?? '', ...attrs });
+    const form = h('form', { class: 'contact-edit', onsubmit: action(async () => {
+      const data = Object.fromEntries(new FormData(form));
+      for (const key of ['childAge', 'guestCount']) data[key] = data[key] ? Number(data[key]) : null;
+      await patchJson(`/bookings/${id}/contact`, data);
+      contactEditing = false;
+    }, 'Gegevens opgeslagen.') },
+      h('div', { class: 'row', style: 'grid-template-columns:repeat(auto-fit,minmax(200px,1fr))' },
+        field('Naam ouder of contactpersoon', input('parentName', { required: true, maxlength: 100 })),
+        field('E-mail', input('email', { type: 'email' })),
+        field('Telefoon', input('phone', { type: 'tel' })),
+        field('Tweede e-mail', input('email2', { type: 'email' }), 'Bijvoorbeeld van de andere ouder.'),
+        field('Tweede telefoon', input('phone2', { type: 'tel' })),
+        field('Straat en huisnummer', input('street', { maxlength: 200 })),
+        field('Postcode', input('postalCode', { placeholder: '1234 AB' })),
+        field('Plaats', input('city', { required: true })),
+        field('Naam jarige', input('childName', { maxlength: 50 })),
+        field('Leeftijd', input('childAge', { type: 'number', min: 1, max: 18 })),
+        field('Aantal kinderen', input('guestCount', { type: 'number', min: 1, max: 40 })),
+        field('Parkeren', h('select', { name: 'parking' }, Object.entries({ '': 'Onbekend', free: 'Gratis', paid: 'Betaald', unknown: 'Weet de klant niet' }).map(([v, l]) => h('option', { value: v, selected: v === b.parking }, l))))),
+      field('Details van de klant', h('textarea', { name: 'notes', rows: 3, maxlength: 2000 }, b.notes)),
+      h('p', { class: 'muted small' }, 'Bij een andere postcode of plaats worden de afstand en de reiskosten opnieuw berekend.'),
+      h('div', { class: 'inline' },
+        h('button', { class: 'btn primary', type: 'submit' }, 'Opslaan'),
+        h('button', { class: 'btn', type: 'button', onclick: () => { contactEditing = false; render(); } }, 'Annuleren')));
+    return form;
+  };
+  if (contactEditingFor !== id) { contactEditing = false; contactEditingFor = id; }
+  const customer = card(cardHead('Klant en feest', me.role === 'owner' && !contactEditing && h('button', { class: 'btn small', type: 'button', onclick: () => { contactEditing = true; render(); } }, 'Wijzigen')),
+    contactEditing ? contactForm() : null,
+    h('dl', { class: 'details', hidden: contactEditing },
       h('dt', {}, 'Klant'), h('dd', {}, b.parentName),
-      h('dt', {}, 'E-mail'), h('dd', {}, h('a', { href: `mailto:${b.email}` }, b.email)),
-      h('dt', {}, 'Telefoon'), h('dd', {}, b.phone
-        ? [h('a', { href: `tel:${b.phone.replace(/[^\d+]/g, '')}` }, b.phone), ' · ', h('a', { href: `https://wa.me/${phoneDigits}`, target: '_blank', rel: 'noopener' }, 'WhatsApp')]
-        : '–'),
+      h('dt', {}, 'E-mail'), h('dd', {}, b.email ? h('a', { href: `mailto:${b.email}` }, b.email) : '– (nog toevoegen via Wijzigen)'),
+      b.email2 && h('dt', {}, 'Tweede e-mail'), b.email2 && h('dd', {}, h('a', { href: `mailto:${b.email2}` }, b.email2)),
+      h('dt', {}, 'Telefoon'), h('dd', {}, b.phone ? phoneLinks(b.phone) : '–'),
+      b.phone2 && h('dt', {}, 'Tweede telefoon'), b.phone2 && h('dd', {}, phoneLinks(b.phone2)),
       h('dt', {}, 'Adres'), h('dd', {},
-        h('a', { href: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${b.street}, ${b.postalCode} ${b.city}`)}`, target: '_blank', rel: 'noopener' },
-          `${b.street}, ${b.postalCode} ${b.city}`)),
+        h('a', { href: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`, target: '_blank', rel: 'noopener' }, address)),
       h('dt', {}, 'Wanneer'), h('dd', {}, `${fmtLongDate(b.partyDate)}, ${SLOT_LABELS[b.timeSlot].toLowerCase()}${b.startTime ? ` om ${b.startTime}` : ''}`),
       h('dt', {}, 'Pakket'), h('dd', {}, `${b.packageName}${b.extraStations ? ` + ${b.extraStations} extra station(s)` : ''}`),
       h('dt', {}, 'Jarige'), h('dd', {}, b.childName ? `${b.childName}${b.childAge ? `, wordt ${b.childAge}` : ''}` : '–'),
@@ -1451,6 +1484,9 @@ const INV_FIELDS = {
   other: [['category', 'Soort'], ['serial', 'Serienummer']],
   subscription: [['provider', 'Bij wie'], ['period', 'Betaling', SUB_PERIOD], ['autoRenew', 'Verlengt automatisch', 'check']],
 };
+// Whether the customer's details are being edited, and for which booking.
+let contactEditing = false;
+let contactEditingFor = null;
 // Which checklist groups were opened or closed by hand, for the booking being looked at.
 let taskGroups = { id: null, open: {} };
 let invState = { kind: 'station', editing: null, selected: new Set() };

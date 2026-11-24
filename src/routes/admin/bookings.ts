@@ -19,7 +19,7 @@ const BOOKING_COLUMNS = `
   b.id, b.reference, b.package_id AS "packageId", p.name AS "packageName",
   b.party_date AS "partyDate", b.time_slot AS "timeSlot", to_char(b.start_time, 'HH24:MI') AS "startTime",
   b.extra_stations AS "extraStations",
-  b.parent_name AS "parentName", b.email, b.phone, b.street, b.postal_code AS "postalCode", b.city,
+  b.parent_name AS "parentName", b.email, b.phone, b.email2, b.phone2, b.street, b.postal_code AS "postalCode", b.city,
   b.child_name AS "childName", b.child_age AS "childAge", b.guest_count AS "guestCount",
   b.notes, b.parking, b.status, b.admin_notes AS "adminNotes", b.waiting_on AS "waitingOn",
   b.package_price_cents AS "packagePriceCents", b.travel_km::float AS "travelKm", b.travel_minutes AS "travelMinutes",
@@ -296,6 +296,64 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
     const { id } = idParam.parse(req.params);
     await assertExists(id);
     await syncOpenPayments(app, id);
+    return loadBooking(id);
+  });
+
+  // Who the customer is and where the party is: corrected or completed later, e.g. an e-mail
+  // address that was not known yet, or the other parent's phone number.
+  app.patch('/bookings/:id/contact', async (req) => {
+    const { id } = idParam.parse(req.params);
+    const shape = bookingRequest.shape;
+    const body = z
+      .object({
+        parentName: shape.parentName,
+        email: z.union([shape.email, z.literal('')]),
+        email2: z.union([shape.email, z.literal('')]),
+        phone: shape.phone,
+        phone2: shape.phone,
+        street: z.string().trim().max(200),
+        postalCode: z.union([shape.postalCode, z.literal('')]),
+        city: shape.city,
+        childName: shape.childName,
+        childAge: z.number().int().min(1).max(18).nullable(),
+        guestCount: z.number().int().min(1).max(40).nullable(),
+        parking: shape.parking,
+        notes: shape.notes,
+      })
+      .partial()
+      .parse(req.body);
+    type Key = keyof typeof body;
+    const before = (await loadBooking(id)) as unknown as Record<Key, unknown>;
+    const columns: Record<Key, string> = {
+      parentName: 'parent_name', email: 'email', email2: 'email2', phone: 'phone', phone2: 'phone2', street: 'street', postalCode: 'postal_code',
+      city: 'city', childName: 'child_name', childAge: 'child_age', guestCount: 'guest_count', parking: 'parking', notes: 'notes',
+    };
+    const labels: Record<Key, string> = {
+      parentName: 'Naam', email: 'E-mail', email2: 'Tweede e-mail', phone: 'Telefoon', phone2: 'Tweede telefoon', street: 'Straat', postalCode: 'Postcode',
+      city: 'Plaats', childName: 'Jarige', childAge: 'Leeftijd', guestCount: 'Aantal kinderen', parking: 'Parkeren', notes: 'Details',
+    };
+    // Only what was actually sent: a field left out keeps its value (some have an empty default).
+    const sent = new Set(Object.keys((req.body as object) ?? {}));
+    const changed = (Object.keys(body) as Key[]).filter((key) => sent.has(key) && body[key] !== undefined && body[key] !== before[key]);
+    if (!changed.length) return loadBooking(id);
+    await app.db.query(
+      `UPDATE bookings SET ${changed.map((key, i) => `${columns[key]} = $${i + 2}`).join(', ')}, updated_at = now() WHERE id = $1`,
+      [id, ...changed.map((key) => body[key])],
+    );
+    // Another address means another distance, and with it other travel costs.
+    if (changed.includes('postalCode') || changed.includes('city')) {
+      const postalCode = String(body.postalCode ?? before.postalCode ?? '');
+      const city = String(body.city ?? before.city ?? '');
+      await app.db.query('UPDATE bookings SET travel_km = NULL, travel_minutes = NULL WHERE id = $1', [id]);
+      const lookup = app.distance.drivingKm(postalCode, city).then(async (km) => {
+        if (km === null) return;
+        const minutes = app.distance.drivingMinutes?.(postalCode, city) ?? estimateTravelMinutes(km);
+        await app.db.query('UPDATE bookings SET travel_km = $2, travel_minutes = $3 WHERE id = $1', [id, km, minutes]);
+      });
+      await Promise.race([lookup, new Promise((r) => setTimeout(r, 4000))]).catch((err) => req.log.warn({ err }, 'Travel distance lookup failed'));
+      await recalculatePrice(app.db, app.config, id);
+    }
+    await addEvent(app.db, id, { type: 'update', message: `Gegevens gewijzigd: ${changed.map((key) => labels[key]).join(', ')}`, actor: actorOf(req) });
     return loadBooking(id);
   });
 

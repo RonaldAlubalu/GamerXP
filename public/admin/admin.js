@@ -849,7 +849,8 @@ async function bookingDetailView(id) {
     field('Datum', h('input', { type: 'date', name: 'partyDate', value: b.partyDate, required: true })),
     field('Dagdeel', h('select', { name: 'timeSlot' }, Object.entries(SLOT_LABELS).map(([k, l]) => h('option', { value: k, selected: k === b.timeSlot }, l)))),
     field('Starttijd', h('input', { type: 'time', name: 'startTime', value: b.startTime ?? '' })),
-    field('Eindtijd', h('input', { type: 'time', name: 'endTime', value: b.endTime ?? '' }), `Leeg = ${String(b.packageHours ?? '').replace('.', ',') || 'de'} uur van het pakket`),
+    // The explanation sits in the label, so the fields stay on one line.
+    field(b.packageHours ? `Eindtijd (leeg = ${String(b.packageHours).replace('.', ',')} uur)` : 'Eindtijd', h('input', { type: 'time', name: 'endTime', value: b.endTime ?? '', title: 'Leeg laten: dan geldt de duur van het pakket' })),
     field('Reistijd enkele reis (min)', h('input', { type: 'number', name: 'travelMinutes', min: 0, max: 600, value: b.travelMinutes ?? '', style: 'width:110px' })),
     h('button', { class: 'btn', type: 'submit' }, 'Opslaan'));
   const phoneDigits = b.phone.replace(/\D/g, '').replace(/^0/, '31');

@@ -1249,6 +1249,11 @@ async function bookingDetailView(id) {
   );
 }
 
+// Berichten has two sides: what customers send in, and a mailing going out to many at once.
+const messageTabs = (current) => h('div', { class: 'tabs page-tabs' },
+  h('button', { type: 'button', class: current === 'inbox' ? 'on' : '', onclick: () => { location.hash = '#/messages'; } }, 'Berichten van klanten'),
+  h('button', { type: 'button', class: current === 'mailing' ? 'on' : '', onclick: () => { location.hash = '#/mailing'; } }, 'Mailing versturen'));
+
 async function messagesView(selectedId) {
   const [messages, me, selected] = await Promise.all([
     api('/messages'), api('/me'), selectedId ? api(`/messages/${selectedId}`) : null,
@@ -1291,7 +1296,7 @@ async function messagesView(selectedId) {
         messageThread(selected.communications))
     : card(null, h('p', { class: 'empty' }, 'Kies een bericht om te lezen en te beantwoorden.'));
 
-  view.replaceChildren(h('div', { class: 'inbox' }, list, detail));
+  view.replaceChildren(...[me.role === 'owner' && messageTabs('inbox'), h('div', { class: 'inbox' }, list, detail)].filter(Boolean));
 }
 
 async function reviewsView() {
@@ -1981,7 +1986,7 @@ async function mailingView() {
   // The discount the personal links are for: by default the first personal one that is switched on.
   const linkCodes = codes.filter((c) => c.active);
   if (mailingDraft.discountCodeId === undefined) mailingDraft.discountCodeId = linkCodes.find((c) => c.personal)?.id ?? null;
-  setPage('Mailing');
+  setPage('Berichten');
   const active = contacts.filter((c) => !c.unsubscribedAt);
   const running = mailings.find((m) => !m.finishedAt);
 
@@ -2050,7 +2055,7 @@ async function mailingView() {
       h('td', { class: 'nowrap' }, fmtDateTime(m.createdAt)), h('td', {}, m.subject), h('td', {}, String(m.sent)), h('td', {}, String(m.failed)),
       h('td', {}, m.finishedAt ? badge('Klaar', 'success') : badge(`Bezig, nog ${m.queued}`, 'warning'))))));
 
-  view.replaceChildren(...[listCard, form, history].filter(Boolean));
+  view.replaceChildren(...[messageTabs('mailing'), listCard, form, history].filter(Boolean));
   // While a mailing is going out, show the progress.
   if (running) setTimeout(() => { if (location.hash.startsWith('#/mailing')) render(); }, 5000);
 }
@@ -2167,7 +2172,7 @@ async function render() {
   const ownerOnly = ['messages', 'reviews', 'packages', 'users', 'system'];
   if (assistant && ownerOnly.includes(parts[0])) parts[0] = 'board';
   for (const a of document.querySelectorAll('.side-nav a')) {
-    a.classList.toggle('active', a.dataset.route === parts[0] || (a.dataset.route === 'list' && parts[0] === 'bookings'));
+    a.classList.toggle('active', a.dataset.route === parts[0] || (a.dataset.route === 'list' && parts[0] === 'bookings') || (a.dataset.route === 'messages' && parts[0] === 'mailing'));
   }
   updateCounts();
   try {

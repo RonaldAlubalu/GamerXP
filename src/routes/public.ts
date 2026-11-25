@@ -125,6 +125,22 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
   );
 
   // Parent-facing progress page. Only shows what the parent needs: no address or contact details.
+  // The way out of the mailings: the link at the bottom of every mailing leads here.
+  app.post(
+    '/unsubscribe',
+    { config: { rateLimit: { max: 20, timeWindow: '10 minutes' } } },
+    async (req) => {
+      const { token } = z.object({ token: z.string().min(10).max(100) }).parse(req.body);
+      const { rows } = await app.db.query<{ email: string }>(
+        'UPDATE mail_contacts SET unsubscribed_at = COALESCE(unsubscribed_at, now()) WHERE token = $1 RETURNING email',
+        [token],
+      );
+      if (!rows[0]) throw new HttpError(404, 'Deze afmeldlink kennen we niet (meer).', 'not_found');
+      // Enough of the address to recognise it, not all of it.
+      return { email: rows[0].email.replace(/^(.).*(@.*)$/, '$1…$2') };
+    },
+  );
+
   // The PDF of one invoice, for the customer who has the status link. Fetched from the bookkeeping
   // here, so the customer gets it from this site.
   app.get(

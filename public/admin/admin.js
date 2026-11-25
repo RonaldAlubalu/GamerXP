@@ -1919,6 +1919,100 @@ function twoFactorCard() {
   return box;
 }
 
+// Mailing ----------------------------------------------------------------------
+
+// Names and addresses out of pasted text or the rows of a file: one person per line, as
+// "Naam <adres>", "Naam; adres", "adres; Naam" or just an address.
+function contactsFrom(lines) {
+  const found = [];
+  for (const line of lines) {
+    const cells = (Array.isArray(line) ? line : String(line).split(/[;,\t<>]/)).map((c) => String(c ?? '').trim()).filter(Boolean);
+    const email = cells.find((c) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c));
+    if (!email) continue;
+    found.push({ email, name: cells.filter((c) => c !== email && !c.includes('@')).join(' ').slice(0, 100) });
+  }
+  return found;
+}
+
+let mailingDraft = {
+  subject: 'Bedankt voor 2026, en een cadeautje voor 2027 🎮',
+  body: 'Hoi {voornaam},\n\nDit jaar mocht ik bij jullie een gamefeestje verzorgen. Dank je wel daarvoor; het was een mooi jaar, mede dankzij jullie.\n\nAls bedankje krijg je 10% korting op een gamefeestje in 2027. Noem bij het reserveren de code NIEUWJAAR10.\n\nFijne feestdagen en een goed nieuwjaar!\n\nGroetjes, Ronald – Gamer Xperience',
+};
+
+async function mailingView() {
+  const [contacts, mailings] = await Promise.all([api('/mailing/contacts'), api('/mailings')]);
+  setPage('Mailing');
+  const active = contacts.filter((c) => !c.unsubscribedAt);
+  const running = mailings.find((m) => !m.finishedAt);
+
+  const added = (r) => `${r.added} toegevoegd${r.known ? `, ${r.known} stonden er al` : ''}${r.invalid?.length ? `. Niet herkend als adres: ${r.invalid.slice(0, 5).join(', ')}` : ''}.`;
+  const addContacts = async (list) => {
+    if (!list.length) throw new Error('Ik vind hier geen e-mailadressen in.');
+    flash('ok', added(await post('/mailing/contacts', { contacts: list })));
+  };
+  const paste = h('textarea', { rows: 4, placeholder: 'Eén per regel, bijvoorbeeld:\nJan Jansen <jan@voorbeeld.nl>\nPiet de Vries; piet@voorbeeld.nl' });
+  const fileInput = h('input', { type: 'file', accept: '.xlsx,.csv,.txt', hidden: true, onchange: action(async () => {
+    const file = fileInput.files[0];
+    fileInput.value = '';
+    if (!file) return false;
+    const { readRows } = await import('/admin/inventory-file.js');
+    await addContacts(contactsFrom(await readRows(file)));
+  }) });
+  const year = new Date().getFullYear();
+  const listCard = card(cardHead('Wie krijgt de mailing', h('span', { class: 'muted' }, `${active.length} ${active.length === 1 ? 'adres' : 'adressen'}`)),
+    h('p', { class: 'muted' }, 'Voeg hier iedereen toe die je wilt bedanken, ook klanten zonder boeking of factuur in de admin. Een adres komt er maar één keer in.'),
+    field('Namen en adressen plakken', paste),
+    h('div', { class: 'inline', style: 'margin-bottom:14px' },
+      h('button', { class: 'btn primary', type: 'button', onclick: action(() => addContacts(contactsFrom(paste.value.split(/\n/)))) }, 'Toevoegen'),
+      fileInput,
+      h('button', { class: 'btn', type: 'button', onclick: () => fileInput.click() }, 'Excel of CSV inladen'),
+      h('button', { class: 'btn', type: 'button', onclick: action(async () => { flash('ok', added(await post('/mailing/contacts/from-bookings', { year }))); }) }, `Klanten uit boekingen van ${year}`)),
+    table(['Naam', 'E-mail', 'Herkomst', 'Status', ''], contacts.map((c) => h('tr', {},
+      h('td', {}, c.name || h('span', { class: 'muted' }, 'geen naam')),
+      h('td', {}, c.email),
+      h('td', {}, c.note || (c.bookings ? `${c.bookings} boeking(en)` : 'Zelf toegevoegd')),
+      h('td', {}, c.unsubscribedAt ? badge('Afgemeld', 'danger') : badge('Krijgt mail', 'success')),
+      h('td', { class: 'inline' },
+        h('button', { class: 'btn small', onclick: action(async () => {
+          const name = prompt(`Naam voor ${c.email}:`, c.name);
+          if (name === null) return false;
+          await patchJson(`/mailing/contacts/${c.id}`, { name });
+        }) }, 'Naam'),
+        h('button', { class: 'btn small', onclick: action(() => patchJson(`/mailing/contacts/${c.id}`, { subscribed: Boolean(c.unsubscribedAt) })) }, c.unsubscribedAt ? 'Weer aanmelden' : 'Afmelden'),
+        h('button', { class: 'btn small danger', onclick: action(() => (confirm(`${c.email} van de lijst halen?`) ? del(`/mailing/contacts/${c.id}`) : false)) }, '✕')))),
+      'Nog niemand op de lijst.'));
+
+  const form = h('form', { class: 'card', onsubmit: (e) => e.preventDefault() },
+    h('h2', {}, 'Bericht'),
+    field('Onderwerp', h('input', { name: 'subject', required: true, maxlength: 200, value: mailingDraft.subject })),
+    field('Tekst', h('textarea', { name: 'body', rows: 12, required: true }, mailingDraft.body),
+      '{voornaam} wordt per klant ingevuld. Onder elke mail komt vanzelf een afmeldlink.'),
+    h('div', { class: 'inline' },
+      h('button', { class: 'btn', type: 'button', onclick: action(async () => {
+        keep();
+        const r = await post('/mailings/test', mailingDraft);
+        flash('ok', `Testmail verstuurd naar ${r.to}. Kijk hoe hij eruitziet voordat je verstuurt.`);
+        return false;
+      }) }, 'Testmail naar mezelf'),
+      h('button', { class: 'btn primary', type: 'button', disabled: Boolean(running) || !active.length, onclick: action(async () => {
+        keep();
+        if (!confirm(`Deze mail versturen naar ${active.length} ${active.length === 1 ? 'adres' : 'adressen'}?\n\nOnderwerp: ${mailingDraft.subject}\n\nDit kan niet worden teruggedraaid.`)) return false;
+        const r = await post('/mailings', mailingDraft);
+        flash('ok', `De mailing gaat de deur uit naar ${r.recipients} adressen. Dat duurt een paar minuten.`);
+      }) }, running ? 'Er wordt al verstuurd…' : `Versturen naar ${active.length} ${active.length === 1 ? 'adres' : 'adressen'}`)));
+  const keep = () => { mailingDraft = { subject: form.elements.subject.value, body: form.elements.body.value }; };
+  form.addEventListener('input', keep);
+
+  const history = mailings.length > 0 && card('Verstuurd',
+    table(['Wanneer', 'Onderwerp', 'Verstuurd', 'Mislukt', 'Status'], mailings.map((m) => h('tr', {},
+      h('td', { class: 'nowrap' }, fmtDateTime(m.createdAt)), h('td', {}, m.subject), h('td', {}, String(m.sent)), h('td', {}, String(m.failed)),
+      h('td', {}, m.finishedAt ? badge('Klaar', 'success') : badge(`Bezig, nog ${m.queued}`, 'warning'))))));
+
+  view.replaceChildren(...[listCard, form, history].filter(Boolean));
+  // While a mailing is going out, show the progress.
+  if (running) setTimeout(() => { if (location.hash.startsWith('#/mailing')) render(); }, 5000);
+}
+
 // Name and photo: shown instead of the e-mail address wherever it says who did something.
 function profileCard() {
   let avatar; // undefined = unchanged, '' = removed, else the new picture
@@ -2044,6 +2138,7 @@ async function render() {
     else if (parts[0] === 'availability') await availabilityView();
     else if (parts[0] === 'packages') await packagesView();
     else if (parts[0] === 'inventory') await inventoryView();
+    else if (parts[0] === 'mailing') await mailingView();
     else if (parts[0] === 'users') await usersView();
     else if (parts[0] === 'system') await systemView();
     else if (parts[0] === 'account') await accountView();

@@ -18,6 +18,7 @@ import { publicRoutes } from './routes/public.js';
 import { adminRoutes } from './routes/admin/index.js';
 import { createBookkeeping, type Bookkeeping } from './services/bookkeeping.js';
 import { syncInvoicePayments } from './services/invoices.js';
+import { resumeMailings } from './routes/admin/mailings.js';
 import { createPushSender, type PushSender } from './services/push.js';
 import { sendDueReviewRequests } from './services/reviews.js';
 import { checkSystem, type SystemStatus } from './services/status.js';
@@ -121,6 +122,8 @@ export async function buildApp({ config, db, mailer, distance, mollie, mailSourc
         .catch((err) => app.log.error({ err }, 'System check failed'));
     const timer = setInterval(refresh, 10 * 60_000);
     app.addHook('onReady', async () => void refresh());
+    // A mailing that a restart cut off goes on where it stopped.
+    app.addHook('onReady', async () => void resumeMailings(app).catch((err) => app.log.error({ err }, 'Could not resume a mailing')));
     app.addHook('onClose', async () => clearInterval(timer));
   }
 

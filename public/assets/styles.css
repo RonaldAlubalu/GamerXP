@@ -646,3 +646,12 @@ body:has(#booking-form) .chat-button, body:has(#status-view) .chat-button { disp
 .invoice-row.paid strong { color: var(--muted); }
 .invoice-row .btn { flex: none; }
 @media (max-width: 640px) { .invoice-row .btn { width: 100%; text-align: center; } }
+
+/* The reviews page: every review in full, in columns that fill up evenly. */
+.reviews-score { margin: 14px 0 0; font-family: var(--font-head); }
+.reviews-score .stars { color: #ffc93c; letter-spacing: 1px; }
+.reviews-intro { max-width: 56ch; margin: 0 auto 28px; }
+.reviews-wall { columns: 3 300px; column-gap: 18px; margin-bottom: 30px; }
+.reviews-wall .review { break-inside: avoid; margin: 0 0 18px; padding: 22px; gap: 12px; min-height: 0; width: auto; }
+.reviews-wall .review p { text-align: left; font-size: 1rem; }
+.reviews-wall .review footer { text-align: left; }

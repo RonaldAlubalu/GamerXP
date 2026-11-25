@@ -203,7 +203,7 @@ export const mailingRoutes: FastifyPluginAsync = async (app) => {
   // one by one after that.
   app.post('/mailings', async (req, reply) => {
     // Without contactIds everyone on the list gets it; with them only the people ticked.
-    const body = message.extend({ contactIds: z.array(z.number().int().positive()).min(1).max(5000).optional() }).parse(req.body);
+    const body = message.extend({ contactIds: z.array(z.coerce.number().int().positive()).min(1).max(5000).optional() }).parse(req.body);
     checkLink(body);
     const busy = await app.db.query('SELECT 1 FROM mailings WHERE finished_at IS NULL');
     if (busy.rowCount) throw new HttpError(409, 'Er wordt nog een mailing verstuurd. Wacht tot die klaar is.', 'busy');

@@ -232,6 +232,15 @@ describe('admin API', () => {
     expect([hit.json().length, miss.json().length]).toEqual([1, 0]);
   });
 
+  it('can list only the bookings that are still running', async () => {
+    const booking = await createBooking();
+    const open = () => ctx.app.inject({ url: '/api/admin/bookings?status=open', headers: auth() });
+    expect((await open()).json()).toHaveLength(1);
+    await patch(booking.id, { status: 'completed', notifyCustomer: false });
+    expect((await open()).json()).toHaveLength(0);
+    expect((await ctx.app.inject({ url: '/api/admin/bookings', headers: auth() })).json()).toHaveLength(1);
+  });
+
   it('returns 404 for unknown bookings and 400 for bad ids', async () => {
     const unknown = await ctx.app.inject({
       url: '/api/admin/bookings/00000000-0000-4000-8000-000000000000',

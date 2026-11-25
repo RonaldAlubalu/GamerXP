@@ -448,6 +448,10 @@ async function listView() {
   const params = new URLSearchParams(location.hash.split('?')[1] || '');
   const keys = ['status', 'from', 'q', 'waitingOn', 'payment', 'review'];
   const query = new URLSearchParams(keys.filter((k) => params.get(k)).map((k) => [k, params.get(k)]));
+  // Without a choice the list shows what is still running; finished and cancelled parties stay
+  // out of the way. Searching, or a filter on payment or review, looks through everything.
+  const phase = params.get('status') ?? (params.get('q') || params.get('payment') || params.get('review') ? 'all' : 'open');
+  if (phase === 'all') query.delete('status'); else query.set('status', phase);
   const bookings = await api(`/bookings?${query}`);
   // Several bookings at once, from a spreadsheet or .csv file that is read here in the browser.
   const importInput = h('input', { type: 'file', accept: '.xlsx,.csv', hidden: true, onchange: async () => {
@@ -518,7 +522,8 @@ async function listView() {
   view.replaceChildren(
     h('div', { class: 'toolbar' },
       field('Zoeken', h('input', { type: 'search', value: params.get('q') ?? '', placeholder: 'Naam, referentie, plaats…', onchange: (e) => filter('q', e.target.value) })),
-      field('Fase', select('status', { '': 'Alle', ...STATUS_LABELS })),
+      field('Fase', h('select', { onchange: (e) => filter('status', e.target.value) },
+        Object.entries({ open: 'Lopend (niet afgerond)', all: 'Alle', ...STATUS_LABELS }).map(([v, l]) => h('option', { value: v, selected: phase === v }, l)))),
       field('Beurt', select('waitingOn', { '': 'Alle', me: 'Jouw beurt', customer: 'Wacht op klant' })),
       field('Betaling', select('payment', { '': 'Alle', deposit_open: 'Aanbetaling open', outstanding: 'Nog niet volledig betaald' })),
       field('Vanaf datum', h('input', { type: 'date', value: params.get('from') ?? '', onchange: (e) => filter('from', e.target.value) })),
@@ -533,7 +538,7 @@ async function listView() {
         h('td', {}, isOpen(b) && waitingBadge(b.waitingOn)),
         h('td', { class: 'nowrap' }, `${fmtEuro(b.paidCents)} / ${fmtEuro(b.priceCents)}`, h('div', { class: 'badges' }, paymentBadges(b))),
         h('td', {}, progressBar(b.tasksDone, b.tasksTotal)))),
-      'Geen boekingen gevonden.'),
+      phase === 'open' ? 'Geen lopende boekingen. Kies bij Fase "Alle" om ook afgeronde feesten te zien.' : 'Geen boekingen gevonden.'),
     totalsBar,
   );
 }

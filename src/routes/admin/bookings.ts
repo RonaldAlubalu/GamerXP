@@ -172,7 +172,8 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
   app.get('/bookings', async (req) => {
     const q = z
       .object({
-        status: bookingStatus.optional(),
+        // 'open' is every booking that is still running: not completed and not cancelled.
+        status: bookingStatus.or(z.literal('open')).optional(),
         from: dateString.optional(),
         to: dateString.optional(),
         q: z.string().trim().max(100).optional(),
@@ -183,7 +184,7 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
       .parse(req.query);
     const { rows } = await app.db.query(
       `SELECT ${BOOKING_COLUMNS} ${FROM_BOOKINGS}
-        WHERE ($1::text IS NULL OR b.status = $1)
+        WHERE ($1::text IS NULL OR b.status = $1 OR ($1 = 'open' AND b.status NOT IN ('completed', 'cancelled')))
           AND ($2::date IS NULL OR b.party_date >= $2)
           AND ($3::date IS NULL OR b.party_date <= $3)
           AND ($4::text IS NULL OR concat_ws(' ', b.reference, b.parent_name, b.child_name, b.email, b.city) ILIKE '%' || $4 || '%')

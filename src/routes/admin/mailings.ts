@@ -1,7 +1,10 @@
 import { randomBytes } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import type { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { HttpError } from '../../lib/errors.js';
+import { LOGO } from '../../lib/mailer.js';
+import { renderEmailHtml } from '../../lib/email-html.js';
 import { withSignature } from '../../lib/emails.js';
 import { personalLinkToken } from '../../services/discounts.js';
 import { referralToken } from '../../services/referrals.js';
@@ -34,6 +37,12 @@ export function personalise(body: string, name: string, unsubscribeUrl: string, 
 }
 
 const imageUrl = (app: FastifyInstance, token: string) => (token ? `${app.config.PUBLIC_URL}/api/mail-image/${token}` : undefined);
+// The picture itself, to send along inside the mail.
+async function imageData(app: FastifyInstance, token: string) {
+  if (!token) return undefined;
+  const { rows } = await app.db.query<{ mime: string; data: Buffer }>('SELECT mime, data FROM mailing_images WHERE token = $1', [token]);
+  return rows[0] ? { content: rows[0].data, mime: rows[0].mime } : undefined;
+}
 const unsubscribeUrl = (app: FastifyInstance, token: string) => `${app.config.PUBLIC_URL}/afmelden?t=${token}`;
 
 // Sends a mailing one mail at a time, so every customer gets their own mail and a slow mail
@@ -41,6 +50,7 @@ const unsubscribeUrl = (app: FastifyInstance, token: string) => `${app.config.PU
 async function deliver(app: FastifyInstance, mailingId: number): Promise<void> {
   const mailing = (await app.db.query<{ subject: string; body: string; codeId: number | null; image: string }>('SELECT subject, body, discount_code_id AS "codeId", header_image AS image FROM mailings WHERE id = $1', [mailingId])).rows[0];
   if (!mailing) return;
+  const picture = await imageData(app, mailing.image);
   for (;;) {
     const { rows } = await app.db.query<{ id: number; email: string; name: string; first: string; token: string }>(
       `SELECT c.id, c.email, c.name, c.first_name AS first, c.token FROM mailing_recipients r JOIN mail_contacts c ON c.id = r.contact_id
@@ -55,7 +65,7 @@ async function deliver(app: FastifyInstance, mailingId: number): Promise<void> {
       const link = mailing.codeId ? `${app.config.PUBLIC_URL}/reserveer?korting=${await personalLinkToken(app.db, mailing.codeId, to.id)}` : '';
       // And a recommending link of their own, when the text asks for it.
       const via = /\{aanbeveellink\}/i.test(mailing.body) ? `${app.config.PUBLIC_URL}/reserveer?via=${await referralToken(app.db, to.id)}` : '';
-      await app.mailer.send({ to: to.email, subject: mailing.subject, headerImage: imageUrl(app, mailing.image), text: personalise(mailing.body, to.name, unsubscribeUrl(app, to.token), link, via, to.first) });
+      await app.mailer.send({ to: to.email, subject: mailing.subject, headerImage: imageUrl(app, mailing.image), headerImageData: picture, text: personalise(mailing.body, to.name, unsubscribeUrl(app, to.token), link, via, to.first) });
     } catch (err) {
       app.log.warn({ err, mailing: mailingId }, 'A mail of a mailing failed');
       status = 'failed';
@@ -191,11 +201,18 @@ export const mailingRoutes: FastifyPluginAsync = async (app) => {
     return rows;
   });
 
+  // The mail as a customer will see it, to show next to the text while writing. Nothing is sent.
+  app.post('/mailings/preview', async (req) => {
+    const body = message.extend({ subject: z.string().max(200).default(''), body: z.string().max(10_000).default('') }).parse(req.body);
+    const text = personalise(body.body, req.admin!.name || 'Voornaam', `${app.config.PUBLIC_URL}/afmelden?t=voorbeeld`, `${app.config.PUBLIC_URL}/reserveer?korting=voorbeeld`, `${app.config.PUBLIC_URL}/reserveer?via=voorbeeld`);
+    return { html: renderEmailHtml(text, { publicUrl: app.config.PUBLIC_URL, reviewUrl: app.config.GOOGLE_REVIEW_URL || undefined, headerImage: body.headerImage ? `/api/mail-image/${body.headerImage}` : undefined, logoUrl: `data:image/png;base64,${(await readFile(LOGO)).toString('base64')}` }) };
+  });
+
   // One mail to yourself, exactly as a customer would get it.
   app.post('/mailings/test', async (req) => {
     const body = message.parse(req.body);
     checkLink(body);
-    await app.mailer.send({ to: req.admin!.email, subject: `[Test] ${body.subject}`, headerImage: imageUrl(app, body.headerImage), text: personalise(body.body, req.admin!.name || 'Voornaam', `${app.config.PUBLIC_URL}/afmelden?t=voorbeeld`, `${app.config.PUBLIC_URL}/reserveer?korting=voorbeeld`, `${app.config.PUBLIC_URL}/reserveer?via=voorbeeld`) });
+    await app.mailer.send({ to: req.admin!.email, subject: `[Test] ${body.subject}`, headerImage: imageUrl(app, body.headerImage), headerImageData: await imageData(app, body.headerImage), text: personalise(body.body, req.admin!.name || 'Voornaam', `${app.config.PUBLIC_URL}/afmelden?t=voorbeeld`, `${app.config.PUBLIC_URL}/reserveer?korting=voorbeeld`, `${app.config.PUBLIC_URL}/reserveer?via=voorbeeld`) });
     return { to: req.admin!.email };
   });
 

@@ -82,6 +82,13 @@ describe('mailings', () => {
     expect(shown.headers['content-type']).toBe('image/png');
     expect((await ctx.app.inject({ url: '/api/mail-image/bestaat-niet' })).statusCode).toBe(404);
 
+    // The example next to the text: the same mail, but nothing goes out.
+    ctx.sent.length = 0;
+    const preview = (await call('POST', '/mailings/preview', { subject: '', body: 'Hoi {voornaam},\n\nTot in 2027!', headerImage: made.token })).json().html;
+    expect(preview).toContain(`/api/mail-image/${made.token}`);
+    expect(preview).toContain('Game on!</p>');
+    expect(ctx.sent).toHaveLength(0);
+
     ctx.sent.length = 0;
     await call('POST', '/mailings', { subject: 'Fijne feestdagen', body: 'Hoi {voornaam},\n\nTot in 2027!', headerImage: made.token });
     expect(ctx.sent[0]).toMatchObject({ to: 'jan@example.com', headerImage: made.url });

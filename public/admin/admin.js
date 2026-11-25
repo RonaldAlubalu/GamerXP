@@ -2257,15 +2257,25 @@ async function mailingView() {
         flash('ok', `De mailing gaat de deur uit naar ${count(r.recipients)}. Dat duurt een paar minuten.`);
       }) }, sendLabel)));
   counts();
+  // The mail as the customer gets it, next to the text on a wide screen and below it on a phone.
+  const frame = h('iframe', { class: 'mail-preview-frame', title: 'Voorbeeld van de mail', sandbox: '' });
+  const previewCard = h('section', { class: 'card mail-preview' }, h('div', { class: 'card-head' }, h('h2', {}, 'Voorbeeld'), h('span', { class: 'muted' }, 'Zo ziet de klant de mail')), frame);
+  let previewTimer;
+  const preview = async () => {
+    try {
+      frame.srcdoc = (await post('/mailings/preview', mailingDraft)).html;
+    } catch {}
+  };
   const keep = () => { mailingDraft = { ...mailingDraft, subject: form.elements.subject.value, body: form.elements.body.value, discountCodeId: Number(form.elements.discountCodeId.value) || null }; };
-  form.addEventListener('input', keep);
+  form.addEventListener('input', () => { keep(); clearTimeout(previewTimer); previewTimer = setTimeout(preview, 500); });
+  preview();
 
   const history = mailings.length > 0 && card('Verstuurd',
     table(['Wanneer', 'Onderwerp', 'Verstuurd', 'Mislukt', 'Status'], mailings.map((m) => h('tr', {},
       h('td', { class: 'nowrap' }, fmtDateTime(m.createdAt)), h('td', {}, m.subject), h('td', {}, String(m.sent)), h('td', {}, String(m.failed)),
       h('td', {}, m.finishedAt ? badge('Klaar', 'success') : badge(`Bezig, nog ${m.queued}`, 'warning'))))));
 
-  view.replaceChildren(...[messageTabs('mailing'), listCard, form, history].filter(Boolean));
+  view.replaceChildren(...[messageTabs('mailing'), listCard, h('div', { class: 'mail-columns' }, form, previewCard), history].filter(Boolean));
   // While a mailing is going out, show the progress.
   if (running) setTimeout(() => { if (location.hash.startsWith('#/mailing')) render(); }, 5000);
 }

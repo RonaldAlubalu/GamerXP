@@ -147,6 +147,14 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
     sent: await notify(app, { title: 'Gamer Xperience', body: 'Meldingen werken op dit apparaat. 🎮', url: '#/board' }, req.admin!.id),
   }));
 
+  // Where the demo is and how to get in, for the owner of the real site to pass on.
+  app.get('/system/demo', async (req) => {
+    requireOwner(req);
+    const { DEMO_DOMAIN, DEMO_ADMIN_PASSWORD, DEMO_MODE } = app.config;
+    if (DEMO_MODE || !DEMO_DOMAIN || !DEMO_ADMIN_PASSWORD) return { available: false };
+    return { available: true, url: `https://${DEMO_DOMAIN}`, login: 'demo@gamerxp.nl', password: DEMO_ADMIN_PASSWORD };
+  });
+
   // A test for everyone who works here: an e-mail to each login address and a notification to
   // every device of an owner. Shows at once whether mail and notifications really arrive.
   app.post('/system/test', async (req) => {

@@ -30,3 +30,10 @@ www.{$DOMAIN} {
 		file_server
 	}
 }
+
+# The demo: the same site with made-up customers, to show to others. Out of search engines.
+{$DEMO_DOMAIN:demo.localhost} {
+	encode zstd gzip
+	header X-Robots-Tag "noindex, nofollow"
+	reverse_proxy demo:3000
+}

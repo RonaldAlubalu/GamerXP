@@ -202,6 +202,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       name: req.admin!.name,
       avatar: (await app.db.query<{ avatar: string }>('SELECT avatar FROM admin_users WHERE id = $1', [req.admin!.id])).rows[0]?.avatar ?? '',
       role: req.admin!.role,
+      demoMode: app.config.DEMO_MODE,
       twoFactor: req.admin!.twoFactor,
       // Lets the admin page point out missing setup.
       reviewUrlConfigured: Boolean(app.config.GOOGLE_REVIEW_URL),

@@ -284,6 +284,27 @@ describe('profile', () => {
     expect(ctx.pushed[0]).toMatchObject({ title: 'Testmelding', url: '#/system' });
   });
 
+  it('tells the owner of the real site where the demo is, and the demo says it is one', async () => {
+    const token = await loginAdmin(ctx);
+    const headers = { authorization: `Bearer ${token}` };
+    expect((await ctx.app.inject({ url: '/api/admin/system/demo', headers })).json()).toEqual({ available: false });
+    expect((await ctx.app.inject({ url: '/api/health' })).json()).toEqual({ status: 'ok' });
+    await teardown(ctx);
+
+    ctx = await setupApp({ DEMO_DOMAIN: 'demo.example.com', DEMO_ADMIN_PASSWORD: 'geheim-demo-1' });
+    const real = { authorization: `Bearer ${await loginAdmin(ctx)}` };
+    expect((await ctx.app.inject({ url: '/api/admin/system/demo', headers: real })).json()).toEqual({ available: true, url: 'https://demo.example.com', login: 'demo@gamerxp.nl', password: 'geheim-demo-1' });
+    expect((await ctx.app.inject({ url: '/api/admin/me', headers: real })).json().demoMode).toBe(false);
+    await teardown(ctx);
+
+    // The demo itself never hands out its own login.
+    ctx = await setupApp({ DEMO_MODE: true, DEMO_DOMAIN: 'demo.example.com', DEMO_ADMIN_PASSWORD: 'geheim-demo-1' });
+    const demo = { authorization: `Bearer ${await loginAdmin(ctx)}` };
+    expect((await ctx.app.inject({ url: '/api/health' })).json()).toEqual({ status: 'ok', demo: true });
+    expect((await ctx.app.inject({ url: '/api/admin/me', headers: demo })).json().demoMode).toBe(true);
+    expect((await ctx.app.inject({ url: '/api/admin/system/demo', headers: demo })).json()).toEqual({ available: false });
+  });
+
   it('lets a user set a name and a small photo, and lists who works here by address', async () => {
     const token = await loginAdmin(ctx);
     const headers = { authorization: `Bearer ${token}` };

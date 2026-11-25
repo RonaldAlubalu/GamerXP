@@ -76,6 +76,11 @@ const schema = z.object({
   IMAP_LOOKBACK_DAYS: z.coerce.number().int().positive().default(14),
   // Where new booking and contact notifications are sent.
   OWNER_EMAIL: z.string().default(''),
+  // The demo: a separate copy of the site with made-up customers, to show to others.
+  // DEMO_MODE marks that copy itself; the other two tell the real site where its demo is.
+  DEMO_MODE: bool.default(false),
+  DEMO_DOMAIN: z.string().default(''),
+  DEMO_ADMIN_PASSWORD: z.string().default(''),
 });
 
 export type Config = z.infer<typeof schema>;

@@ -22,7 +22,7 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
 
   app.get('/health', async () => {
     await app.db.query('SELECT 1');
-    return { status: 'ok' };
+    return app.config.DEMO_MODE ? { status: 'ok', demo: true } : { status: 'ok' };
   });
 
   app.get('/packages', async () => {

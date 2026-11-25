@@ -209,6 +209,8 @@ function finishLogin(res) {
 function loginView(notice) {
   sidebar.hidden = true;
   topbar.hidden = true;
+  // On the demo, say so before logging in.
+  fetch('/api/health').then((r) => r.json()).then((h) => { document.getElementById('demo-bar').hidden = !h.demo; }).catch(() => {});
   const form = document.getElementById('login-tpl').content.firstElementChild.cloneNode(true);
   const codeField = form.querySelector('#l-code-field');
   const codeInput = form.querySelector('#l-code');
@@ -1843,6 +1845,17 @@ async function systemView(fresh) {
     }
     testButton.disabled = false;
   } }, 'Testbericht en testmelding sturen');
+  // The real site knows where its demo is: the address and login to pass on to someone.
+  const demo = me.role === 'owner' && !me.demoMode ? await api('/system/demo').catch(() => ({ available: false })) : { available: false };
+  const copy = (text) => h('button', { class: 'btn small', type: 'button', onclick: async () => {
+    try { await navigator.clipboard.writeText(text); flash('ok', 'Gekopieerd.'); } catch { prompt('Kopieer:', text); }
+  } }, 'Kopiëren');
+  const demoCard = demo.available && card('Demo om te laten zien',
+    h('p', { class: 'muted' }, 'Een kopie van de site en de admin met verzonnen klanten, op een eigen adres. Er staat geen echte klantdata in, er gaat geen e-mail de deur uit en alles wordt elke nacht teruggezet.'),
+    h('dl', { class: 'details' },
+      h('dt', {}, 'Adres'), h('dd', { class: 'inline' }, h('a', { href: `${demo.url}/admin/`, target: '_blank', rel: 'noopener' }, `${demo.url.replace('https://', '')}/admin`), copy(`${demo.url}/admin/`)),
+      h('dt', {}, 'E-mail'), h('dd', { class: 'inline' }, demo.login, copy(demo.login)),
+      h('dt', {}, 'Wachtwoord'), h('dd', { class: 'inline' }, h('code', {}, demo.password), copy(demo.password))));
   const testCard = me.role === 'owner' && card('Testen',
     h('p', { class: 'muted' }, 'Stuurt een testmail naar iedereen die kan inloggen en een testmelding naar alle apparaten van eigenaren waar meldingen aan staan.'),
     testButton, testResult);
@@ -1851,7 +1864,7 @@ async function systemView(fresh) {
     card('Verbindingen', status.checks.map((c) => h('div', { class: 'status-row' },
       h('div', {}, h('strong', {}, c.label), h('div', { class: 'muted small' }, c.detail)),
       badge(TONE[c.state][0], TONE[c.state][1])))),
-    testCard);
+    testCard, demoCard);
 }
 
 // Notifications on this device ---------------------------------------------------
@@ -2162,6 +2175,7 @@ async function render() {
   }
   const assistant = me.role === 'assistant';
   document.getElementById('me').textContent = me.name || me.email;
+  document.getElementById('demo-bar').hidden = !me.demoMode;
   const photo = document.getElementById('me-photo');
   photo.hidden = !me.avatar;
   if (me.avatar) photo.src = me.avatar;

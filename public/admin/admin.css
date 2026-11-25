@@ -508,3 +508,6 @@ tr.picked > td { background: color-mix(in srgb, var(--primary, #2563eb) 9%, tran
 .board-card[draggable=true] { cursor: grab; }
 .board-card.dragging { opacity: .45; }
 .board-col.drop { border-color: var(--primary); background: var(--primary-soft); outline: 2px dashed var(--primary); outline-offset: -2px; }
+
+/* The demo says so on every screen. */
+.demo-bar { background: var(--warning); color: #fff; font-weight: 600; font-size: .88rem; padding: 7px 14px; text-align: center; }

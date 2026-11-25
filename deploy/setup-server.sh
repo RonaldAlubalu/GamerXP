@@ -148,6 +148,16 @@ if [ -z "$(ls -A /srv/gatra/public)" ] && [ -d "$DIR/gatra-site/public" ]; then
   cp -a "$DIR/gatra-site/public/." /srv/gatra/public/
 fi
 
+# The demo lives on demo.<the site's domain>, with a login of its own that the owner can look up
+# in the real admin (Systeem). Its data is thrown away every night.
+CUR_DOMAIN=$(grep '^DOMAIN=' .env | cut -d= -f2)
+set_env DEMO_DOMAIN "demo.$CUR_DOMAIN"
+if ! grep -q '^DEMO_ADMIN_PASSWORD=..' .env; then
+  set_env DEMO_ADMIN_PASSWORD "$(openssl rand -base64 18 | tr -d '/+=')"
+fi
+chmod +x "$DIR/deploy/reset-demo.sh"
+printf '%s\n' '# Fresh made-up customers in the demo, every night.' "30 3 * * * root $DIR/deploy/reset-demo.sh" > /etc/cron.d/gamerxp-demo
+
 # The network the web server shares with Gatra's own containers.
 docker network inspect gatra >/dev/null 2>&1 || docker network create gatra >/dev/null
 

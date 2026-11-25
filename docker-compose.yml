@@ -44,6 +44,7 @@ services:
     environment:
       DOMAIN: ${DOMAIN:?Set DOMAIN in .env}
       EXTRA_DOMAINS: ${EXTRA_DOMAINS:-unused.localhost}
+      DEMO_DOMAIN: ${DEMO_DOMAIN:-demo.localhost}
       GATRA_DOMAIN: ${GATRA_DOMAIN:-gatra.37-97-128-88.sslip.io}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
@@ -56,6 +57,42 @@ services:
     networks:
       - default
       - gatra
+
+  # The demo: the same site with made-up customers, on its own address and its own database.
+  # It gets none of the real settings (no mail, bookkeeping or payments), and its data is thrown
+  # away every night (deploy/reset-demo.sh).
+  demo-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: gamerxp
+      POSTGRES_USER: gamerxp
+      POSTGRES_PASSWORD: demo
+    volumes:
+      - demo-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gamerxp -d gamerxp"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  demo:
+    image: gamerxp-app
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://gamerxp:demo@demo-db:5432/gamerxp
+      PUBLIC_URL: https://${DEMO_DOMAIN:-demo.localhost}
+      TRUST_PROXY: "true"
+      DEMO_MODE: "true"
+      SITE_NOINDEX: "true"
+      OWNER_EMAIL: demo@gamerxp.nl
+      DEMO_ADMIN_PASSWORD: ${DEMO_ADMIN_PASSWORD:-}
+      GOOGLE_REVIEW_URL: https://g.page/r/voorbeeld/review
+    command: ["sh", "-c", "node dist/scripts/seed-demo.js --if-empty && node dist/server.js"]
+    depends_on:
+      demo-db:
+        condition: service_healthy
 
   backup:
     image: postgres:16-alpine
@@ -76,6 +113,8 @@ services:
 
 volumes:
   db-data:
+  demo-db-data:
+    name: gamerxp-demo-db
   caddy-data:
   caddy-config:
 

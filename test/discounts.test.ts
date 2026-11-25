@@ -95,4 +95,40 @@ describe('discount codes', () => {
     expect((await ctx.app.inject({ url: `/api/discount?link=${jan}&partyDate=${partyDate}` })).json().valid).toBe(true);
     expect((await ctx.app.inject({ url: '/api/discount?link=bestaatniet' })).json()).toEqual({ valid: false, reason: 'Deze kortingslink kennen we niet.' });
   });
+  it('gives a returning customer a thank-you link to use or share, once per booking', async () => {
+    const codes = (await admin('GET', '/discount-codes')).json();
+    const newYear = codes.find((c: { code: string }) => c.code === 'NIEUWJAAR10');
+    await admin('PATCH', `/discount-codes/${newYear.id}`, { percent: 10, validFrom: null, validUntil: null, active: true, personal: true });
+    await book({});
+    const [first] = (await admin('GET', '/bookings')).json();
+    expect((await admin('GET', `/bookings/${first.id}`)).json()).toMatchObject({ earlierBookings: 0, thankYouLink: null });
+
+    // The same customer books again.
+    await book({ timeSlot: 'avond' });
+    const second = (await admin('GET', '/bookings')).json().find((b: { id: string }) => b.id !== first.id);
+    expect((await admin('GET', `/bookings/${second.id}`)).json().earlierBookings).toBe(1);
+
+    ctx.sent.length = 0;
+    const given = (await admin('POST', `/bookings/${second.id}/thank-you-link`, { send: true })).json();
+    expect(given).toMatchObject({ mailed: true, unsubscribed: false, fresh: true });
+    expect(ctx.sent).toHaveLength(1);
+    expect(ctx.sent[0]!.text).toContain(given.url);
+    expect(ctx.sent[0]!.text).toContain('broertje, zusje of vrienden');
+    // Asking again gives the same link, not a second discount.
+    const again = (await admin('POST', `/bookings/${second.id}/thank-you-link`, { send: false })).json();
+    expect(again).toMatchObject({ url: given.url, fresh: false, mailed: false });
+
+    // The link works once, for whoever books with it.
+    const token = given.url.split('korting=')[1];
+    await ctx.db.query('UPDATE bookings SET party_date = party_date + 1 WHERE id = $1', [second.id]);
+    expect((await book({ discountLink: token, email: 'zus@example.com', timeSlot: 'avond' })).statusCode).toBe(201);
+    expect((await admin('GET', `/bookings/${second.id}`)).json().thankYouLink).toEqual({ url: given.url, used: true });
+
+    // A customer who unsubscribed gets no mail; the link is still made, to send by hand.
+    await ctx.db.query('UPDATE mail_contacts SET unsubscribed_at = now()');
+    ctx.sent.length = 0;
+    const quiet = (await admin('POST', `/bookings/${first.id}/thank-you-link`, { send: true })).json();
+    expect(quiet).toMatchObject({ mailed: false, unsubscribed: true, fresh: true });
+    expect(ctx.sent).toHaveLength(0);
+  });
 });

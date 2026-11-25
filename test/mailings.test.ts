@@ -23,8 +23,11 @@ describe('mailings', () => {
     const body = bookingBody(ctx);
     await ctx.app.inject({ method: 'POST', url: '/api/bookings', payload: body });
     const year = Number(body.partyDate.slice(0, 4));
-    expect((await call('POST', '/mailing/contacts/from-bookings', { year })).json()).toEqual({ added: 1, known: 0 });
-    expect((await call('POST', '/mailing/contacts/from-bookings', { year })).json()).toEqual({ added: 0, known: 1 });
+    expect((await call('POST', '/mailing/contacts/from-bookings')).json()).toEqual({ added: 1, known: 0 });
+    // Someone who left stays out, also when the customers are added again.
+    await ctx.db.query('UPDATE mail_contacts SET unsubscribed_at = now() WHERE email = $1', [body.email]);
+    expect((await call('POST', '/mailing/contacts/from-bookings')).json()).toEqual({ added: 0, known: 1 });
+    expect((await call('GET', '/mailing/contacts')).json().find((c: { email: string }) => c.email === body.email).unsubscribedAt).not.toBeNull();
     const list = (await call('GET', '/mailing/contacts')).json();
     expect(list).toHaveLength(3);
     expect(list.find((c: { email: string }) => c.email === body.email)).toMatchObject({ name: body.parentName, bookings: 1, note: `Boeking ${year}` });

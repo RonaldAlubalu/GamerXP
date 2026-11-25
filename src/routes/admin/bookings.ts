@@ -12,7 +12,7 @@ import { createBooking, DECORATION_LABEL, getBookingMailData, recalculatePaid, r
 import { logCommunication, sendAndLog } from '../../services/communications.js';
 import { addEvent, createDefaultTasks, STAGE_INFO, STATUSES, type Status } from '../../services/pipeline.js';
 import { calculatePrice, type PriceExtra } from '../../services/pricing.js';
-import { DISCOUNT_PREFIX } from '../../services/discounts.js';
+import { contactFor, DISCOUNT_PREFIX, thankYouLink } from '../../services/discounts.js';
 import { createInvoice, linkInvoice, listInvoices, syncInvoicePayments, unlinkedInvoices } from '../../services/invoices.js';
 import { amountsDue, loadDue, paymentLink, syncOpenPayments } from '../../services/online-payments.js';
 
@@ -247,8 +247,23 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
       },
       app.config,
     );
+    // A returning customer: how many parties this e-mail address had before this one, and
+    // whether the thank-you link for coming back was given already.
+    const earlier = booking.email
+      ? (await app.db.query<{ n: number }>(
+          `SELECT count(*)::int AS n FROM bookings WHERE lower(email) = lower($1) AND status <> 'cancelled' AND id <> $2 AND created_at < $3`,
+          [booking.email, id, booking.createdAt],
+        )).rows[0]!.n
+      : 0;
+    const thanks = (await app.db.query<{ token: string; used: boolean }>(
+      `SELECT l.token, EXISTS (SELECT 1 FROM bookings b WHERE b.discount_link = l.token AND b.status <> 'cancelled') AS used
+         FROM discount_links l WHERE l.booking_id = $1`,
+      [id],
+    )).rows[0];
     return {
       ...booking,
+      earlierBookings: earlier,
+      thankYouLink: thanks ? { url: `${app.config.PUBLIC_URL}/reserveer?korting=${thanks.token}`, used: thanks.used } : null,
       priceLines: lines,
       // Leaving, building up, the party, breaking down and being home again.
       schedule: daySchedule(booking, { setupMinutes: app.config.SETUP_MINUTES, teardownMinutes: app.config.TEARDOWN_MINUTES }),
@@ -301,6 +316,38 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
     await assertExists(id);
     await syncOpenPayments(app, id);
     return loadBooking(id);
+  });
+
+  // A thank-you for a customer who comes back: a personal discount link to use or to share
+  // (a brother, sister, friend). One per booking; mailed when there is an address and the
+  // customer has not unsubscribed, and always returned so it can also go by WhatsApp.
+  app.post('/bookings/:id/thank-you-link', async (req) => {
+    if (req.admin!.role !== 'owner') throw new HttpError(403, 'Je hebt geen rechten voor deze actie.', 'forbidden');
+    const { id } = idParam.parse(req.params);
+    const { send } = z.object({ send: z.boolean().default(true) }).parse(req.body ?? {});
+    const b = await loadBooking(id);
+    if (!b.email) throw new HttpError(422, 'Bij deze boeking staat geen e-mailadres. Vul dat eerst in.', 'no_email');
+    const code = (await app.db.query<{ id: number; code: string; percent: number }>(
+      'SELECT id, code, percent FROM discount_codes WHERE active AND personal ORDER BY id DESC LIMIT 1',
+    )).rows[0];
+    if (!code) throw new HttpError(422, 'Er is geen actieve kortingscode die "alleen via link" werkt. Maak die eerst aan onder Pakketten.', 'no_code');
+    const contact = await contactFor(app.db, b.email, b.parentName, 'Terugkerende klant');
+    const link = await thankYouLink(app.db, id, code.id, contact.id);
+    const url = `${app.config.PUBLIC_URL}/reserveer?korting=${link.token}`;
+    let mailed = false;
+    if (send && !contact.unsubscribed) {
+      const first = String(b.parentName).trim().split(/\s+/)[0];
+      mailed = await sendAndLog(app, { bookingId: id }, {
+        to: b.email,
+        subject: 'Bedankt dat jullie terugkomen! 🎮',
+        text: withSignature(
+          `Hoi ${first},\n\nWat leuk dat jullie opnieuw voor Gamer Xperience hebben gekozen. Dat vertrouwen waardeer ik enorm.\n\n` +
+          `Als bedankje krijgen jullie nog een keer ${code.percent}% korting op het pakket. Gebruik hem zelf, of geef hem door aan een broertje, zusje of vrienden die ook een knalfeest verdienen:\n\n${url}\n\nDe link werkt één keer.`,
+        ),
+      }, actorOf(req), { keepTurn: true });
+    }
+    if (link.fresh) await addEvent(app.db, id, { type: 'update', message: `Bedankje voor terugkerende klant: kortingslink ${code.code} (${code.percent}%) gemaakt${mailed ? ' en gemaild' : ''}`, actor: actorOf(req) });
+    return { url, mailed, unsubscribed: contact.unsubscribed, fresh: link.fresh };
   });
 
   // Who the customer is and where the party is: corrected or completed later, e.g. an e-mail

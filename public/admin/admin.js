@@ -972,6 +972,30 @@ async function bookingDetailView(id) {
         h('button', { class: 'btn', type: 'button', onclick: () => { contactEditing = false; render(); } }, 'Annuleren')));
     return form;
   };
+  // A customer who comes back gets a thank-you: another personal discount link, to use or share.
+  const nth = b.earlierBookings + 1;
+  const copyLink = (url) => h('button', { class: 'btn small', type: 'button', onclick: async () => {
+    try { await navigator.clipboard.writeText(url); flash('ok', 'Link gekopieerd.'); } catch { prompt('Kopieer de link:', url); }
+  } }, 'Link kopiëren');
+  const returningCard = b.earlierBookings > 0 && b.status !== 'cancelled' && h('div', { class: 'next-step' },
+    h('div', {},
+      h('strong', {}, `Terugkerende klant: dit is de ${nth}e boeking. `),
+      b.thankYouLink
+        ? (b.thankYouLink.used ? 'De bedanklink is gemaakt en al gebruikt voor een feestje.' : 'De bedanklink is gemaakt en nog niet gebruikt.')
+        : 'Stuur als bedankje een kortingslink die ze zelf kunnen gebruiken of doorgeven aan een broertje, zusje of vrienden.'),
+    h('div', { class: 'inline' },
+      b.thankYouLink && copyLink(b.thankYouLink.url),
+      me.role === 'owner' && !b.thankYouLink && h('button', { class: 'btn primary', type: 'button', onclick: action(async () => {
+        if (!confirm(`Een bedankmail met een persoonlijke kortingslink sturen naar ${b.email || 'deze klant'}?`)) return false;
+        const r = await post(`/bookings/${id}/thank-you-link`, { send: true });
+        flash('ok', r.mailed ? 'Bedankmail met kortingslink verstuurd.' : r.unsubscribed
+          ? 'De klant heeft zich afgemeld voor mails. De link is gemaakt: kopieer hem en stuur hem zelf, bijvoorbeeld via WhatsApp.'
+          : 'De link is gemaakt, maar de mail is niet verstuurd. Kopieer de link en stuur hem zelf.');
+      }) }, 'Bedankje sturen'),
+      me.role === 'owner' && !b.thankYouLink && h('button', { class: 'btn', type: 'button', onclick: action(async () => {
+        await post(`/bookings/${id}/thank-you-link`, { send: false });
+        flash('ok', 'Link gemaakt. Kopieer hem om zelf te versturen.');
+      }) }, 'Alleen link maken')));
   if (contactEditingFor !== id) { contactEditing = false; contactEditingFor = id; }
   const customer = card(cardHead('Klant en feest', me.role === 'owner' && !contactEditing && h('button', { class: 'btn small', type: 'button', onclick: () => { contactEditing = true; render(); } }, 'Wijzigen')),
     contactEditing ? contactForm() : null,
@@ -1201,7 +1225,7 @@ async function bookingDetailView(id) {
 
   // One page per subject instead of everything underneath each other.
   const TABS = [
-    ['overview', 'Overzicht', [customer, agreementsCard]],
+    ['overview', 'Overzicht', [returningCard, customer, agreementsCard].filter(Boolean)],
     ['messages', 'Berichten', [commCard, reviewCard]],
     ['money', 'Geld', [priceCard, paymentsCard]],
     ['progress', 'Checklist en tijdlijn', [checklist, gearCard, timeline].filter(Boolean)],
@@ -2033,7 +2057,6 @@ async function mailingView() {
     const { readRows } = await import('/admin/inventory-file.js');
     await addContacts(contactsFrom(await readRows(file)));
   }) });
-  const year = new Date().getFullYear();
   const listCard = card(cardHead('Wie krijgt de mailing', h('span', { class: 'muted' }, `${active.length} ${active.length === 1 ? 'adres' : 'adressen'}`)),
     h('p', { class: 'muted' }, 'Voeg hier iedereen toe die je wilt bedanken, ook klanten zonder boeking of factuur in de admin. Een adres komt er maar één keer in.'),
     field('Namen en adressen plakken', paste),
@@ -2041,7 +2064,7 @@ async function mailingView() {
       h('button', { class: 'btn primary', type: 'button', onclick: action(() => addContacts(contactsFrom(paste.value.split(/\n/)))) }, 'Toevoegen'),
       fileInput,
       h('button', { class: 'btn', type: 'button', onclick: () => fileInput.click() }, 'Excel of CSV inladen'),
-      h('button', { class: 'btn', type: 'button', onclick: action(async () => { flash('ok', added(await post('/mailing/contacts/from-bookings', { year }))); }) }, `Klanten uit boekingen van ${year}`)),
+      h('button', { class: 'btn', type: 'button', title: 'Iedereen met een e-mailadres uit alle boekingen. Wie zich eerder heeft afgemeld, blijft afgemeld.', onclick: action(async () => { flash('ok', added(await post('/mailing/contacts/from-bookings'))); }) }, 'Alle klanten uit boekingen')),
     table(['Naam', 'E-mail', 'Herkomst', 'Status', ''], contacts.map((c) => h('tr', {},
       h('td', {}, c.name || h('span', { class: 'muted' }, 'geen naam')),
       h('td', {}, c.email),

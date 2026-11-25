@@ -50,13 +50,43 @@ export async function findDiscountByLink(db: Queryable, token: string, partyDate
 }
 
 // The personal link of one person for one discount: made the first time it is needed.
-export async function personalLinkToken(db: Queryable, codeId: number, contactId: number): Promise<string> {
+export async function personalLinkToken(db: Queryable, codeId: number, contactId: number, note = 'Mailing'): Promise<string> {
+  // A link that is still unused is given again, so sending twice does not hand out two discounts.
+  const open = await db.query<{ token: string }>(
+    `SELECT l.token FROM discount_links l
+      WHERE l.code_id = $1 AND l.contact_id = $2 AND l.booking_id IS NULL
+        AND NOT EXISTS (SELECT 1 FROM bookings b WHERE b.discount_link = l.token AND b.status <> 'cancelled')
+      ORDER BY l.created_at LIMIT 1`,
+    [codeId, contactId],
+  );
+  if (open.rows[0]) return open.rows[0].token;
   const { rows } = await db.query<{ token: string }>(
-    `INSERT INTO discount_links (token, code_id, contact_id) VALUES ($1, $2, $3)
-     ON CONFLICT (code_id, contact_id) DO UPDATE SET code_id = EXCLUDED.code_id RETURNING token`,
-    [randomBytes(12).toString('base64url'), codeId, contactId],
+    'INSERT INTO discount_links (token, code_id, contact_id, note) VALUES ($1, $2, $3, $4) RETURNING token',
+    [randomBytes(12).toString('base64url'), codeId, contactId, note],
   );
   return rows[0]!.token;
+}
+
+// The person behind an e-mail address on the mailing list; added when not there yet.
+export async function contactFor(db: Queryable, email: string, name: string, note: string): Promise<{ id: number; unsubscribed: boolean }> {
+  const { rows } = await db.query<{ id: number; unsubscribed: boolean }>(
+    `INSERT INTO mail_contacts (email, name, note, token) VALUES ($1, $2, $3, $4)
+     ON CONFLICT (lower(email)) DO UPDATE SET name = CASE WHEN mail_contacts.name = '' THEN EXCLUDED.name ELSE mail_contacts.name END
+     RETURNING id, unsubscribed_at IS NOT NULL AS unsubscribed`,
+    [email, name, note, randomBytes(18).toString('base64url')],
+  );
+  return rows[0]!;
+}
+
+// The thank-you link of a booking by a returning customer: one per booking, good for one party.
+export async function thankYouLink(db: Queryable, bookingId: string, codeId: number, contactId: number): Promise<{ token: string; fresh: boolean }> {
+  const existing = await db.query<{ token: string }>('SELECT token FROM discount_links WHERE booking_id = $1', [bookingId]);
+  if (existing.rows[0]) return { token: existing.rows[0].token, fresh: false };
+  const { rows } = await db.query<{ token: string }>(
+    `INSERT INTO discount_links (token, code_id, contact_id, note, booking_id) VALUES ($1, $2, $3, 'Bedankje terugkerende klant', $4) RETURNING token`,
+    [randomBytes(12).toString('base64url'), codeId, contactId, bookingId],
+  );
+  return { token: rows[0]!.token, fresh: true };
 }
 
 // The discount as a price line: a percentage of the package price, nothing else.

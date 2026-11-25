@@ -109,19 +109,18 @@ export const mailingRoutes: FastifyPluginAsync = async (app) => {
     return { added, known, invalid };
   });
 
-  // The customers already in the admin whose party is (or was) in a given year.
-  app.post('/mailing/contacts/from-bookings', async (req) => {
-    const { year } = z.object({ year: z.coerce.number().int().min(2020).max(2100) }).parse(req.body);
-    const { rows } = await app.db.query<{ email: string; name: string }>(
-      `SELECT DISTINCT ON (lower(email)) email, parent_name AS name FROM bookings
-        WHERE email <> '' AND status <> 'cancelled' AND extract(year FROM party_date) = $1 ORDER BY lower(email), party_date DESC`,
-      [year],
+  // Every customer in the admin with an e-mail address, from any year. Someone who unsubscribed
+  // earlier stays unsubscribed.
+  app.post('/mailing/contacts/from-bookings', async () => {
+    const { rows } = await app.db.query<{ email: string; name: string; year: number }>(
+      `SELECT DISTINCT ON (lower(email)) email, parent_name AS name, extract(year FROM party_date)::int AS year FROM bookings
+        WHERE email <> '' AND status <> 'cancelled' ORDER BY lower(email), party_date DESC`,
     );
     let added = 0;
     for (const c of rows) {
       const res = await app.db.query(
         `INSERT INTO mail_contacts (email, name, note, token) VALUES ($1, $2, $3, $4) ON CONFLICT (lower(email)) DO NOTHING`,
-        [c.email, c.name, `Boeking ${year}`, randomBytes(18).toString('base64url')],
+        [c.email, c.name, `Boeking ${c.year}`, randomBytes(18).toString('base64url')],
       );
       added += res.rowCount ?? 0;
     }

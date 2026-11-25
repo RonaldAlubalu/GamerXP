@@ -83,6 +83,31 @@ async function updateDiscount() {
 }
 form.elements.discountCode.addEventListener('change', updateDiscount);
 
+// A personal discount link from a mailing (reserveer?korting=...): the discount is applied without
+// typing anything, and checked again once a date is chosen.
+const personalLink = new URLSearchParams(location.search).get('korting') ?? '';
+async function updatePersonalDiscount() {
+  if (!personalLink) return;
+  const banner = document.getElementById('discount-banner');
+  const partyDate = form.elements.partyDate.value;
+  try {
+    const found = await api(`/discount?${new URLSearchParams({ link: personalLink, partyDate })}`);
+    discount = found.valid ? found : null;
+    form.elements.discountLink.value = found.valid ? personalLink : '';
+    banner.className = `notice ${found.valid ? 'ok' : 'error'}`;
+    banner.textContent = found.valid
+      ? `🎉 Je persoonlijke korting staat klaar: ${found.percent}% op het pakket. Hij wordt vanzelf verrekend.`
+      : `${found.reason} Je kunt gewoon reserveren, maar dan zonder deze korting.`;
+    banner.hidden = false;
+    // With a working link there is no code to type.
+    document.getElementById('b-discount-field').hidden = found.valid;
+  } catch {
+    banner.hidden = true;
+  }
+  updatePrice();
+}
+updatePersonalDiscount();
+
 // Estimate travel costs once postcode and city are filled in.
 async function updateTravel() {
   const postalCode = form.elements.postalCode.value.trim();
@@ -151,7 +176,8 @@ function renderCalendar() {
 
 function selectDate(date) {
   form.elements.partyDate.value = date;
-  if (form.elements.discountCode.value.trim()) updateDiscount();
+  if (personalLink) updatePersonalDiscount();
+  else if (form.elements.discountCode.value.trim()) updateDiscount();
   document.getElementById('slot-date').textContent = formatDate(date);
   const previous = form.elements.timeSlot?.value;
   const free = availability.days[date] ?? [];

@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import type { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { HttpError } from '../../lib/errors.js';
+import { personalLinkToken } from '../../services/discounts.js';
 import { actorOf } from './bookings.js';
 
 const email = z.email('Vul een geldig e-mailadres in.').trim().max(200);
@@ -9,17 +10,21 @@ const idParam = z.object({ id: z.coerce.number().int().positive() });
 const message = z.object({
   subject: z.string().trim().min(1, 'Vul een onderwerp in.').max(200),
   body: z.string().trim().min(1, 'Schrijf een bericht.').max(10_000),
+  // The discount the personal link in the mail ({kortingslink}) is for.
+  discountCodeId: z.number().int().positive().nullable().default(null),
 });
+const LINK = /\{kortingslink\}/gi;
 
 // "Jan Jansen" -> "Jan". Without a name the greeting stays neutral.
 const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? '';
 
 // The mail as one person gets it: their first name filled in, and the way out at the bottom.
-export function personalise(body: string, name: string, unsubscribeUrl: string): string {
+export function personalise(body: string, name: string, unsubscribeUrl: string, discountUrl = ''): string {
   const first = firstName(name);
   const text = body
     .replace(/\{voornaam\}/gi, first || 'daar')
-    .replace(/\{naam\}/gi, name.trim() || 'daar');
+    .replace(/\{naam\}/gi, name.trim() || 'daar')
+    .replace(LINK, discountUrl);
   return `${text.trim()}\n\n--\nJe krijgt deze mail omdat we een gamefeestje bij jullie hebben verzorgd. Geen mails meer ontvangen? Meld je af: ${unsubscribeUrl}`;
 }
 
@@ -28,7 +33,7 @@ const unsubscribeUrl = (app: FastifyInstance, token: string) => `${app.config.PU
 // Sends a mailing one mail at a time, so every customer gets their own mail and a slow mail
 // server is not flooded. Runs on after the request that started it has answered.
 async function deliver(app: FastifyInstance, mailingId: number): Promise<void> {
-  const mailing = (await app.db.query<{ subject: string; body: string }>('SELECT subject, body FROM mailings WHERE id = $1', [mailingId])).rows[0];
+  const mailing = (await app.db.query<{ subject: string; body: string; codeId: number | null }>('SELECT subject, body, discount_code_id AS "codeId" FROM mailings WHERE id = $1', [mailingId])).rows[0];
   if (!mailing) return;
   for (;;) {
     const { rows } = await app.db.query<{ id: number; email: string; name: string; token: string }>(
@@ -40,7 +45,9 @@ async function deliver(app: FastifyInstance, mailingId: number): Promise<void> {
     if (!to) break;
     let status: 'sent' | 'failed' = 'sent';
     try {
-      await app.mailer.send({ to: to.email, subject: mailing.subject, text: personalise(mailing.body, to.name, unsubscribeUrl(app, to.token)) });
+      // Everyone gets a link of their own, good for one booking.
+      const link = mailing.codeId ? `${app.config.PUBLIC_URL}/reserveer?korting=${await personalLinkToken(app.db, mailing.codeId, to.id)}` : '';
+      await app.mailer.send({ to: to.email, subject: mailing.subject, text: personalise(mailing.body, to.name, unsubscribeUrl(app, to.token), link) });
     } catch (err) {
       app.log.warn({ err, mailing: mailingId }, 'A mail of a mailing failed');
       status = 'failed';
@@ -49,6 +56,13 @@ async function deliver(app: FastifyInstance, mailingId: number): Promise<void> {
     await new Promise((r) => setTimeout(r, app.config.NODE_ENV === 'test' ? 0 : 1500));
   }
   await app.db.query('UPDATE mailings SET finished_at = now() WHERE id = $1', [mailingId]);
+}
+
+// A mail with {kortingslink} needs a discount to make the links for, and the other way round.
+function checkLink(body: { body: string; discountCodeId: number | null }) {
+  const has = /\{kortingslink\}/i.test(body.body);
+  if (has && !body.discountCodeId) throw new HttpError(422, 'In de tekst staat {kortingslink}, maar er is geen korting gekozen voor die link.', 'no_discount');
+  if (!has && body.discountCodeId) throw new HttpError(422, 'Je hebt een korting gekozen, maar in de tekst staat nergens {kortingslink}.', 'no_link');
 }
 
 export const mailingRoutes: FastifyPluginAsync = async (app) => {
@@ -60,7 +74,9 @@ export const mailingRoutes: FastifyPluginAsync = async (app) => {
   app.get('/mailing/contacts', async () => {
     const { rows } = await app.db.query(
       `SELECT c.id, c.email, c.name, c.note, c.unsubscribed_at AS "unsubscribedAt", c.created_at AS "createdAt",
-              (SELECT count(*)::int FROM bookings b WHERE lower(b.email) = lower(c.email) AND b.status <> 'cancelled') AS bookings
+              (SELECT count(*)::int FROM bookings b WHERE lower(b.email) = lower(c.email) AND b.status <> 'cancelled') AS bookings,
+              -- Whether a personal discount link of this person was used for a booking.
+              EXISTS (SELECT 1 FROM discount_links l JOIN bookings b ON b.discount_link = l.token AND b.status <> 'cancelled' WHERE l.contact_id = c.id) AS "linkUsed"
          FROM mail_contacts c ORDER BY lower(c.name), lower(c.email)`,
     );
     return rows;
@@ -146,7 +162,8 @@ export const mailingRoutes: FastifyPluginAsync = async (app) => {
   // One mail to yourself, exactly as a customer would get it.
   app.post('/mailings/test', async (req) => {
     const body = message.parse(req.body);
-    await app.mailer.send({ to: req.admin!.email, subject: `[Test] ${body.subject}`, text: personalise(body.body, req.admin!.name || 'Voornaam', `${app.config.PUBLIC_URL}/afmelden?t=voorbeeld`) });
+    checkLink(body);
+    await app.mailer.send({ to: req.admin!.email, subject: `[Test] ${body.subject}`, text: personalise(body.body, req.admin!.name || 'Voornaam', `${app.config.PUBLIC_URL}/afmelden?t=voorbeeld`, `${app.config.PUBLIC_URL}/reserveer?korting=voorbeeld`) });
     return { to: req.admin!.email };
   });
 
@@ -154,9 +171,10 @@ export const mailingRoutes: FastifyPluginAsync = async (app) => {
   // one by one after that.
   app.post('/mailings', async (req, reply) => {
     const body = message.parse(req.body);
+    checkLink(body);
     const busy = await app.db.query('SELECT 1 FROM mailings WHERE finished_at IS NULL');
     if (busy.rowCount) throw new HttpError(409, 'Er wordt nog een mailing verstuurd. Wacht tot die klaar is.', 'busy');
-    const { rows } = await app.db.query<{ id: number }>('INSERT INTO mailings (subject, body, actor) VALUES ($1, $2, $3) RETURNING id', [body.subject, body.body, actorOf(req)]);
+    const { rows } = await app.db.query<{ id: number }>('INSERT INTO mailings (subject, body, actor, discount_code_id) VALUES ($1, $2, $3, $4) RETURNING id', [body.subject, body.body, actorOf(req), body.discountCodeId]);
     const id = rows[0]!.id;
     const queued = await app.db.query(
       'INSERT INTO mailing_recipients (mailing_id, contact_id) SELECT $1, id FROM mail_contacts WHERE unsubscribed_at IS NULL',

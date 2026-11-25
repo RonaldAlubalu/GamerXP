@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { HttpError } from '../../lib/errors.js';
 import { dateString } from '../../lib/schemas.js';
 
-const COLUMNS = `id, code, percent, valid_from::text AS "validFrom", valid_until::text AS "validUntil", active, note,
+const COLUMNS = `id, code, percent, personal, valid_from::text AS "validFrom", valid_until::text AS "validUntil", active, note,
   (SELECT count(*)::int FROM bookings b WHERE upper(b.discount_code) = upper(discount_codes.code) AND b.status <> 'cancelled') AS used`;
 const idParam = z.object({ id: z.coerce.number().int().positive() });
 const optionalDate = z.union([dateString, z.literal('')]).nullable().default(null).transform((v) => v || null);
@@ -13,6 +13,8 @@ const code = z.object({
   validFrom: optionalDate,
   validUntil: optionalDate,
   active: z.boolean().default(true),
+  // Only through a personal link from a mailing, not by typing the code.
+  personal: z.boolean().default(false),
   note: z.string().trim().max(200).default(''),
 });
 
@@ -29,8 +31,8 @@ export const discountRoutes: FastifyPluginAsync = async (app) => {
     const exists = await app.db.query('SELECT 1 FROM discount_codes WHERE upper(code) = $1', [c.code]);
     if (exists.rowCount) throw new HttpError(409, `De code ${c.code} bestaat al.`, 'exists');
     const { rows } = await app.db.query(
-      `INSERT INTO discount_codes (code, percent, valid_from, valid_until, active, note) VALUES ($1, $2, $3, $4, $5, $6) RETURNING ${COLUMNS}`,
-      [c.code, c.percent, c.validFrom, c.validUntil, c.active, c.note],
+      `INSERT INTO discount_codes (code, percent, valid_from, valid_until, active, note, personal) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING ${COLUMNS}`,
+      [c.code, c.percent, c.validFrom, c.validUntil, c.active, c.note, c.personal],
     );
     return reply.status(201).send(rows[0]);
   });
@@ -39,8 +41,8 @@ export const discountRoutes: FastifyPluginAsync = async (app) => {
     const { id } = idParam.parse(req.params);
     const c = code.omit({ code: true }).parse(req.body);
     const { rows } = await app.db.query(
-      `UPDATE discount_codes SET percent = $2, valid_from = $3, valid_until = $4, active = $5, note = $6 WHERE id = $1 RETURNING ${COLUMNS}`,
-      [id, c.percent, c.validFrom, c.validUntil, c.active, c.note],
+      `UPDATE discount_codes SET percent = $2, valid_from = $3, valid_until = $4, active = $5, note = $6, personal = $7 WHERE id = $1 RETURNING ${COLUMNS}`,
+      [id, c.percent, c.validFrom, c.validUntil, c.active, c.note, c.personal],
     );
     if (!rows[0]) throw new HttpError(404, 'Deze code bestaat niet (meer).', 'not_found');
     return rows[0];

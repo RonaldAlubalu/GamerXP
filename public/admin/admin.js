@@ -1483,23 +1483,25 @@ async function discountCard() {
   const codes = await api('/discount-codes');
   const form = h('form', { class: 'inline', style: 'margin-top:14px', onsubmit: action(() => {
     const d = Object.fromEntries(new FormData(form));
-    return post('/discount-codes', { code: d.code, percent: Number(d.percent), validFrom: d.validFrom, validUntil: d.validUntil, note: d.note });
+    return post('/discount-codes', { code: d.code, percent: Number(d.percent), validFrom: d.validFrom, validUntil: d.validUntil, note: d.note, personal: form.elements.personal.checked });
   }, 'Kortingscode toegevoegd.') },
     field('Code', h('input', { name: 'code', required: true, maxlength: 40, placeholder: 'ZOMER10', style: 'width:150px;text-transform:uppercase' })),
     field('Korting (%)', h('input', { name: 'percent', type: 'number', min: 1, max: 100, required: true, value: 10, style: 'width:90px' })),
     field('Feest vanaf', h('input', { name: 'validFrom', type: 'date' })),
     field('Feest t/m', h('input', { name: 'validUntil', type: 'date' })),
     field('Waarvoor', h('input', { name: 'note', maxlength: 200, placeholder: 'Bijv. zomeractie' })),
+    h('label', { class: 'check', title: 'De code intypen werkt dan niet; alleen de persoonlijke link uit een mailing.' }, h('input', { type: 'checkbox', name: 'personal' }), ' Alleen via persoonlijke link'),
     h('button', { class: 'btn', type: 'submit' }, 'Toevoegen'));
   const period = (c) => (c.validFrom || c.validUntil ? `${c.validFrom ? fmtDate(c.validFrom) : 'altijd'} t/m ${c.validUntil ? fmtDate(c.validUntil) : 'onbeperkt'}` : 'Altijd');
-  const save = (c, change) => patchJson(`/discount-codes/${c.id}`, { percent: c.percent, validFrom: c.validFrom, validUntil: c.validUntil, active: c.active, note: c.note, ...change });
+  const save = (c, change) => patchJson(`/discount-codes/${c.id}`, { percent: c.percent, validFrom: c.validFrom, validUntil: c.validUntil, active: c.active, note: c.note, personal: c.personal, ...change });
   return card('Kortingscodes',
-    h('p', { class: 'muted' }, 'Een klant vult de code in op het reserveerformulier. De korting is een percentage van de pakketprijs; reiskosten en toeslagen tellen niet mee. De periode gaat over de datum van het feest.'),
+    h('p', { class: 'muted' }, 'Een klant vult de code in op het reserveerformulier, of komt binnen via een persoonlijke link uit een mailing (die werkt één keer). De korting is een percentage van de pakketprijs; reiskosten en toeslagen tellen niet mee. De periode gaat over de datum van het feest.'),
     table(['Code', 'Korting', 'Voor feestjes', 'Waarvoor', 'Gebruikt', 'Status', ''], codes.map((c) => h('tr', {},
       h('td', {}, h('strong', {}, c.code)), h('td', {}, `${c.percent}%`), h('td', {}, period(c)), h('td', {}, c.note || '–'), h('td', {}, `${c.used}×`),
-      h('td', {}, c.active ? badge('Actief', 'success') : badge('Uit', '')),
+      h('td', {}, c.active ? badge('Actief', 'success') : badge('Uit', ''), c.personal && badge('Alleen via link', 'info')),
       h('td', { class: 'inline' },
         h('button', { class: 'btn small', onclick: action(() => save(c, { active: !c.active })) }, c.active ? 'Uitzetten' : 'Aanzetten'),
+        h('button', { class: 'btn small', title: 'Mag iedereen de code intypen, of werkt hij alleen via de persoonlijke link?', onclick: action(() => save(c, { personal: !c.personal })) }, c.personal ? 'Ook als code' : 'Alleen via link'),
         h('button', { class: 'btn small', onclick: action(async () => {
           const until = prompt(`Tot en met welke feestdatum geldt ${c.code}? (jjjj-mm-dd, leeg = onbeperkt)`, c.validUntil ?? '');
           if (until === null) return false;
@@ -1970,11 +1972,15 @@ function contactsFrom(lines) {
 
 let mailingDraft = {
   subject: 'Bedankt voor 2026, en een cadeautje voor 2027 🎮',
-  body: 'Hoi {voornaam},\n\nDit jaar mocht ik bij jullie een gamefeestje verzorgen. Dank je wel daarvoor; het was een mooi jaar, mede dankzij jullie.\n\nAls bedankje krijg je 10% korting op een gamefeestje in 2027. Vul bij het reserveren op gamerxp.nl de code NIEUWJAAR10 in; de korting gaat er dan meteen af.\n\nFijne feestdagen en een goed nieuwjaar!\n\nGroetjes, Ronald – Gamer Xperience',
+  body: 'Hoi {voornaam},\n\nDit jaar mocht ik bij jullie een gamefeestje verzorgen. Dank je wel daarvoor; het was een mooi jaar, mede dankzij jullie.\n\nAls bedankje krijg je 10% korting op een gamefeestje in 2027, zodat het volgend jaar weer een knallend feest wordt. Reserveer via je persoonlijke link en de korting gaat er vanzelf af:\n\n{kortingslink}\n\nZelf geen feestje gepland? Geef de link dan door aan iemand die je een knalfeest gunt. De link werkt één keer.\n\nFijne feestdagen en een goed nieuwjaar!\n\nGroetjes, Ronald – Gamer Xperience',
+  discountCodeId: undefined,
 };
 
 async function mailingView() {
-  const [contacts, mailings] = await Promise.all([api('/mailing/contacts'), api('/mailings')]);
+  const [contacts, mailings, codes] = await Promise.all([api('/mailing/contacts'), api('/mailings'), api('/discount-codes')]);
+  // The discount the personal links are for: by default the first personal one that is switched on.
+  const linkCodes = codes.filter((c) => c.active);
+  if (mailingDraft.discountCodeId === undefined) mailingDraft.discountCodeId = linkCodes.find((c) => c.personal)?.id ?? null;
   setPage('Mailing');
   const active = contacts.filter((c) => !c.unsubscribedAt);
   const running = mailings.find((m) => !m.finishedAt);
@@ -2005,7 +2011,7 @@ async function mailingView() {
       h('td', {}, c.name || h('span', { class: 'muted' }, 'geen naam')),
       h('td', {}, c.email),
       h('td', {}, c.note || (c.bookings ? `${c.bookings} boeking(en)` : 'Zelf toegevoegd')),
-      h('td', {}, c.unsubscribedAt ? badge('Afgemeld', 'danger') : badge('Krijgt mail', 'success')),
+      h('td', {}, c.unsubscribedAt ? badge('Afgemeld', 'danger') : badge('Krijgt mail', 'success'), c.linkUsed && badge('Korting gebruikt', 'info')),
       h('td', { class: 'inline' },
         h('button', { class: 'btn small', onclick: action(async () => {
           const name = prompt(`Naam voor ${c.email}:`, c.name);
@@ -2020,7 +2026,9 @@ async function mailingView() {
     h('h2', {}, 'Bericht'),
     field('Onderwerp', h('input', { name: 'subject', required: true, maxlength: 200, value: mailingDraft.subject })),
     field('Tekst', h('textarea', { name: 'body', rows: 12, required: true }, mailingDraft.body),
-      '{voornaam} wordt per klant ingevuld. Onder elke mail komt vanzelf een afmeldlink.'),
+      '{voornaam} wordt per klant ingevuld. Op de plek van {kortingslink} krijgt iedereen een eigen link die één keer werkt. Onder elke mail komt vanzelf een afmeldlink.'),
+    field('Korting achter de persoonlijke link', h('select', { name: 'discountCodeId' }, h('option', { value: '' }, 'Geen kortingslink in deze mail'),
+      linkCodes.map((c) => h('option', { value: c.id, selected: c.id === mailingDraft.discountCodeId }, `${c.code}: ${c.percent}% op het pakket`)))),
     h('div', { class: 'inline' },
       h('button', { class: 'btn', type: 'button', onclick: action(async () => {
         keep();
@@ -2034,7 +2042,7 @@ async function mailingView() {
         const r = await post('/mailings', mailingDraft);
         flash('ok', `De mailing gaat de deur uit naar ${r.recipients} adressen. Dat duurt een paar minuten.`);
       }) }, running ? 'Er wordt al verstuurd…' : `Versturen naar ${active.length} ${active.length === 1 ? 'adres' : 'adressen'}`)));
-  const keep = () => { mailingDraft = { subject: form.elements.subject.value, body: form.elements.body.value }; };
+  const keep = () => { mailingDraft = { subject: form.elements.subject.value, body: form.elements.body.value, discountCodeId: Number(form.elements.discountCodeId.value) || null }; };
   form.addEventListener('input', keep);
 
   const history = mailings.length > 0 && card('Verstuurd',

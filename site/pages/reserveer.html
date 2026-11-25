@@ -17,6 +17,8 @@
         </div>
 
         <form id="booking-form" novalidate>
+          <input type="hidden" name="discountLink">
+          <p class="notice ok" id="discount-banner" hidden></p>
           <ol class="steps-bar" id="steps-bar" aria-label="Stappen">
             <li class="current"><span>1</span> Datum &amp; pakket</li>
             <li><span>2</span> Jouw gegevens</li>
@@ -114,7 +116,7 @@
                 <div class="field"><label for="b-age">Leeftijd (wordt)</label><input id="b-age" name="childAge" type="number" min="1" max="18"></div>
                 <div class="field"><label for="b-guests">Aantal kinderen</label><input id="b-guests" name="guestCount" type="number" min="1" max="40"></div>
               </div>
-              <div class="field">
+              <div class="field" id="b-discount-field">
                 <label for="b-discount">Kortingscode <small>(optioneel)</small></label>
                 <input id="b-discount" name="discountCode" maxlength="40" autocomplete="off" autocapitalize="characters" spellcheck="false" style="max-width: 260px">
                 <small class="hint" id="b-discount-note" hidden></small>

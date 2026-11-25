@@ -43,7 +43,7 @@ describe('discount codes', () => {
     const [code] = (await admin('GET', '/discount-codes')).json().filter((c: { code: string }) => c.code === 'TEST10');
     await admin('PATCH', `/discount-codes/${code.id}`, { percent: 10, validFrom: '2099-01-01', validUntil: null, active: true });
     const early = (await ctx.app.inject({ url: `/api/discount?code=test10&partyDate=${partyDate}` })).json();
-    expect(early).toEqual({ valid: false, reason: 'Deze code geldt voor feestjes vanaf 1-1-2099.' });
+    expect(early).toEqual({ valid: false, reason: 'Deze korting geldt voor feestjes vanaf 1-1-2099.' });
     expect((await book({ discountCode: 'TEST10' })).statusCode).toBe(422);
     await admin('PATCH', `/discount-codes/${code.id}`, { percent: 10, validFrom: null, validUntil: null, active: false });
     expect((await ctx.app.inject({ url: `/api/discount?code=TEST10&partyDate=${partyDate}` })).json().valid).toBe(false);
@@ -54,9 +54,45 @@ describe('discount codes', () => {
   it('comes with the New Year code for parties in 2027, and keeps codes unique', async () => {
     const codes = (await admin('GET', '/discount-codes')).json();
     expect(codes.find((c: { code: string }) => c.code === 'NIEUWJAAR10')).toMatchObject({ percent: 10, validFrom: '2027-01-01', validUntil: '2027-12-31', active: true });
-    expect((await ctx.app.inject({ url: '/api/discount?code=nieuwjaar10&partyDate=2027-03-14' })).json()).toEqual({ valid: true, code: 'NIEUWJAAR10', percent: 10 });
-    expect((await ctx.app.inject({ url: '/api/discount?code=NIEUWJAAR10&partyDate=2026-12-20' })).json().valid).toBe(false);
+    expect(codes.find((c: { code: string }) => c.code === 'NIEUWJAAR10').personal).toBe(true);
     expect((await admin('POST', '/discount-codes', { code: 'Test10', percent: 5 })).json().code).toBe('exists');
     expect((await admin('POST', '/discount-codes', { code: 'met spatie', percent: 5 })).statusCode).toBe(400);
+  });
+  it('gives everyone on a mailing a personal link that works once, also for whoever it is passed on to', async () => {
+    const codes = (await admin('GET', '/discount-codes')).json();
+    const newYear = codes.find((c: { code: string }) => c.code === 'NIEUWJAAR10');
+    expect(newYear.personal).toBe(true);
+    // Open the period, so the test does not depend on today.
+    await admin('PATCH', `/discount-codes/${newYear.id}`, { percent: 10, validFrom: null, validUntil: null, active: true, personal: true });
+    await admin('POST', '/mailing/contacts', { contacts: [{ email: 'jan@example.com', name: 'Jan Jansen' }, { email: 'piet@example.com', name: 'Piet' }] });
+
+    const text = 'Hoi {voornaam}, reserveer hier: {kortingslink}';
+    expect((await admin('POST', '/mailings', { subject: 'Bedankt', body: text })).json().code).toBe('no_discount');
+    expect((await admin('POST', '/mailings', { subject: 'Bedankt', body: 'Hoi', discountCodeId: newYear.id })).json().code).toBe('no_link');
+    ctx.sent.length = 0;
+    expect((await admin('POST', '/mailings', { subject: 'Bedankt', body: text, discountCodeId: newYear.id })).statusCode).toBe(202);
+    const links = ctx.sent.map((m) => /reserveer\?korting=([\w-]+)/.exec(m.text)![1]!);
+    expect(new Set(links).size).toBe(2);
+    const [jan] = links;
+
+    // Typing the code does nothing: it only works through the link.
+    const partyDate = bookingBody(ctx).partyDate;
+    expect((await ctx.app.inject({ url: `/api/discount?code=NIEUWJAAR10&partyDate=${partyDate}` })).json()).toEqual({ valid: false, reason: 'Deze korting werkt alleen via de persoonlijke link uit je mail.' });
+    expect((await book({ discountCode: 'NIEUWJAAR10' })).statusCode).toBe(422);
+    expect((await ctx.app.inject({ url: `/api/discount?link=${jan}` })).json()).toEqual({ valid: true, code: 'NIEUWJAAR10', percent: 10 });
+
+    // Whoever books with the link gets the discount, under any e-mail address: it may be passed on.
+    expect((await book({ discountLink: jan, email: 'vriendin@example.com' })).statusCode).toBe(201);
+    const [booking] = (await admin('GET', '/bookings')).json();
+    expect(booking.discountCode).toBe('NIEUWJAAR10');
+    // Once: a second booking with the same link is refused, the other person's link still works.
+    expect((await book({ discountLink: jan, timeSlot: 'avond' })).json()).toMatchObject({ code: 'invalid_discount', error: 'Deze kortingslink is al voor een feestje gebruikt.' });
+    expect((await ctx.app.inject({ url: `/api/discount?link=${links[1]}&partyDate=${partyDate}` })).json().valid).toBe(true);
+    expect((await admin('GET', '/mailing/contacts')).json().find((c: { email: string }) => c.email === 'jan@example.com').linkUsed).toBe(true);
+
+    // A cancelled booking gives the link back.
+    await admin('PATCH', `/bookings/${booking.id}`, { status: 'cancelled', notifyCustomer: false });
+    expect((await ctx.app.inject({ url: `/api/discount?link=${jan}&partyDate=${partyDate}` })).json().valid).toBe(true);
+    expect((await ctx.app.inject({ url: '/api/discount?link=bestaatniet' })).json()).toEqual({ valid: false, reason: 'Deze kortingslink kennen we niet.' });
   });
 });

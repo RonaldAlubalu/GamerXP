@@ -4,7 +4,7 @@ import { daysBetween, formatDutchDate } from '../lib/dates.js';
 import { bookingOwnerNotification, bookingReceivedMail, contactOwnerNotification, statusUrl } from '../lib/emails.js';
 import { HttpError } from '../lib/errors.js';
 import type { Mail } from '../lib/mailer.js';
-import { findDiscount } from '../services/discounts.js';
+import { findDiscount, findDiscountByLink } from '../services/discounts.js';
 import { bookingRequest, contactRequest, dateString } from '../lib/schemas.js';
 import { availableSlots, bookingWindow, getTimeSlots } from '../services/availability.js';
 import { createBooking, recalculatePrice } from '../services/bookings.js';
@@ -95,8 +95,11 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
     '/discount',
     { config: { rateLimit: { max: 20, timeWindow: '10 minutes' } } },
     async (req) => {
-      const { code, partyDate } = z.object({ code: z.string().trim().min(1).max(40), partyDate: dateString }).parse(req.query);
-      const found = await findDiscount(app.db, code, partyDate);
+      const q = z
+        .object({ code: z.string().trim().max(40).default(''), link: z.string().trim().max(60).default(''), partyDate: z.union([dateString, z.literal('')]).default('') })
+        .refine((v) => v.link || (v.code && v.partyDate), 'Geef een code en een datum, of een kortingslink.')
+        .parse(req.query);
+      const found = q.link ? await findDiscountByLink(app.db, q.link, q.partyDate || null) : await findDiscount(app.db, q.code, q.partyDate);
       return 'reason' in found ? { valid: false, reason: found.reason } : { valid: true, ...found.discount };
     },
   );

@@ -1783,11 +1783,34 @@ async function systemView(fresh) {
   const status = await api(fresh ? '/status?fresh=1' : '/status');
   setPage('Systeem', h('button', { class: 'btn', onclick: async () => { flash('ok', 'Bezig met controleren…'); await systemView(true); updateCounts(); } }, '↻ Opnieuw controleren'));
   const TONE = { ok: ['Werkt', 'success'], warn: ['Let op', 'warning'], error: ['Storing', 'danger'], off: ['Niet ingesteld', ''] };
+  // A real test: does a mail arrive, and a notification on the phones?
+  const testResult = h('div', {});
+  const testButton = h('button', { class: 'btn primary', type: 'button', onclick: async () => {
+    testButton.disabled = true;
+    try {
+      const r = await post('/system/test');
+      const lines = [
+        r.mailed.length ? `E-mail verstuurd naar ${r.mailed.join(', ')}. Kijk of hij aankomt (ook in spam).` : 'Er is geen e-mail verstuurd.',
+        r.failed.length && `E-mail mislukt naar ${r.failed.join(', ')}. Kijk hierboven bij "Verbindingen" of e-mail werkt.`,
+        r.devices
+          ? `Melding verstuurd naar ${r.pushed} van de ${r.devices} aangemelde ${r.devices === 1 ? 'apparaat' : 'apparaten'}.${r.pushed < r.devices ? ' Een apparaat dat niets kreeg is afgemeld; zet meldingen daar opnieuw aan.' : ''}`
+          : 'Geen melding verstuurd: er is nog geen apparaat aangemeld. Zet meldingen aan onder "Meldingen en account".',
+      ].filter(Boolean);
+      testResult.replaceChildren(...lines.map((line) => h('p', { class: 'muted', style: 'margin:8px 0 0' }, line)));
+    } catch (err) {
+      flash('error', err.message);
+    }
+    testButton.disabled = false;
+  } }, 'Testbericht en testmelding sturen');
+  const testCard = me.role === 'owner' && card('Testen',
+    h('p', { class: 'muted' }, 'Stuurt een testmail naar iedereen die kan inloggen en een testmelding naar alle apparaten van eigenaren waar meldingen aan staan.'),
+    testButton, testResult);
   view.replaceChildren(
     h('p', { class: 'muted' }, `Laatst gecontroleerd: ${fmtDateTime(status.checkedAt)}. De controle draait elke tien minuten vanzelf.`),
     card('Verbindingen', status.checks.map((c) => h('div', { class: 'status-row' },
       h('div', {}, h('strong', {}, c.label), h('div', { class: 'muted small' }, c.detail)),
-      badge(TONE[c.state][0], TONE[c.state][1])))));
+      badge(TONE[c.state][0], TONE[c.state][1])))),
+    testCard);
 }
 
 // Notifications on this device ---------------------------------------------------

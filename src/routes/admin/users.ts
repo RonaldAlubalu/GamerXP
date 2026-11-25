@@ -147,6 +147,33 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
     sent: await notify(app, { title: 'Gamer Xperience', body: 'Meldingen werken op dit apparaat. 🎮', url: '#/board' }, req.admin!.id),
   }));
 
+  // A test for everyone who works here: an e-mail to each login address and a notification to
+  // every device of an owner. Shows at once whether mail and notifications really arrive.
+  app.post('/system/test', async (req) => {
+    requireOwner(req);
+    const by = req.admin!.name || req.admin!.email;
+    const when = new Date().toLocaleString('nl-NL', { timeZone: app.config.TIMEZONE, dateStyle: 'long', timeStyle: 'short' });
+    const { rows: users } = await app.db.query<{ email: string }>('SELECT email FROM admin_users ORDER BY id');
+    const mailed: string[] = [];
+    const failed: string[] = [];
+    for (const user of users) {
+      try {
+        await app.mailer.send({
+          to: user.email,
+          subject: 'Testbericht van de Gamer Xperience admin',
+          text: `Dit is een testbericht, verstuurd door ${by} op ${when}.\n\nKomt deze mail aan, dan werkt het versturen van e-mail vanuit de site.\n\n${app.config.PUBLIC_URL}/admin/`,
+        });
+        mailed.push(user.email);
+      } catch (err) {
+        req.log.warn({ err }, 'Test email failed');
+        failed.push(user.email);
+      }
+    }
+    const devices = (await app.db.query("SELECT 1 FROM push_subscriptions s JOIN admin_users u ON u.id = s.user_id WHERE u.role = 'owner'")).rowCount ?? 0;
+    const pushed = await notify(app, { title: 'Testmelding', body: `Verstuurd door ${by}. Meldingen werken. 🎮`, url: '#/system' });
+    return { mailed, failed, devices, pushed };
+  });
+
   app.get('/users', async (req) => {
     requireOwner(req);
     return (await app.db.query(`SELECT ${COLUMNS} FROM admin_users ORDER BY role DESC, email`)).rows;

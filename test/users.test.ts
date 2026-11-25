@@ -272,6 +272,18 @@ describe('profile', () => {
   beforeEach(async () => { ctx = await setupApp(); });
   afterEach(() => teardown(ctx));
 
+  it('sends a test mail to every login and a test notification to the owners\' devices', async () => {
+    const token = await loginAdmin(ctx);
+    const headers = { authorization: `Bearer ${token}` };
+    await ctx.app.inject({ method: 'POST', url: '/api/admin/push/subscribe', headers, payload: { endpoint: 'https://push.example/abc', keys: { p256dh: 'k', auth: 'a' }, device: 'test' } });
+    ctx.sent.length = 0;
+    const res = (await ctx.app.inject({ method: 'POST', url: '/api/admin/system/test', headers })).json();
+    expect(res).toMatchObject({ failed: [], devices: 1, pushed: 1 });
+    expect(res.mailed).toHaveLength(1);
+    expect(ctx.sent.map((m) => m.subject)).toEqual(['Testbericht van de Gamer Xperience admin']);
+    expect(ctx.pushed[0]).toMatchObject({ title: 'Testmelding', url: '#/system' });
+  });
+
   it('lets a user set a name and a small photo, and lists who works here by address', async () => {
     const token = await loginAdmin(ctx);
     const headers = { authorization: `Bearer ${token}` };

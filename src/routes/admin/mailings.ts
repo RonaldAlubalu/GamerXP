@@ -73,7 +73,7 @@ export const mailingRoutes: FastifyPluginAsync = async (app) => {
   // Everyone a mailing can go to, with how many parties this address had here.
   app.get('/mailing/contacts', async () => {
     const { rows } = await app.db.query(
-      `SELECT c.id, c.email, c.name, c.note, c.unsubscribed_at AS "unsubscribedAt", c.created_at AS "createdAt",
+      `SELECT c.id, c.email, c.name, c.note, c.unsubscribed_at AS "unsubscribedAt", c.unsubscribe_reason AS "unsubscribeReason", c.created_at AS "createdAt",
               (SELECT count(*)::int FROM bookings b WHERE lower(b.email) = lower(c.email) AND b.status <> 'cancelled') AS bookings,
               -- Whether a personal discount link of this person was used for a booking.
               EXISTS (SELECT 1 FROM discount_links l JOIN bookings b ON b.discount_link = l.token AND b.status <> 'cancelled' WHERE l.contact_id = c.id) AS "linkUsed"
@@ -133,7 +133,8 @@ export const mailingRoutes: FastifyPluginAsync = async (app) => {
     const body = z.object({ name: z.string().trim().max(100).optional(), subscribed: z.boolean().optional() }).parse(req.body);
     const { rows } = await app.db.query(
       `UPDATE mail_contacts SET name = COALESCE($2, name),
-              unsubscribed_at = CASE WHEN $3::boolean IS NULL THEN unsubscribed_at WHEN $3 THEN NULL ELSE COALESCE(unsubscribed_at, now()) END
+              unsubscribed_at = CASE WHEN $3::boolean IS NULL THEN unsubscribed_at WHEN $3 THEN NULL ELSE COALESCE(unsubscribed_at, now()) END,
+              unsubscribe_reason = CASE WHEN $3 THEN '' ELSE unsubscribe_reason END
         WHERE id = $1 RETURNING id`,
       [id, body.name ?? null, body.subscribed ?? null],
     );

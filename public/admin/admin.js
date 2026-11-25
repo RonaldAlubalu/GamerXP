@@ -2046,7 +2046,8 @@ async function mailingView() {
       h('td', {}, c.name || h('span', { class: 'muted' }, 'geen naam')),
       h('td', {}, c.email),
       h('td', {}, c.note || (c.bookings ? `${c.bookings} boeking(en)` : 'Zelf toegevoegd')),
-      h('td', {}, c.unsubscribedAt ? badge('Afgemeld', 'danger') : badge('Krijgt mail', 'success'), c.linkUsed && badge('Korting gebruikt', 'info')),
+      h('td', {}, c.unsubscribedAt ? badge('Afgemeld', 'danger') : badge('Krijgt mail', 'success'), c.linkUsed && badge('Korting gebruikt', 'info'),
+        c.unsubscribedAt && c.unsubscribeReason && h('div', { class: 'muted small' }, `Reden: ${c.unsubscribeReason}`)),
       h('td', { class: 'inline' },
         h('button', { class: 'btn small', onclick: action(async () => {
           const name = prompt(`Naam voor ${c.email}:`, c.name);

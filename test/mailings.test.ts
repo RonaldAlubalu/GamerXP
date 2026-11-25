@@ -37,6 +37,11 @@ describe('mailings', () => {
     const out = await ctx.app.inject({ method: 'POST', url: '/api/unsubscribe', payload: { token: rows[0]!.token } });
     expect(out.json()).toEqual({ email: 'w…@example.com' });
     expect((await ctx.app.inject({ method: 'POST', url: '/api/unsubscribe', payload: { token: 'bestaat-niet-123' } })).statusCode).toBe(404);
+    // A reason may follow, but only from someone who is already off the list.
+    expect((await ctx.app.inject({ method: 'POST', url: '/api/unsubscribe/reason', payload: { token: rows[0]!.token, reason: 'Geen feestje meer gepland' } })).statusCode).toBe(200);
+    const other = await ctx.db.query<{ token: string }>("SELECT token FROM mail_contacts WHERE email = 'jan@example.com'");
+    expect((await ctx.app.inject({ method: 'POST', url: '/api/unsubscribe/reason', payload: { token: other.rows[0]!.token, reason: 'x' } })).statusCode).toBe(404);
+    expect((await call('GET', '/mailing/contacts')).json().find((c: { email: string }) => c.email === 'weg@example.com').unsubscribeReason).toBe('Geen feestje meer gepland');
 
     ctx.sent.length = 0;
     const message = { subject: 'Bedankt voor 2026', body: 'Hoi {voornaam},\n\nDank je wel!' };

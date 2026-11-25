@@ -3,6 +3,19 @@
       <div class="wrap narrow center">
         <h1>Afmelden</h1>
         <p class="lead" id="unsub-text">Een moment, we melden je af…</p>
+        <form id="unsub-why" hidden>
+          <p>Wil je ons laten weten waarom? Dat hoeft niet; je bent al afgemeld.</p>
+          <div class="button-row unsub-choices">
+            <button type="button" class="btn secondary" data-reason="Geen feestje meer gepland">Geen feestje meer gepland</button>
+            <button type="button" class="btn secondary" data-reason="Ik wil geen acties ontvangen">Ik wil geen acties ontvangen</button>
+            <button type="button" class="btn secondary" data-reason="Ik ken Gamer Xperience niet">Ik ken Gamer Xperience niet</button>
+          </div>
+          <div class="field" style="max-width: 420px; margin: 16px auto 0; text-align: left">
+            <label for="unsub-other">Iets anders</label>
+            <input id="unsub-other" maxlength="300">
+          </div>
+          <p><button type="submit" class="btn secondary">Versturen</button></p>
+        </form>
         <p><a class="btn secondary" href="/">Naar de website</a></p>
       </div>
     </section>

@@ -156,6 +156,18 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
     },
   );
 
+  // Optional, after unsubscribing: why. Never asked before the unsubscribing itself is done.
+  app.post(
+    '/unsubscribe/reason',
+    { config: { rateLimit: { max: 20, timeWindow: '10 minutes' } } },
+    async (req) => {
+      const { token, reason } = z.object({ token: z.string().min(10).max(100), reason: z.string().trim().min(1).max(300) }).parse(req.body);
+      const res = await app.db.query('UPDATE mail_contacts SET unsubscribe_reason = $2 WHERE token = $1 AND unsubscribed_at IS NOT NULL', [token, reason]);
+      if (!res.rowCount) throw new HttpError(404, 'Deze afmeldlink kennen we niet (meer).', 'not_found');
+      return { ok: true };
+    },
+  );
+
   // The PDF of one invoice, for the customer who has the status link. Fetched from the bookkeeping
   // here, so the customer gets it from this site.
   app.get(

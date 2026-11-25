@@ -520,3 +520,12 @@ tr.picked > td { background: color-mix(in srgb, var(--primary, #2563eb) 9%, tran
 .header-image img { display: block; width: 150px; height: 70px; object-fit: cover; }
 .header-image.none { padding: 0 14px; height: 74px; align-items: center; cursor: pointer; color: inherit; font: inherit; }
 .header-image .remove { position: absolute; top: 4px; right: 4px; width: 26px; height: 26px; border: 0; border-radius: 50%; background: rgba(0, 0, 0, .65); color: #fff; cursor: pointer; }
+
+/* Mailing: the list of people stays a manageable height; search and tick above it. */
+.contact-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+.contact-tools input[type=search] { flex: 1 1 220px; min-width: 0; }
+.contact-list { max-height: 420px; overflow: auto; border: 1px solid var(--border); border-radius: 10px; }
+.contact-list input[type=checkbox] { width: 20px; height: 20px; }
+.add-contacts { margin-bottom: 14px; }
+.add-contacts summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
+.contact-list tr[hidden] { display: none !important; }

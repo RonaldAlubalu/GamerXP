@@ -2098,6 +2098,8 @@ function contactsFrom(lines) {
   return found;
 }
 
+const mailingSkip = new Set();
+let mailingSearch = '';
 let mailingDraft = {
   subject: 'Bedankt voor jullie vertrouwen in 2026 🎮',
   body: "Hoi {voornaam},\n\n2026 was het eerste jaar waarin ik echt voluit met Gamer Xperience aan de slag ben gegaan. Dat dat gelukt is, komt door mensen zoals jullie.\n\nEen verjaardag is een belangrijk moment, en vaak was het zelfs de tiende. Dat jullie mij het vertrouwen gaven om dat feest te verzorgen, vind ik nog steeds bijzonder. Ik heb van elk feestje genoten: van de spanning bij het opbouwen tot het gejuich bij de laatste ronde.\n\nDank je wel daarvoor. Echt.\n\nAls bedankje krijgen jullie 10% korting op een gamefeestje in 2027. Reserveer via jullie persoonlijke link, dan gaat de korting er vanzelf af:\n\n{kortingslink}\n\nStaat er bij jullie volgend jaar geen feestje op de planning? Geef de link dan door aan iemand die jullie een knalfeest gunnen. Hij werkt één keer.\n\nIk wens jullie fijne feestdagen en een mooi nieuw jaar. Wie weet tot in 2027!",
@@ -2114,6 +2116,11 @@ async function mailingView() {
   const active = contacts.filter((c) => !c.unsubscribedAt);
   const running = mailings.find((m) => !m.finishedAt);
 
+  // Who is ticked: everyone, except the people unticked here. Kept while you stay in the admin.
+  for (const id of [...mailingSkip]) if (!active.some((c) => c.id === id)) mailingSkip.delete(id);
+  const chosen = () => active.filter((c) => !mailingSkip.has(c.id));
+  const count = (n) => `${n} ${n === 1 ? 'adres' : 'adressen'}`;
+
   const added = (r) => `${r.added} toegevoegd${r.known ? `, ${r.known} stonden er al` : ''}${r.invalid?.length ? `. Niet herkend als adres: ${r.invalid.slice(0, 5).join(', ')}` : ''}.`;
   const addContacts = async (list) => {
     if (!list.length) throw new Error('Ik vind hier geen e-mailadressen in.');
@@ -2127,15 +2134,15 @@ async function mailingView() {
     const { readRows } = await import('/admin/inventory-file.js');
     await addContacts(contactsFrom(await readRows(file)));
   }) });
-  const listCard = card(cardHead('Wie krijgt de mailing', h('span', { class: 'muted' }, `${active.length} ${active.length === 1 ? 'adres' : 'adressen'}`)),
-    h('p', { class: 'muted' }, 'Voeg hier iedereen toe die je wilt bedanken, ook klanten zonder boeking of factuur in de admin. Een adres komt er maar één keer in.'),
-    field('Namen en adressen plakken', paste),
-    h('div', { class: 'inline', style: 'margin-bottom:14px' },
-      h('button', { class: 'btn primary', type: 'button', onclick: action(() => addContacts(contactsFrom(paste.value.split(/\n/)))) }, 'Toevoegen'),
-      fileInput,
-      h('button', { class: 'btn', type: 'button', onclick: () => fileInput.click() }, 'Excel of CSV inladen'),
-      h('button', { class: 'btn', type: 'button', title: 'Iedereen met een e-mailadres uit alle boekingen. Wie zich eerder heeft afgemeld, blijft afgemeld.', onclick: action(async () => { flash('ok', added(await post('/mailing/contacts/from-bookings'))); }) }, 'Alle klanten uit boekingen')),
-    table(['Naam', 'E-mail', 'Herkomst', 'Status', ''], contacts.map((c) => h('tr', {},
+  const countLabel = h('span', { class: 'muted' });
+  const sendLabel = h('span', {});
+  const rows = contacts.map((c) => {
+    const tick = !c.unsubscribedAt && h('input', { type: 'checkbox', checked: !mailingSkip.has(c.id), 'aria-label': `${c.name || c.email} mailen`, onchange: () => {
+      if (tick.checked) mailingSkip.delete(c.id); else mailingSkip.add(c.id);
+      counts();
+    } });
+    const row = h('tr', {},
+      h('td', {}, tick),
       h('td', {}, c.name || h('span', { class: 'muted' }, 'geen naam'), c.firstName && c.firstName !== c.name && h('div', { class: 'muted small' }, `Aanhef: Hoi ${c.firstName},`)),
       h('td', {}, c.email),
       h('td', {}, c.note || (c.bookings ? `${c.bookings} boeking(en)` : 'Zelf toegevoegd'),
@@ -2151,8 +2158,47 @@ async function mailingView() {
           await patchJson(`/mailing/contacts/${c.id}`, { firstName, name });
         }) }, 'Naam'),
         h('button', { class: 'btn small', onclick: action(() => patchJson(`/mailing/contacts/${c.id}`, { subscribed: Boolean(c.unsubscribedAt) })) }, c.unsubscribedAt ? 'Weer aanmelden' : 'Afmelden'),
-        h('button', { class: 'btn small danger', onclick: action(() => (confirm(`${c.email} van de lijst halen?`) ? del(`/mailing/contacts/${c.id}`) : false)) }, '✕')))),
-      'Nog niemand op de lijst.'));
+        h('button', { class: 'btn small danger', onclick: action(() => (confirm(`${c.email} van de lijst halen?`) ? del(`/mailing/contacts/${c.id}`) : false)) }, '✕')));
+    return { c, row, tick, text: `${c.name} ${c.firstName} ${c.email} ${c.note}`.toLowerCase() };
+  });
+  const counts = () => {
+    const n = chosen().length;
+    countLabel.textContent = n === active.length ? count(n) : `${n} van ${active.length} aangevinkt`;
+    sendLabel.textContent = running ? 'Er wordt al verstuurd…' : `Versturen naar ${count(n)}`;
+    if (sendButton) sendButton.disabled = Boolean(running) || !n;
+  };
+  let sendButton;
+  // Searching hides the rows that do not match; the buttons next to it tick what is in view.
+  const search = h('input', { type: 'search', placeholder: 'Zoek op naam, e-mail of herkomst…', 'aria-label': 'Zoeken in de lijst', value: mailingSearch, oninput: () => { mailingSearch = search.value; filter(); } });
+  const visible = () => rows.filter((r) => !r.row.hidden && r.tick);
+  const filter = () => { const q = search.value.trim().toLowerCase(); for (const r of rows) r.row.hidden = Boolean(q) && !r.text.includes(q); };
+  const tickAll = (on) => () => {
+    for (const r of visible()) { r.tick.checked = on; if (on) mailingSkip.delete(r.c.id); else mailingSkip.add(r.c.id); }
+    counts();
+  };
+  const only = () => {
+    const shown = new Set(visible().map((r) => r.c.id));
+    for (const r of rows) if (r.tick) { const on = shown.has(r.c.id); r.tick.checked = on; if (on) mailingSkip.delete(r.c.id); else mailingSkip.add(r.c.id); }
+    counts();
+  };
+  const listCard = card(cardHead('Wie krijgt de mailing', countLabel),
+    h('details', { class: 'add-contacts', open: !contacts.length },
+      h('summary', {}, 'Adressen toevoegen'),
+      h('p', { class: 'muted' }, 'Voeg hier iedereen toe die je wilt mailen, ook klanten zonder boeking of factuur in de admin. Een adres komt er maar één keer in.'),
+      field('Namen en adressen plakken', paste),
+      h('div', { class: 'inline', style: 'margin-bottom:14px' },
+        h('button', { class: 'btn primary', type: 'button', onclick: action(() => addContacts(contactsFrom(paste.value.split(/\n/)))) }, 'Toevoegen'),
+        fileInput,
+        h('button', { class: 'btn', type: 'button', onclick: () => fileInput.click() }, 'Excel of CSV inladen'),
+        h('button', { class: 'btn', type: 'button', title: 'Iedereen met een e-mailadres uit alle boekingen. Wie zich eerder heeft afgemeld, blijft afgemeld.', onclick: action(async () => { flash('ok', added(await post('/mailing/contacts/from-bookings'))); }) }, 'Alle klanten uit boekingen'))),
+    contacts.length > 0 && h('div', { class: 'contact-tools' },
+      search,
+      h('button', { class: 'btn small', type: 'button', title: 'Vinkt aan wat nu in beeld staat', onclick: tickAll(true) }, 'Alles aan'),
+      h('button', { class: 'btn small', type: 'button', title: 'Vinkt uit wat nu in beeld staat', onclick: tickAll(false) }, 'Alles uit'),
+      h('button', { class: 'btn small', type: 'button', title: 'Alleen wie nu in beeld staat krijgt de mail', onclick: only }, 'Alleen deze')),
+    h('div', { class: 'contact-list' },
+      table(['Mailen', 'Naam', 'E-mail', 'Herkomst', 'Status', ''], rows.map((r) => r.row), 'Nog niemand op de lijst.')));
+  filter();
 
   // A picture across the top of the mail, e.g. for the end-of-year mail. Made smaller here first,
   // so it loads quickly on a phone.
@@ -2197,12 +2243,15 @@ async function mailingView() {
         flash('ok', `Testmail verstuurd naar ${r.to}. Kijk hoe hij eruitziet voordat je verstuurt.`);
         return false;
       }) }, 'Testmail naar mezelf'),
-      h('button', { class: 'btn primary', type: 'button', disabled: Boolean(running) || !active.length, onclick: action(async () => {
+      sendButton = h('button', { class: 'btn primary', type: 'button', onclick: action(async () => {
         keep();
-        if (!confirm(`Deze mail versturen naar ${active.length} ${active.length === 1 ? 'adres' : 'adressen'}?\n\nOnderwerp: ${mailingDraft.subject}\n\nDit kan niet worden teruggedraaid.`)) return false;
-        const r = await post('/mailings', mailingDraft);
-        flash('ok', `De mailing gaat de deur uit naar ${r.recipients} adressen. Dat duurt een paar minuten.`);
-      }) }, running ? 'Er wordt al verstuurd…' : `Versturen naar ${active.length} ${active.length === 1 ? 'adres' : 'adressen'}`)));
+        const to = chosen();
+        const names = to.length <= 8 ? `\n\nNaar: ${to.map((c) => c.name || c.email).join(', ')}` : '';
+        if (!confirm(`Deze mail versturen naar ${count(to.length)}?${names}\n\nOnderwerp: ${mailingDraft.subject}\n\nDit kan niet worden teruggedraaid.`)) return false;
+        const r = await post('/mailings', { ...mailingDraft, ...(to.length < active.length ? { contactIds: to.map((c) => c.id) } : {}) });
+        flash('ok', `De mailing gaat de deur uit naar ${count(r.recipients)}. Dat duurt een paar minuten.`);
+      }) }, sendLabel)));
+  counts();
   const keep = () => { mailingDraft = { ...mailingDraft, subject: form.elements.subject.value, body: form.elements.body.value, discountCodeId: Number(form.elements.discountCodeId.value) || null }; };
   form.addEventListener('input', keep);
 

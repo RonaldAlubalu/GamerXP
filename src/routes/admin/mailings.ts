@@ -202,15 +202,16 @@ export const mailingRoutes: FastifyPluginAsync = async (app) => {
   // Sends to everyone on the list who has not unsubscribed. Answers at once; the mails go out
   // one by one after that.
   app.post('/mailings', async (req, reply) => {
-    const body = message.parse(req.body);
+    // Without contactIds everyone on the list gets it; with them only the people ticked.
+    const body = message.extend({ contactIds: z.array(z.number().int().positive()).min(1).max(5000).optional() }).parse(req.body);
     checkLink(body);
     const busy = await app.db.query('SELECT 1 FROM mailings WHERE finished_at IS NULL');
     if (busy.rowCount) throw new HttpError(409, 'Er wordt nog een mailing verstuurd. Wacht tot die klaar is.', 'busy');
     const { rows } = await app.db.query<{ id: number }>('INSERT INTO mailings (subject, body, actor, discount_code_id, header_image) VALUES ($1, $2, $3, $4, $5) RETURNING id', [body.subject, body.body, actorOf(req), body.discountCodeId, body.headerImage]);
     const id = rows[0]!.id;
     const queued = await app.db.query(
-      'INSERT INTO mailing_recipients (mailing_id, contact_id) SELECT $1, id FROM mail_contacts WHERE unsubscribed_at IS NULL',
-      [id],
+      'INSERT INTO mailing_recipients (mailing_id, contact_id) SELECT $1, id FROM mail_contacts WHERE unsubscribed_at IS NULL AND ($2::bigint[] IS NULL OR id = ANY($2))',
+      [id, body.contactIds ?? null],
     );
     if (!queued.rowCount) {
       await app.db.query('DELETE FROM mailings WHERE id = $1', [id]);

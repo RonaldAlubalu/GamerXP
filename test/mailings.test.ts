@@ -87,6 +87,14 @@ describe('mailings', () => {
     expect(ctx.sent[0]).toMatchObject({ to: 'jan@example.com', headerImage: made.url });
     expect(ctx.sent[0]!.text).toMatch(/Tot in 2027!\n\nGame on![\s\S]*\n\n--\nJe krijgt/);
 
+    // Only the people ticked; someone who unsubscribed stays out even when ticked.
+    await call('POST', '/mailing/contacts', { contacts: [{ email: 'piet@example.com' }, { email: 'weg@example.com' }] });
+    await ctx.db.query("UPDATE mail_contacts SET unsubscribed_at = now() WHERE email = 'weg@example.com'");
+    const ids = (await call('GET', '/mailing/contacts')).json().filter((c: { email: string }) => c.email !== 'jan@example.com').map((c: { id: number }) => c.id);
+    ctx.sent.length = 0;
+    expect((await call('POST', '/mailings', { subject: 'Alleen Piet', body: 'Hoi', contactIds: ids })).json().recipients).toBe(1);
+    expect(ctx.sent.map((m) => m.to)).toEqual(['piet@example.com']);
+
     expect((await call('DELETE', `/mailing/images/${made.token}`)).statusCode).toBe(204);
     expect((await ctx.app.inject({ url: `/api/mail-image/${made.token}` })).statusCode).toBe(404);
   });

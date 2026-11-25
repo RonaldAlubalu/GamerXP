@@ -82,6 +82,11 @@ set_env() {
     echo "$1=$2" >> .env
   fi
 }
+# On the live site only a live key takes payments: a test key would let customers "pay" for nothing.
+case "${MOLLIE_API_KEY:-}" in
+  live_*) : ;;
+  *) if [ "${MOLLIE_LIVE_ONLY:-}" = 1 ]; then MOLLIE_API_KEY=; set_env MOLLIE_API_KEY ""; echo "==> Online payments: off (no live Mollie key)"; fi ;;
+esac
 if [ -n "${MOLLIE_API_KEY:-}" ]; then
   echo "==> Online payments: Mollie key set (${MOLLIE_API_KEY%%_*} mode)"
   set_env MOLLIE_API_KEY "$MOLLIE_API_KEY"

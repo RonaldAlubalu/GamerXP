@@ -4,7 +4,8 @@
 #   DEPLOY_SSH_KEY  the private half of an SSH key the server accepts
 # and optionally:
 #   DEPLOY_USER     the login name (default: root). Any other user needs sudo without a password.
-#   MOLLIE_GXP_TEST the Mollie test API key; written to the server's .env as MOLLIE_API_KEY
+#   MOLLIE_GXP_LIVE the Mollie live API key; written to the server's .env as MOLLIE_API_KEY.
+#                   Without it, online payments are off (a test key never runs on the live site).
 #   BACKUP_VPS_RD   address of the second server that keeps a copy of the backups
 #   BACKUP_PEER_PUBKEY  that server's public backup key, so it can store its backups here
 #   API_EBOOK       the e-Boekhouden.nl API token, for invoices
@@ -51,8 +52,9 @@ jobs:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          # Test payments for now. At go-live this becomes secrets.MOLLIE_GXP_LIVE.
-          MOLLIE_API_KEY: ${{ secrets.MOLLIE_GXP_TEST }}
+          # The site is live: only a live key may take payments. No live key means no online payments.
+          MOLLIE_API_KEY: ${{ secrets.MOLLIE_GXP_LIVE }}
+          MOLLIE_LIVE_ONLY: '1'
           GMAIL_USER: ${{ secrets.GOOGLE_LOGIN || secrets.GMAIL_USER }}
           EBOEKHOUDEN_TOKEN: ${{ secrets.API_EBOOK }}
           BACKUP_PEER_HOST: ${{ secrets.BACKUP_VPS_RD }}
@@ -62,10 +64,11 @@ jobs:
           # Where customers leave a Google review (public link, not a secret).
           GOOGLE_REVIEW_URL: https://g.page/r/CelcATNY-Po9EAE/review
           BACKUP_PEER_PUBKEY: ${{ secrets.BACKUP_PEER_PUBKEY }}
-          # The domain the test site moves to as soon as its DNS points at the server.
-          SITE_DOMAIN: gamefeestjethuis.nl
-          # A test address stays out of search engines. Remove at go-live.
-          SITE_NOINDEX: 'true'
+          # The site's own domain. The server moves to it as soon as its DNS points here and HTTPS works;
+          # the earlier address (gamefeestjethuis.nl) then leads there.
+          SITE_DOMAIN: gamerxp.nl
+          # Live: search engines are welcome.
+          SITE_NOINDEX: 'false'
           GMAIL_APP_PASSWORD: ${{ secrets.GOOGLE_PWD || secrets.GMAIL_APP_PASSWORD }}
         run: |
           if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_SSH_KEY" ]; then
@@ -99,7 +102,7 @@ jobs:
           # Installs everything on a fresh server; on later runs it updates and restarts the site.
           # The key travels inside the script over SSH, so it never shows up in a command line.
           {
-          printf "export MOLLIE_API_KEY='%s' APP_IMAGE_LOADED='%s'\n" "$MOLLIE_API_KEY" "$LOADED"
+          printf "export MOLLIE_API_KEY='%s' MOLLIE_LIVE_ONLY='%s' APP_IMAGE_LOADED='%s'\n" "$MOLLIE_API_KEY" "$MOLLIE_LIVE_ONLY" "$LOADED"
           printf "export GOOGLE_REVIEW_URL='%s' MAIL_ADDRESS='%s'\n" "$GOOGLE_REVIEW_URL" "$MAIL_ADDRESS"
           printf "export BACKUP_PEER_HOST='%s' BACKUP_PEER_PUBKEY='%s'\n" "$BACKUP_PEER_HOST" "$BACKUP_PEER_PUBKEY"
           # Google shows app passwords with spaces (sometimes non-breaking ones); they work without.

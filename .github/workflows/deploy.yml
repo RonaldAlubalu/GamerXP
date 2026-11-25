@@ -52,8 +52,9 @@ jobs:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          # The site is live: only a live key may take payments. No live key means no online payments.
-          MOLLIE_API_KEY: ${{ secrets.MOLLIE_GXP_LIVE }}
+          # Online payment is switched off for now: customers pay with the QR code on the invoice.
+          # To switch it on again, use the repository secret MOLLIE_GXP_LIVE as the value here.
+          MOLLIE_API_KEY: ''
           MOLLIE_LIVE_ONLY: '1'
           GMAIL_USER: ${{ secrets.GOOGLE_LOGIN || secrets.GMAIL_USER }}
           EBOEKHOUDEN_TOKEN: ${{ secrets.API_EBOOK }}

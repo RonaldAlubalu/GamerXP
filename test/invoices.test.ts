@@ -38,6 +38,32 @@ describe('invoices in the bookkeeping', () => {
     expect(detail.city).not.toBe('');
   });
 
+  it('shows the customer the invoices on the status page, with the PDF behind the status link', async () => {
+    await call('POST', `/bookings/${id}/invoices`, { kind: 'deposit' });
+    await call('PATCH', `/bookings/${id}`, { status: 'confirmed', notifyCustomer: false });
+    const token = (await call('GET', `/bookings/${id}`)).json().statusToken;
+    const status = (await ctx.app.inject({ url: `/api/status/${token}` })).json();
+    expect(status.pay).toEqual({ deposit: null, payment: null });
+    expect(status.invoices).toEqual([{ kind: 'deposit', number: 'F00015-1', amountCents: 10000, paidCents: 0, url: `/api/status/${token}/invoice/deposit` }]);
+
+    // The PDF comes from the bookkeeping through this site; only with the right link.
+    const realFetch = globalThis.fetch;
+    const asked: string[] = [];
+    globalThis.fetch = (async (url: string) => { asked.push(String(url)); return new Response('%PDF-1.4 test', { status: 200 }); }) as typeof fetch;
+    try {
+      const pdf = await ctx.app.inject({ url: status.invoices[0].url });
+      expect(pdf.statusCode).toBe(200);
+      expect(pdf.headers['content-type']).toContain('application/pdf');
+      expect(pdf.headers['content-disposition']).toContain('Factuur F00015-1.pdf');
+      expect(pdf.body).toContain('%PDF');
+      expect(asked).toEqual(['https://boekhouding.example/1.pdf']);
+      expect((await ctx.app.inject({ url: `/api/status/${token}/invoice/final` })).statusCode).toBe(404);
+      expect((await ctx.app.inject({ url: `/api/status/${'x'.repeat(30)}/invoice/deposit` })).statusCode).toBe(404);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
   it('makes the final invoice with every price line minus the invoiced deposit', async () => {
     await call('POST', `/bookings/${id}/invoices`, { kind: 'deposit' });
     await call('PATCH', `/bookings/${id}`, { priceExtras: [{ label: 'Parkeerkosten', amountCents: 1500 }] });

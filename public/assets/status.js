@@ -70,6 +70,41 @@ function render(s) {
     btn.href = url;
   }
 
+  // The invoices: the deposit first, then the rest. Paying goes by the QR code on the invoice.
+  const invoiceBox = document.getElementById('st-invoices');
+  const invoices = s.invoices ?? [];
+  const open = invoices.filter((i) => i.paidCents < i.amountCents);
+  const owed = Math.max(0, s.priceCents - s.paidCents);
+  const confirmed = !['new', 'contacted', 'cancelled'].includes(s.status);
+  invoiceBox.hidden = !(invoices.length || (confirmed && owed > 0));
+  if (!invoiceBox.hidden) {
+    const row = (invoice) => {
+      const left = invoice.amountCents - invoice.paidCents;
+      const el = document.createElement('div');
+      el.className = `invoice-row${left > 0 ? '' : ' paid'}`;
+      const text = document.createElement('div');
+      const title = document.createElement('strong');
+      title.textContent = invoice.kind === 'deposit' ? 'Deel 1: aanbetaling' : (invoices.some((i) => i.kind === 'deposit') ? 'Deel 2: restbedrag' : 'Factuur');
+      const detail = document.createElement('span');
+      detail.textContent = `Factuur ${invoice.number} · ${formatPrice(invoice.amountCents)} · ${left > 0 ? (invoice.paidCents ? `nog ${formatPrice(left)} te betalen` : 'nog te betalen') : 'betaald ✓'}`;
+      text.append(title, detail);
+      const link = document.createElement('a');
+      link.className = left > 0 ? 'btn' : 'btn secondary';
+      link.href = invoice.url;
+      link.target = '_blank';
+      link.rel = 'noopener';
+      link.textContent = left > 0 ? 'Open factuur en betaal' : 'Bekijk factuur';
+      el.append(text, link);
+      return el;
+    };
+    document.getElementById('st-invoice-list').replaceChildren(...invoices.map(row));
+    document.getElementById('st-invoice-note').textContent = open.length
+      ? 'Op de factuur staat een QR-code: scan die met de app van je bank en het bedrag en de omschrijving staan al klaar. Overmaken met het rekeningnummer op de factuur kan ook.'
+      : invoices.length
+        ? (owed > 0 ? 'De factuur voor het restbedrag volgt per e-mail en verschijnt daarna ook hier.' : 'Alles is betaald. Bedankt!')
+        : 'Je ontvangt de factuur per e-mail; hij verschijnt daarna ook hier. Op de factuur staat een QR-code waarmee je in één keer betaalt.';
+  }
+
   lookupForm.hidden = true;
   statusView.hidden = false;
 }

@@ -635,3 +635,14 @@ body:has(#booking-form) .chat-button, body:has(#status-view) .chat-button { disp
   .chat-card { right: 12px; bottom: 76px; }
   body.cookie-open .chat-button { display: none; }
 }
+
+/* Status page: the invoices of the party, each with a button to open and pay it. */
+.invoice-box { border-color: var(--green); }
+.invoice-box h2 { color: var(--green); }
+.invoice-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 18px; padding: 14px 0; border-top: 1px solid var(--line); }
+.invoice-row:first-child { border-top: 0; padding-top: 4px; }
+.invoice-row strong { display: block; font-family: var(--font-head); }
+.invoice-row span { color: var(--muted); font-size: .95rem; }
+.invoice-row.paid strong { color: var(--muted); }
+.invoice-row .btn { flex: none; }
+@media (max-width: 640px) { .invoice-row .btn { width: 100%; text-align: center; } }

@@ -125,6 +125,30 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
   );
 
   // Parent-facing progress page. Only shows what the parent needs: no address or contact details.
+  // The PDF of one invoice, for the customer who has the status link. Fetched from the bookkeeping
+  // here, so the customer gets it from this site.
+  app.get(
+    '/status/:token/invoice/:kind',
+    { config: { rateLimit: { max: 30, timeWindow: '10 minutes' } } },
+    async (req, reply) => {
+      const { token, kind } = z.object({ token: z.string().min(20).max(100), kind: z.enum(['deposit', 'final']) }).parse(req.params);
+      const { rows } = await app.db.query<{ number: string; pdfUrl: string }>(
+        `SELECT i.number, i.pdf_url AS "pdfUrl" FROM invoices i JOIN bookings b ON b.id = i.booking_id
+          WHERE b.status_token = $1 AND i.kind = $2 AND b.status <> 'cancelled'`,
+        [token, kind],
+      );
+      const invoice = rows[0];
+      if (!invoice?.pdfUrl.startsWith('https://')) throw new HttpError(404, 'Deze factuur kunnen we niet vinden.', 'not_found');
+      const res = await fetch(invoice.pdfUrl, { signal: AbortSignal.timeout(15_000) }).catch(() => null);
+      if (!res?.ok) throw new HttpError(502, 'De factuur kan nu niet worden opgehaald. Probeer het later opnieuw, of kijk in je e-mail.', 'invoice_unavailable');
+      return reply
+        .type('application/pdf')
+        .header('content-disposition', `inline; filename="Factuur ${invoice.number.replace(/[^\w.-]/g, '')}.pdf"`)
+        .header('cache-control', 'private, no-store')
+        .send(Buffer.from(await res.arrayBuffer()));
+    },
+  );
+
   app.get(
     '/status/:token',
     { config: { rateLimit: { max: 60, timeWindow: '10 minutes' } } },
@@ -153,6 +177,13 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
         payment: due.payment ? { amountCents: due.payment, url: paymentLink('', token, 'payment') } : null,
       };
 
+      // The invoices of this party, each with a link to its PDF (the QR code on it pays in one scan).
+      const { rows: invoices } = await app.db.query<{ kind: string; number: string; amountCents: number; paidCents: number }>(
+        `SELECT kind, number, amount_cents AS "amountCents", paid_cents AS "paidCents" FROM invoices
+          WHERE booking_id = $1 AND pdf_url <> '' ORDER BY kind = 'deposit' DESC, id`,
+        [found.id],
+      );
+
       const current = stageIndex(booking.status);
       const { rows: history } = await app.db.query<{ status: string; at: Date }>(
         `SELECT to_status AS status, max(created_at) AS at FROM booking_events
@@ -164,6 +195,7 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
       return {
         ...booking,
         pay,
+        invoices: booking.status === 'cancelled' ? [] : invoices.map((i) => ({ ...i, url: `/api/status/${encodeURIComponent(token)}/invoice/${i.kind}` })),
         statusLabel: STAGE_INFO[booking.status].customerLabel,
         statusText: STAGE_INFO[booking.status].customerText,
         steps:

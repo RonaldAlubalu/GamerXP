@@ -655,3 +655,9 @@ body:has(#booking-form) .chat-button, body:has(#status-view) .chat-button { disp
 .reviews-wall .review { break-inside: avoid; margin: 0 0 18px; padding: 22px; gap: 12px; min-height: 0; width: auto; }
 .reviews-wall .review p { text-align: left; font-size: 1rem; }
 .reviews-wall .review footer { text-align: left; }
+
+/* Status page: the customer's own recommending link. */
+.share-box { border-color: var(--pink); }
+.share-box h2 { color: var(--pink); }
+.share-link { display: flex; gap: 10px; flex-wrap: wrap; margin: 14px 0; }
+.share-link input { flex: 1 1 220px; min-width: 0; }

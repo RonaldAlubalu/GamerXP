@@ -4,7 +4,8 @@ import { daysBetween, formatDutchDate } from '../lib/dates.js';
 import { bookingOwnerNotification, bookingReceivedMail, contactOwnerNotification, statusUrl } from '../lib/emails.js';
 import { HttpError } from '../lib/errors.js';
 import type { Mail } from '../lib/mailer.js';
-import { findDiscount, findDiscountByLink } from '../services/discounts.js';
+import { contactFor, findDiscount, findDiscountByLink } from '../services/discounts.js';
+import { findReferrer, REFERRAL_NEW_PERCENT, referralToken, REWARD_MAX_PERCENT, REWARD_STEP_PERCENT, rewardOf } from '../services/referrals.js';
 import { bookingRequest, contactRequest, dateString } from '../lib/schemas.js';
 import { availableSlots, bookingWindow, getTimeSlots } from '../services/availability.js';
 import { createBooking, recalculatePrice } from '../services/bookings.js';
@@ -101,6 +102,16 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
         .parse(req.query);
       const found = q.link ? await findDiscountByLink(app.db, q.link, q.partyDate || null) : await findDiscount(app.db, q.code, q.partyDate);
       return 'reason' in found ? { valid: false, reason: found.reason } : { valid: true, ...found.discount };
+    },
+  );
+
+  // Does this recommending link exist? For the banner and the price in the booking form.
+  app.get(
+    '/referral',
+    { config: { rateLimit: { max: 20, timeWindow: '10 minutes' } } },
+    async (req) => {
+      const { token } = z.object({ token: z.string().trim().min(4).max(40) }).parse(req.query);
+      return (await findReferrer(app.db, token)) ? { valid: true, percent: REFERRAL_NEW_PERCENT } : { valid: false };
     },
   );
 
@@ -227,6 +238,18 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
         [found.id],
       );
 
+      // The customer's own recommending link, and what it has earned so far.
+      let referral = null;
+      const owner = await app.db.query<{ email: string; name: string }>('SELECT email, parent_name AS name FROM bookings WHERE id = $1', [found.id]);
+      if (owner.rows[0]?.email && booking.status !== 'cancelled') {
+        const contact = await contactFor(app.db, owner.rows[0].email, owner.rows[0].name, 'Klant');
+        const reward = await rewardOf(app.db, contact.id);
+        referral = {
+          url: `${app.config.PUBLIC_URL}/reserveer?via=${await referralToken(app.db, contact.id)}`,
+          ...reward, newPercent: REFERRAL_NEW_PERCENT, stepPercent: REWARD_STEP_PERCENT, maxPercent: REWARD_MAX_PERCENT,
+        };
+      }
+
       const current = stageIndex(booking.status);
       const { rows: history } = await app.db.query<{ status: string; at: Date }>(
         `SELECT to_status AS status, max(created_at) AS at FROM booking_events
@@ -238,6 +261,7 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
       return {
         ...booking,
         pay,
+        referral,
         invoices: booking.status === 'cancelled' ? [] : invoices.map((i) => ({ ...i, url: `/api/status/${encodeURIComponent(token)}/invoice/${i.kind}` })),
         statusLabel: STAGE_INFO[booking.status].customerLabel,
         statusText: STAGE_INFO[booking.status].customerText,

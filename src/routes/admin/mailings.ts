@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { HttpError } from '../../lib/errors.js';
 import { personalLinkToken } from '../../services/discounts.js';
+import { referralToken } from '../../services/referrals.js';
 import { actorOf } from './bookings.js';
 
 const email = z.email('Vul een geldig e-mailadres in.').trim().max(200);
@@ -19,12 +20,13 @@ const LINK = /\{kortingslink\}/gi;
 const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? '';
 
 // The mail as one person gets it: their first name filled in, and the way out at the bottom.
-export function personalise(body: string, name: string, unsubscribeUrl: string, discountUrl = ''): string {
+export function personalise(body: string, name: string, unsubscribeUrl: string, discountUrl = '', referralUrl = ''): string {
   const first = firstName(name);
   const text = body
     .replace(/\{voornaam\}/gi, first || 'daar')
     .replace(/\{naam\}/gi, name.trim() || 'daar')
-    .replace(LINK, discountUrl);
+    .replace(LINK, discountUrl)
+    .replace(/\{aanbeveellink\}/gi, referralUrl);
   return `${text.trim()}\n\n--\nJe krijgt deze mail omdat we een gamefeestje bij jullie hebben verzorgd. Geen mails meer ontvangen? Meld je af: ${unsubscribeUrl}`;
 }
 
@@ -47,7 +49,9 @@ async function deliver(app: FastifyInstance, mailingId: number): Promise<void> {
     try {
       // Everyone gets a link of their own, good for one booking.
       const link = mailing.codeId ? `${app.config.PUBLIC_URL}/reserveer?korting=${await personalLinkToken(app.db, mailing.codeId, to.id)}` : '';
-      await app.mailer.send({ to: to.email, subject: mailing.subject, text: personalise(mailing.body, to.name, unsubscribeUrl(app, to.token), link) });
+      // And a recommending link of their own, when the text asks for it.
+      const via = /\{aanbeveellink\}/i.test(mailing.body) ? `${app.config.PUBLIC_URL}/reserveer?via=${await referralToken(app.db, to.id)}` : '';
+      await app.mailer.send({ to: to.email, subject: mailing.subject, text: personalise(mailing.body, to.name, unsubscribeUrl(app, to.token), link, via) });
     } catch (err) {
       app.log.warn({ err, mailing: mailingId }, 'A mail of a mailing failed');
       status = 'failed';
@@ -76,7 +80,10 @@ export const mailingRoutes: FastifyPluginAsync = async (app) => {
       `SELECT c.id, c.email, c.name, c.note, c.unsubscribed_at AS "unsubscribedAt", c.unsubscribe_reason AS "unsubscribeReason", c.created_at AS "createdAt",
               (SELECT count(*)::int FROM bookings b WHERE lower(b.email) = lower(c.email) AND b.status <> 'cancelled') AS bookings,
               -- Whether a personal discount link of this person was used for a booking.
-              EXISTS (SELECT 1 FROM discount_links l JOIN bookings b ON b.discount_link = l.token AND b.status <> 'cancelled' WHERE l.contact_id = c.id) AS "linkUsed"
+              EXISTS (SELECT 1 FROM discount_links l JOIN bookings b ON b.discount_link = l.token AND b.status <> 'cancelled' WHERE l.contact_id = c.id) AS "linkUsed",
+              -- Recommending: parties that came in through this person, and how many of them have taken place and still count.
+              (SELECT count(*)::int FROM bookings b WHERE b.referred_by = c.id AND b.status <> 'cancelled') AS referrals,
+              (SELECT count(*)::int FROM bookings b WHERE b.referred_by = c.id AND b.status IN ('party_held', 'completed') AND b.referral_redeemed_on IS NULL) AS "referralsHeld"
          FROM mail_contacts c ORDER BY lower(c.name), lower(c.email)`,
     );
     return rows;
@@ -163,7 +170,7 @@ export const mailingRoutes: FastifyPluginAsync = async (app) => {
   app.post('/mailings/test', async (req) => {
     const body = message.parse(req.body);
     checkLink(body);
-    await app.mailer.send({ to: req.admin!.email, subject: `[Test] ${body.subject}`, text: personalise(body.body, req.admin!.name || 'Voornaam', `${app.config.PUBLIC_URL}/afmelden?t=voorbeeld`, `${app.config.PUBLIC_URL}/reserveer?korting=voorbeeld`) });
+    await app.mailer.send({ to: req.admin!.email, subject: `[Test] ${body.subject}`, text: personalise(body.body, req.admin!.name || 'Voornaam', `${app.config.PUBLIC_URL}/afmelden?t=voorbeeld`, `${app.config.PUBLIC_URL}/reserveer?korting=voorbeeld`, `${app.config.PUBLIC_URL}/reserveer?via=voorbeeld`) });
     return { to: req.admin!.email };
   });
 

@@ -996,11 +996,25 @@ async function bookingDetailView(id) {
         await post(`/bookings/${id}/thank-you-link`, { send: false });
         flash('ok', 'Link gemaakt. Kopieer hem om zelf te versturen.');
       }) }, 'Alleen link maken')));
+  // What this customer earned by recommending others: cashed in on a booking of their own.
+  const rewardOnBooking = (b.priceExtras ?? []).some((x) => x.label.startsWith('Beloning voor aanbevelen'));
+  const rewardCard = b.status !== 'cancelled' && !rewardOnBooking && (b.reward?.percent > 0 || b.reward?.upcoming > 0) && h('div', { class: 'next-step' },
+    h('div', {},
+      h('strong', {}, 'Beloning voor aanbevelen: '),
+      b.reward.percent > 0
+        ? `deze klant heeft ${b.reward.percent}% korting gespaard (${b.reward.held} ${b.reward.held === 1 ? 'feestje' : 'feestjes'} via zijn of haar link).`
+        : 'nog niets gespaard.',
+      b.reward.upcoming > 0 && ` Er ${b.reward.upcoming === 1 ? 'staat' : 'staan'} nog ${b.reward.upcoming} aanbevolen ${b.reward.upcoming === 1 ? 'feestje' : 'feestjes'} gepland.`),
+    me.role === 'owner' && b.reward.percent > 0 && h('button', { class: 'btn primary', type: 'button', onclick: action(async () => {
+      if (!confirm(`De gespaarde ${b.reward.percent}% korting op het pakket toepassen op deze boeking?\n\nDe beloning is daarna gebruikt. Een kleinere korting op deze boeking vervalt; kortingen tellen niet op.`)) return false;
+      await post(`/bookings/${id}/apply-reward`);
+    }, 'Beloning toegepast.') }, `Beloning toepassen (${b.reward.percent}%)`));
   if (contactEditingFor !== id) { contactEditing = false; contactEditingFor = id; }
   const customer = card(cardHead('Klant en feest', me.role === 'owner' && !contactEditing && h('button', { class: 'btn small', type: 'button', onclick: () => { contactEditing = true; render(); } }, 'Wijzigen')),
     contactEditing ? contactForm() : null,
     h('dl', { class: 'details', hidden: contactEditing },
       h('dt', {}, 'Klant'), h('dd', {}, b.parentName),
+      b.referredByName && h('dt', {}, 'Aanbevolen door'), b.referredByName && h('dd', {}, b.referredByName),
       h('dt', {}, 'E-mail'), h('dd', {}, b.email ? h('a', { href: `mailto:${b.email}` }, b.email) : '– (nog toevoegen via Wijzigen)'),
       b.email2 && h('dt', {}, 'Tweede e-mail'), b.email2 && h('dd', {}, h('a', { href: `mailto:${b.email2}` }, b.email2)),
       h('dt', {}, 'Telefoon'), h('dd', {}, b.phone ? phoneLinks(b.phone) : '–'),
@@ -1225,7 +1239,7 @@ async function bookingDetailView(id) {
 
   // One page per subject instead of everything underneath each other.
   const TABS = [
-    ['overview', 'Overzicht', [returningCard, customer, agreementsCard].filter(Boolean)],
+    ['overview', 'Overzicht', [rewardCard, returningCard, customer, agreementsCard].filter(Boolean)],
     ['messages', 'Berichten', [commCard, reviewCard]],
     ['money', 'Geld', [priceCard, paymentsCard]],
     ['progress', 'Checklist en tijdlijn', [checklist, gearCard, timeline].filter(Boolean)],
@@ -2068,7 +2082,8 @@ async function mailingView() {
     table(['Naam', 'E-mail', 'Herkomst', 'Status', ''], contacts.map((c) => h('tr', {},
       h('td', {}, c.name || h('span', { class: 'muted' }, 'geen naam')),
       h('td', {}, c.email),
-      h('td', {}, c.note || (c.bookings ? `${c.bookings} boeking(en)` : 'Zelf toegevoegd')),
+      h('td', {}, c.note || (c.bookings ? `${c.bookings} boeking(en)` : 'Zelf toegevoegd'),
+        c.referrals > 0 && h('div', { class: 'muted small' }, `${c.referrals} aanbevolen · ${Math.min(25, c.referralsHeld * 5)}% gespaard`)),
       h('td', {}, c.unsubscribedAt ? badge('Afgemeld', 'danger') : badge('Krijgt mail', 'success'), c.linkUsed && badge('Korting gebruikt', 'info'),
         c.unsubscribedAt && c.unsubscribeReason && h('div', { class: 'muted small' }, `Reden: ${c.unsubscribeReason}`)),
       h('td', { class: 'inline' },
@@ -2085,7 +2100,7 @@ async function mailingView() {
     h('h2', {}, 'Bericht'),
     field('Onderwerp', h('input', { name: 'subject', required: true, maxlength: 200, value: mailingDraft.subject })),
     field('Tekst', h('textarea', { name: 'body', rows: 12, required: true }, mailingDraft.body),
-      '{voornaam} wordt per klant ingevuld. Op de plek van {kortingslink} krijgt iedereen een eigen link die één keer werkt. Onder elke mail komt vanzelf een afmeldlink.'),
+      '{voornaam} wordt per klant ingevuld. Op de plek van {kortingslink} krijgt iedereen een eigen link die één keer werkt, en op de plek van {aanbeveellink} de eigen link om door te geven (10% voor wie ermee boekt, sparen voor wie hem deelt). Onder elke mail komt vanzelf een afmeldlink.'),
     field('Korting achter de persoonlijke link', h('select', { name: 'discountCodeId' }, h('option', { value: '' }, 'Geen kortingslink in deze mail'),
       linkCodes.map((c) => h('option', { value: c.id, selected: c.id === mailingDraft.discountCodeId }, `${c.code}: ${c.percent}% op het pakket`)))),
     h('div', { class: 'inline' },

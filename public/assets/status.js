@@ -105,6 +105,33 @@ function render(s) {
         : 'Je ontvangt de factuur per e-mail; hij verschijnt daarna ook hier. Op de factuur staat een QR-code waarmee je in één keer betaalt.';
   }
 
+  // The customer's own recommending link, and what it has earned.
+  const share = document.getElementById('st-share');
+  const r = s.referral;
+  share.hidden = !r;
+  if (r) {
+    document.getElementById('st-share-text').textContent =
+      `Ken je iemand die ook een knalfeest verdient? Wie via jouw link reserveert, krijgt ${r.newPercent}% korting op het pakket. ` +
+      `Jij spaart ${r.stepPercent}% korting op je eigen volgende feest voor elk feestje dat zo is gegeven, tot ${r.maxPercent}%.`;
+    const url = document.getElementById('st-share-url');
+    url.value = r.url;
+    url.onfocus = () => url.select();
+    const copy = document.getElementById('st-share-copy');
+    copy.onclick = async () => {
+      try { await navigator.clipboard.writeText(r.url); } catch { url.select(); document.execCommand('copy'); }
+      copy.textContent = 'Gekopieerd ✓';
+      setTimeout(() => { copy.textContent = 'Kopieer link'; }, 2500);
+    };
+    document.getElementById('st-share-whatsapp').href =
+      `https://wa.me/?text=${encodeURIComponent(`Tip voor een verjaardag: een gamefeestje van Gamer Xperience. Via deze link krijg je ${r.newPercent}% korting op het pakket: ${r.url}`)}`;
+    const parts = [];
+    if (r.percent) parts.push(`Je hebt nu ${r.percent}% korting gespaard voor je volgende feest (${r.held} ${r.held === 1 ? 'feestje' : 'feestjes'} via jouw link). Noem het bij je volgende reservering, dan verrekenen we het.`);
+    if (r.upcoming) parts.push(`${r.upcoming} ${r.upcoming === 1 ? 'reservering staat' : 'reserveringen staan'} nog gepland; die ${r.upcoming === 1 ? 'telt' : 'tellen'} mee zodra het feest is geweest.`);
+    if (!parts.length) parts.push('Er is nog niet via jouw link gereserveerd.');
+    parts.push('De gespaarde korting geldt op het pakket en is niet te combineren met een andere korting.');
+    document.getElementById('st-share-progress').textContent = parts.join(' ');
+  }
+
   lookupForm.hidden = true;
   statusView.hidden = false;
 }

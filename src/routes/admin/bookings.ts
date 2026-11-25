@@ -12,7 +12,8 @@ import { createBooking, DECORATION_LABEL, getBookingMailData, recalculatePaid, r
 import { logCommunication, sendAndLog } from '../../services/communications.js';
 import { addEvent, createDefaultTasks, STAGE_INFO, STATUSES, type Status } from '../../services/pipeline.js';
 import { calculatePrice, type PriceExtra } from '../../services/pricing.js';
-import { contactFor, DISCOUNT_PREFIX, thankYouLink } from '../../services/discounts.js';
+import { contactFor, thankYouLink } from '../../services/discounts.js';
+import { packagePercent, redeemReward, REWARD_PREFIX, rewardOf } from '../../services/referrals.js';
 import { createInvoice, linkInvoice, listInvoices, syncInvoicePayments, unlinkedInvoices } from '../../services/invoices.js';
 import { amountsDue, loadDue, paymentLink, syncOpenPayments } from '../../services/online-payments.js';
 
@@ -21,7 +22,7 @@ const BOOKING_COLUMNS = `
   b.party_date AS "partyDate", b.time_slot AS "timeSlot", to_char(b.start_time, 'HH24:MI') AS "startTime", to_char(b.end_time, 'HH24:MI') AS "endTime",
   b.extra_stations AS "extraStations",
   b.parent_name AS "parentName", b.email, b.phone, b.email2, b.phone2, b.street, b.postal_code AS "postalCode", b.city,
-  b.discount_code AS "discountCode", b.location_name AS "locationName", b.billing_street AS "billingStreet", b.billing_postal_code AS "billingPostalCode", b.billing_city AS "billingCity",
+  b.discount_code AS "discountCode", b.referred_by AS "referredBy", b.location_name AS "locationName", b.billing_street AS "billingStreet", b.billing_postal_code AS "billingPostalCode", b.billing_city AS "billingCity",
   b.child_name AS "childName", b.child_age AS "childAge", b.guest_count AS "guestCount",
   b.notes, b.parking, b.status, b.admin_notes AS "adminNotes", b.waiting_on AS "waitingOn",
   b.package_price_cents AS "packagePriceCents", b.travel_km::float AS "travelKm", b.travel_minutes AS "travelMinutes",
@@ -260,8 +261,18 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
          FROM discount_links l WHERE l.booking_id = $1`,
       [id],
     )).rows[0];
+    // Recommending: who sent this customer, and what this customer has earned by recommending.
+    const referredBy = booking.referredBy
+      ? (await app.db.query<{ name: string; email: string }>('SELECT name, email FROM mail_contacts WHERE id = $1', [booking.referredBy])).rows[0] ?? null
+      : null;
+    const self = booking.email
+      ? (await app.db.query<{ id: number }>('SELECT id FROM mail_contacts WHERE lower(email) = lower($1)', [booking.email])).rows[0]
+      : undefined;
+    const reward = self ? await rewardOf(app.db, self.id) : { held: 0, upcoming: 0, percent: 0 };
     return {
       ...booking,
+      referredByName: referredBy ? referredBy.name || referredBy.email : null,
+      reward,
       earlierBookings: earlier,
       thankYouLink: thanks ? { url: `${app.config.PUBLIC_URL}/reserveer?korting=${thanks.token}`, used: thanks.used } : null,
       priceLines: lines,
@@ -315,6 +326,30 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
     const { id } = idParam.parse(req.params);
     await assertExists(id);
     await syncOpenPayments(app, id);
+    return loadBooking(id);
+  });
+
+  // Cashes in what this customer earned by recommending, on this booking. Discounts do not add
+  // up: a smaller discount already on the booking makes way, a bigger one stays and nothing is used.
+  app.post('/bookings/:id/apply-reward', async (req) => {
+    if (req.admin!.role !== 'owner') throw new HttpError(403, 'Je hebt geen rechten voor deze actie.', 'forbidden');
+    const { id } = idParam.parse(req.params);
+    const b = await loadBooking(id);
+    const self = b.email ? (await app.db.query<{ id: number }>('SELECT id FROM mail_contacts WHERE lower(email) = lower($1)', [b.email])).rows[0] : undefined;
+    const reward = self ? await rewardOf(app.db, self.id) : null;
+    if (!self || !reward?.percent) throw new HttpError(422, 'Deze klant heeft nog geen beloning opgebouwd.', 'no_reward');
+    const extras = b.priceExtras as { label: string; amountCents: number }[];
+    const existing = extras.find((x) => packagePercent(x.label) !== null && x.amountCents < 0);
+    if (existing && packagePercent(existing.label)! >= reward.percent) {
+      throw new HttpError(409, `Op deze boeking staat al een korting van ${packagePercent(existing.label)}%. Kortingen tellen niet op, dus de beloning van ${reward.percent}% blijft bewaard voor een volgend feest.`, 'bigger_discount');
+    }
+    const percent = await redeemReward(app.db, self.id, id);
+    const line = { label: `${REWARD_PREFIX}(${percent}% op het pakket)`, amountCents: -Math.round((b.packagePriceCents * percent) / 100) };
+    await app.db.query('UPDATE bookings SET price_extras = $2::jsonb, discount_code = CASE WHEN $3 THEN \'\' ELSE discount_code END WHERE id = $1', [
+      id, JSON.stringify([...extras.filter((x) => x !== existing), line]), Boolean(existing),
+    ]);
+    await recalculatePrice(app.db, app.config, id);
+    await addEvent(app.db, id, { type: 'update', message: `Beloning voor aanbevelen toegepast: ${percent}% op het pakket${existing ? ` (in plaats van "${existing.label}")` : ''}`, actor: actorOf(req) });
     return loadBooking(id);
   });
 
@@ -460,8 +495,8 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
         .filter((x) => !(pkg.rows[0]!.slug === 'ultimate' && x.label === DECORATION_LABEL))
         // A discount code is a percentage of the package: with another package it is another amount.
         .map((x) => {
-          const percent = x.label.startsWith(DISCOUNT_PREFIX) ? Number(/\((\d+)% op het pakket\)/.exec(x.label)?.[1]) : NaN;
-          return Number.isNaN(percent) ? x : { ...x, amountCents: -Math.round((pkg.rows[0]!.priceCents * percent) / 100) };
+          const percent = packagePercent(x.label);
+          return percent === null ? x : { ...x, amountCents: -Math.round((pkg.rows[0]!.priceCents * percent) / 100) };
         });
       await app.db.query('UPDATE bookings SET package_id = $2, package_price_cents = $3, price_extras = $4::jsonb WHERE id = $1', [id, body.packageId, pkg.rows[0].priceCents, JSON.stringify(extras)]);
       packageChange = `Pakket: ${before.packageName} → ${pkg.rows[0].name}`;

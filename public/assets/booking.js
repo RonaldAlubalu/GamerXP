@@ -108,6 +108,23 @@ async function updatePersonalDiscount() {
 }
 updatePersonalDiscount();
 
+// Recommended by another customer (reserveer?via=...): a discount on the package, and the
+// customer who shared the link gets the credit. A personal discount link goes first.
+const referralLink = new URLSearchParams(location.search).get('via') ?? '';
+if (referralLink && !personalLink) {
+  api(`/referral?${new URLSearchParams({ token: referralLink })}`).then((found) => {
+    if (!found.valid) return;
+    form.elements.referral.value = referralLink;
+    discount = { percent: found.percent };
+    const banner = document.getElementById('discount-banner');
+    banner.className = 'notice ok';
+    banner.textContent = `🎉 Je bent aanbevolen door een klant: ${found.percent}% korting op het pakket. Hij wordt vanzelf verrekend.`;
+    banner.hidden = false;
+    document.getElementById('b-discount-field').hidden = true;
+    updatePrice();
+  }).catch(() => {});
+}
+
 // Estimate travel costs once postcode and city are filled in.
 async function updateTravel() {
   const postalCode = form.elements.postalCode.value.trim();

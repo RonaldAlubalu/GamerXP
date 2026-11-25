@@ -305,6 +305,28 @@ describe('profile', () => {
     expect((await ctx.app.inject({ url: '/api/admin/system/demo', headers: demo })).json()).toEqual({ available: false });
   });
 
+  it('lets the owner download a database backup, and nothing else from that folder', async () => {
+    const { mkdtempSync, writeFileSync } = await import('node:fs');
+    const os = await import('node:os');
+    const dir = mkdtempSync(`${os.tmpdir()}/gxp-backups-`);
+    writeFileSync(`${dir}/gamerxp-2026-11-24_0300.sql.gz`, 'oud');
+    writeFileSync(`${dir}/gamerxp-2026-11-25_0300.sql.gz`, 'nieuw-bestand');
+    writeFileSync(`${dir}/geheim.txt`, 'niet voor download');
+    await teardown(ctx);
+    ctx = await setupApp({ BACKUP_DIR: dir });
+    const headers = { authorization: `Bearer ${await loginAdmin(ctx)}` };
+    const list = (await ctx.app.inject({ url: '/api/admin/system/backups', headers })).json();
+    expect(list.map((b: { name: string }) => b.name)).toEqual(['gamerxp-2026-11-25_0300.sql.gz', 'gamerxp-2026-11-24_0300.sql.gz']);
+    const file = await ctx.app.inject({ url: `/api/admin/system/backups/${list[0].name}`, headers });
+    expect(file.statusCode).toBe(200);
+    expect(file.body).toBe('nieuw-bestand');
+    expect(file.headers['content-disposition']).toContain(list[0].name);
+    expect((await ctx.app.inject({ url: '/api/admin/system/backups/geheim.txt', headers })).statusCode).toBe(400);
+    expect((await ctx.app.inject({ url: '/api/admin/system/backups/..%2F..%2Fetc%2Fpasswd', headers })).statusCode).toBe(400);
+    expect((await ctx.app.inject({ url: '/api/admin/system/backups/gamerxp-2020-01-01_0000.sql.gz', headers })).statusCode).toBe(404);
+    expect((await ctx.app.inject({ url: `/api/admin/system/backups/${list[0].name}` })).statusCode).toBe(401);
+  });
+
   it('lets a user set a name and a small photo, and lists who works here by address', async () => {
     const token = await loginAdmin(ctx);
     const headers = { authorization: `Bearer ${token}` };

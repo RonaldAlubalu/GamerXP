@@ -1,6 +1,8 @@
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import QRCode from 'qrcode';
+import { readdir, readFile, stat } from 'node:fs/promises';
+import path from 'node:path';
 import { hashPassword, hashToken, verifyPassword } from '../../lib/auth.js';
 import { generateRecoveryCodes, generateSecret, otpauthUrl, verifyCode } from '../../lib/totp.js';
 import { HttpError } from '../../lib/errors.js';
@@ -146,6 +148,30 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
   app.post('/push/test', async (req) => ({
     sent: await notify(app, { title: 'Gamer Xperience', body: 'Meldingen werken op dit apparaat. 🎮', url: '#/board' }, req.admin!.id),
   }));
+
+  // The daily copies of the database, newest first, for the owner to keep one somewhere else.
+  const BACKUP_NAME = /^gamerxp-[\d_-]+\.sql\.gz$/;
+  app.get('/system/backups', async (req) => {
+    requireOwner(req);
+    const dir = app.config.BACKUP_DIR;
+    const names = dir ? await readdir(dir).catch(() => [] as string[]) : [];
+    const files = await Promise.all(names.filter((n) => BACKUP_NAME.test(n)).map(async (name) => {
+      const info = await stat(path.join(dir, name));
+      return { name, bytes: info.size, madeAt: info.mtime.toISOString() };
+    }));
+    return files.sort((a, b) => b.name.localeCompare(a.name));
+  });
+
+  // One copy as a file. It holds every customer's details, so it is for an owner only.
+  app.get('/system/backups/:name', async (req, reply) => {
+    requireOwner(req);
+    const { name } = z.object({ name: z.string().regex(BACKUP_NAME, 'Dit is geen back-upbestand.') }).parse(req.params);
+    const file = path.join(app.config.BACKUP_DIR, name);
+    const data = await readFile(file).catch(() => null);
+    if (!data) throw new HttpError(404, 'Deze back-up bestaat niet (meer).', 'not_found');
+    req.log.info({ backup: name, by: req.admin!.email }, 'Backup downloaded');
+    return reply.type('application/gzip').header('content-disposition', `attachment; filename="${name}"`).header('cache-control', 'no-store').send(data);
+  });
 
   // Where the demo is and how to get in, for the owner of the real site to pass on.
   app.get('/system/demo', async (req) => {

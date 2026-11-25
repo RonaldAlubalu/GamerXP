@@ -1856,6 +1856,23 @@ async function systemView(fresh) {
       h('dt', {}, 'Adres'), h('dd', { class: 'inline' }, h('a', { href: `${demo.url}/admin/`, target: '_blank', rel: 'noopener' }, `${demo.url.replace('https://', '')}/admin`), copy(`${demo.url}/admin/`)),
       h('dt', {}, 'E-mail'), h('dd', { class: 'inline' }, demo.login, copy(demo.login)),
       h('dt', {}, 'Wachtwoord'), h('dd', { class: 'inline' }, h('code', {}, demo.password), copy(demo.password))));
+  // The daily copies of the database: download one to keep it somewhere else.
+  const backups = me.role === 'owner' && !me.demoMode ? await api('/system/backups').catch(() => []) : [];
+  const download = (b) => action(async () => {
+    const res = await fetch(`/api/admin/system/backups/${b.name}`, { headers: { authorization: `Bearer ${getToken()}` } });
+    if (!res.ok) throw new Error('De back-up kon niet worden opgehaald.');
+    const link = h('a', { href: URL.createObjectURL(await res.blob()), download: b.name });
+    link.click();
+    URL.revokeObjectURL(link.href);
+    return false;
+  });
+  const size = (bytes) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} kB` : `${(bytes / 1024 / 1024).toFixed(1).replace('.', ',')} MB`);
+  const backupCard = me.role === 'owner' && !me.demoMode && card('Back-ups van de database',
+    h('p', { class: 'muted' }, 'Elke dag wordt de hele database als bestand weggeschreven; de laatste 14 dagen blijven bewaard. Download er af en toe een en bewaar hem op een andere plek. Let op: in het bestand staan alle klantgegevens.'),
+    table(['Gemaakt', 'Bestand', 'Grootte', ''], backups.slice(0, 14).map((b) => h('tr', {},
+      h('td', { class: 'nowrap' }, fmtDateTime(b.madeAt)), h('td', {}, b.name), h('td', {}, size(b.bytes)),
+      h('td', {}, h('button', { class: 'btn small', type: 'button', onclick: download(b) }, 'Downloaden')))),
+      'Er staat nog geen back-up. De eerste wordt binnen een dag gemaakt.'));
   const testCard = me.role === 'owner' && card('Testen',
     h('p', { class: 'muted' }, 'Stuurt een testmail naar iedereen die kan inloggen en een testmelding naar alle apparaten van eigenaren waar meldingen aan staan.'),
     testButton, testResult);
@@ -1864,7 +1881,7 @@ async function systemView(fresh) {
     card('Verbindingen', status.checks.map((c) => h('div', { class: 'status-row' },
       h('div', {}, h('strong', {}, c.label), h('div', { class: 'muted small' }, c.detail)),
       badge(TONE[c.state][0], TONE[c.state][1])))),
-    testCard, demoCard);
+    testCard, backupCard, demoCard);
 }
 
 // Notifications on this device ---------------------------------------------------

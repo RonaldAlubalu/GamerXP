@@ -298,7 +298,8 @@ async function newBookingView() {
       field('Postcode', input('postalCode', { placeholder: '1234 AB' })),
       field('Plaats', input('city', { required: true })),
       field('Extra gamestations', select('extraStations', { 0: 'Geen', 1: '1 extra', 2: '2 extra' })),
-      field('Parkeren', select('parking', { '': 'Onbekend', free: 'Gratis', paid: 'Betaald' }))),
+      field('Parkeren', select('parking', { '': 'Onbekend', free: 'Gratis', paid: 'Betaald' })),
+      field('Kortingscode', input('discountCode', { maxlength: 40 }), 'Alleen als de klant er een heeft.')),
     h('label', { class: 'check' }, h('input', { type: 'checkbox', name: 'decoration' }), ' Decoratie erbij (alleen bij Standaard een meerprijs)'),
     h('div', { id: 'review-choice', class: 'next-step', style: 'display:none' },
       h('strong', {}, 'Dit feest is al geweest. Nog te doen:'),
@@ -1477,6 +1478,38 @@ function calendarGrid(cal) {
       badge('vrij', 'success'), ' te boeken · ', badge('geboekt', 'violet'), ' klik voor details · ', badge('aanvraag', 'warning'), ' nog niet bevestigd · grijs = gesloten'));
 }
 
+// Discount codes: a percentage off the package, for parties within a period.
+async function discountCard() {
+  const codes = await api('/discount-codes');
+  const form = h('form', { class: 'inline', style: 'margin-top:14px', onsubmit: action(() => {
+    const d = Object.fromEntries(new FormData(form));
+    return post('/discount-codes', { code: d.code, percent: Number(d.percent), validFrom: d.validFrom, validUntil: d.validUntil, note: d.note });
+  }, 'Kortingscode toegevoegd.') },
+    field('Code', h('input', { name: 'code', required: true, maxlength: 40, placeholder: 'ZOMER10', style: 'width:150px;text-transform:uppercase' })),
+    field('Korting (%)', h('input', { name: 'percent', type: 'number', min: 1, max: 100, required: true, value: 10, style: 'width:90px' })),
+    field('Feest vanaf', h('input', { name: 'validFrom', type: 'date' })),
+    field('Feest t/m', h('input', { name: 'validUntil', type: 'date' })),
+    field('Waarvoor', h('input', { name: 'note', maxlength: 200, placeholder: 'Bijv. zomeractie' })),
+    h('button', { class: 'btn', type: 'submit' }, 'Toevoegen'));
+  const period = (c) => (c.validFrom || c.validUntil ? `${c.validFrom ? fmtDate(c.validFrom) : 'altijd'} t/m ${c.validUntil ? fmtDate(c.validUntil) : 'onbeperkt'}` : 'Altijd');
+  const save = (c, change) => patchJson(`/discount-codes/${c.id}`, { percent: c.percent, validFrom: c.validFrom, validUntil: c.validUntil, active: c.active, note: c.note, ...change });
+  return card('Kortingscodes',
+    h('p', { class: 'muted' }, 'Een klant vult de code in op het reserveerformulier. De korting is een percentage van de pakketprijs; reiskosten en toeslagen tellen niet mee. De periode gaat over de datum van het feest.'),
+    table(['Code', 'Korting', 'Voor feestjes', 'Waarvoor', 'Gebruikt', 'Status', ''], codes.map((c) => h('tr', {},
+      h('td', {}, h('strong', {}, c.code)), h('td', {}, `${c.percent}%`), h('td', {}, period(c)), h('td', {}, c.note || '–'), h('td', {}, `${c.used}×`),
+      h('td', {}, c.active ? badge('Actief', 'success') : badge('Uit', '')),
+      h('td', { class: 'inline' },
+        h('button', { class: 'btn small', onclick: action(() => save(c, { active: !c.active })) }, c.active ? 'Uitzetten' : 'Aanzetten'),
+        h('button', { class: 'btn small', onclick: action(async () => {
+          const until = prompt(`Tot en met welke feestdatum geldt ${c.code}? (jjjj-mm-dd, leeg = onbeperkt)`, c.validUntil ?? '');
+          if (until === null) return false;
+          await save(c, { validUntil: until.trim() });
+        }) }, 'Einddatum'),
+        !c.used && h('button', { class: 'btn small danger', onclick: action(() => (confirm(`Code ${c.code} verwijderen?`) ? del(`/discount-codes/${c.id}`) : false)) }, '✕')))),
+      'Nog geen kortingscodes.'),
+    form);
+}
+
 async function packagesView() {
   const packages = await api('/packages');
   setPage('Pakketten');
@@ -1506,6 +1539,7 @@ async function packagesView() {
   view.replaceChildren(
     h('p', { class: 'muted' }, 'Prijswijzigingen gelden voor nieuwe boekingen; bestaande boekingen houden hun prijs. De pakketteksten op de website staan in site/partials/packages.html.'),
     h('div', { class: 'package-grid' }, packages.map(editor), editor(null)),
+    await discountCard(),
   );
 }
 
@@ -1936,7 +1970,7 @@ function contactsFrom(lines) {
 
 let mailingDraft = {
   subject: 'Bedankt voor 2026, en een cadeautje voor 2027 🎮',
-  body: 'Hoi {voornaam},\n\nDit jaar mocht ik bij jullie een gamefeestje verzorgen. Dank je wel daarvoor; het was een mooi jaar, mede dankzij jullie.\n\nAls bedankje krijg je 10% korting op een gamefeestje in 2027. Noem bij het reserveren de code NIEUWJAAR10.\n\nFijne feestdagen en een goed nieuwjaar!\n\nGroetjes, Ronald – Gamer Xperience',
+  body: 'Hoi {voornaam},\n\nDit jaar mocht ik bij jullie een gamefeestje verzorgen. Dank je wel daarvoor; het was een mooi jaar, mede dankzij jullie.\n\nAls bedankje krijg je 10% korting op een gamefeestje in 2027. Vul bij het reserveren op gamerxp.nl de code NIEUWJAAR10 in; de korting gaat er dan meteen af.\n\nFijne feestdagen en een goed nieuwjaar!\n\nGroetjes, Ronald – Gamer Xperience',
 };
 
 async function mailingView() {

@@ -115,6 +115,11 @@
                 <div class="field"><label for="b-guests">Aantal kinderen</label><input id="b-guests" name="guestCount" type="number" min="1" max="40"></div>
               </div>
               <div class="field">
+                <label for="b-discount">Kortingscode <small>(optioneel)</small></label>
+                <input id="b-discount" name="discountCode" maxlength="40" autocomplete="off" autocapitalize="characters" spellcheck="false" style="max-width: 260px">
+                <small class="hint" id="b-discount-note" hidden></small>
+              </div>
+              <div class="field">
                 <label for="b-notes">Details</label>
                 <textarea id="b-notes" name="notes" maxlength="2000" placeholder="Verjaardag / specifieke games / thema"></textarea>
               </div>

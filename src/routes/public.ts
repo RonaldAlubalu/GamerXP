@@ -4,6 +4,7 @@ import { daysBetween, formatDutchDate } from '../lib/dates.js';
 import { bookingOwnerNotification, bookingReceivedMail, contactOwnerNotification, statusUrl } from '../lib/emails.js';
 import { HttpError } from '../lib/errors.js';
 import type { Mail } from '../lib/mailer.js';
+import { findDiscount } from '../services/discounts.js';
 import { bookingRequest, contactRequest, dateString } from '../lib/schemas.js';
 import { availableSlots, bookingWindow, getTimeSlots } from '../services/availability.js';
 import { createBooking, recalculatePrice } from '../services/bookings.js';
@@ -86,6 +87,17 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
         status: booking.status,
         statusUrl: statusUrl(app.config.PUBLIC_URL, booking.statusToken),
       });
+    },
+  );
+
+  // Is this discount code good for a party on this date? For the price shown in the booking form.
+  app.get(
+    '/discount',
+    { config: { rateLimit: { max: 20, timeWindow: '10 minutes' } } },
+    async (req) => {
+      const { code, partyDate } = z.object({ code: z.string().trim().min(1).max(40), partyDate: dateString }).parse(req.query);
+      const found = await findDiscount(app.db, code, partyDate);
+      return 'reason' in found ? { valid: false, reason: found.reason } : { valid: true, ...found.discount };
     },
   );
 

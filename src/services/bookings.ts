@@ -1,4 +1,5 @@
 import type { Config } from '../config.js';
+import { discountLine, findDiscount } from './discounts.js';
 import type { Db } from '../db/pool.js';
 import { generateReference, generateSessionToken } from '../lib/auth.js';
 import { HttpError } from '../lib/errors.js';
@@ -24,6 +25,7 @@ export interface NewBooking {
   billingStreet?: string;
   billingPostalCode?: string;
   billingCity?: string;
+  discountCode?: string;
   childName: string;
   childAge?: number;
   guestCount?: number;
@@ -80,6 +82,14 @@ export async function createBooking(
     const eveningSurcharge = input.timeSlot === 'avond';
     // Decoration is part of Ultimate; with another package it is a paid extra.
     const extras = input.decoration && pkg.rows[0].slug !== 'ultimate' ? [{ label: DECORATION_LABEL, amountCents: config.DECORATION_CENTS }] : [];
+    // A discount code takes a percentage off the package price, when it counts for this date.
+    let discountCode = '';
+    if (input.discountCode?.trim()) {
+      const found = await findDiscount(client, input.discountCode, input.partyDate);
+      if ('reason' in found) throw new HttpError(422, found.reason, 'invalid_discount');
+      extras.push(discountLine(found.discount, pkg.rows[0].price_cents));
+      discountCode = found.discount.code;
+    }
     const priceCents = calculatePrice(
       {
         packageName: pkg.rows[0].name,
@@ -102,15 +112,15 @@ export async function createBooking(
           `INSERT INTO bookings (reference, package_id, extra_stations, party_date, time_slot, parent_name, email,
                                  phone, street, postal_code, city, child_name, child_age, guest_count, notes,
                                  price_cents, deposit_cents, status_token, evening_surcharge, package_price_cents, parking, price_extras,
-                                 location_name, billing_street, billing_postal_code, billing_city)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
+                                 location_name, billing_street, billing_postal_code, billing_city, discount_code)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
            RETURNING id, status`,
           [
             reference, input.packageId, input.extraStations, input.partyDate, input.timeSlot, input.parentName,
             input.email, input.phone, input.street, input.postalCode, input.city, input.childName,
             input.childAge ?? null, input.guestCount ?? null, input.notes, priceCents, config.DEPOSIT_CENTS,
             statusToken, eveningSurcharge, pkg.rows[0].price_cents, input.parking ?? '', JSON.stringify(extras),
-            input.locationName ?? '', input.billingStreet ?? '', input.billingPostalCode ?? '', input.billingCity ?? '',
+            input.locationName ?? '', input.billingStreet ?? '', input.billingPostalCode ?? '', input.billingCity ?? '', discountCode,
           ],
         );
         const booking = rows[0]!;

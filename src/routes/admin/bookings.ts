@@ -12,6 +12,7 @@ import { createBooking, DECORATION_LABEL, getBookingMailData, recalculatePaid, r
 import { logCommunication, sendAndLog } from '../../services/communications.js';
 import { addEvent, createDefaultTasks, STAGE_INFO, STATUSES, type Status } from '../../services/pipeline.js';
 import { calculatePrice, type PriceExtra } from '../../services/pricing.js';
+import { DISCOUNT_PREFIX } from '../../services/discounts.js';
 import { createInvoice, linkInvoice, listInvoices, syncInvoicePayments, unlinkedInvoices } from '../../services/invoices.js';
 import { amountsDue, loadDue, paymentLink, syncOpenPayments } from '../../services/online-payments.js';
 
@@ -20,7 +21,7 @@ const BOOKING_COLUMNS = `
   b.party_date AS "partyDate", b.time_slot AS "timeSlot", to_char(b.start_time, 'HH24:MI') AS "startTime", to_char(b.end_time, 'HH24:MI') AS "endTime",
   b.extra_stations AS "extraStations",
   b.parent_name AS "parentName", b.email, b.phone, b.email2, b.phone2, b.street, b.postal_code AS "postalCode", b.city,
-  b.location_name AS "locationName", b.billing_street AS "billingStreet", b.billing_postal_code AS "billingPostalCode", b.billing_city AS "billingCity",
+  b.discount_code AS "discountCode", b.location_name AS "locationName", b.billing_street AS "billingStreet", b.billing_postal_code AS "billingPostalCode", b.billing_city AS "billingCity",
   b.child_name AS "childName", b.child_age AS "childAge", b.guest_count AS "guestCount",
   b.notes, b.parking, b.status, b.admin_notes AS "adminNotes", b.waiting_on AS "waitingOn",
   b.package_price_cents AS "packagePriceCents", b.travel_km::float AS "travelKm", b.travel_minutes AS "travelMinutes",
@@ -408,7 +409,13 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
     if (body.packageId !== undefined && body.packageId !== before.packageId) {
       const pkg = await app.db.query<{ name: string; slug: string; priceCents: number }>('SELECT name, slug, price_cents AS "priceCents" FROM packages WHERE id = $1', [body.packageId]);
       if (!pkg.rows[0]) throw new HttpError(422, 'Dit pakket bestaat niet (meer).', 'unknown_package');
-      const extras = (before.priceExtras as { label: string; amountCents: number }[]).filter((x) => !(pkg.rows[0]!.slug === 'ultimate' && x.label === DECORATION_LABEL));
+      const extras = (before.priceExtras as { label: string; amountCents: number }[])
+        .filter((x) => !(pkg.rows[0]!.slug === 'ultimate' && x.label === DECORATION_LABEL))
+        // A discount code is a percentage of the package: with another package it is another amount.
+        .map((x) => {
+          const percent = x.label.startsWith(DISCOUNT_PREFIX) ? Number(/\((\d+)% op het pakket\)/.exec(x.label)?.[1]) : NaN;
+          return Number.isNaN(percent) ? x : { ...x, amountCents: -Math.round((pkg.rows[0]!.priceCents * percent) / 100) };
+        });
       await app.db.query('UPDATE bookings SET package_id = $2, package_price_cents = $3, price_extras = $4::jsonb WHERE id = $1', [id, body.packageId, pkg.rows[0].priceCents, JSON.stringify(extras)]);
       packageChange = `Pakket: ${before.packageName} → ${pkg.rows[0].name}`;
     }

@@ -11,6 +11,7 @@ import { bookingRoutes } from './bookings.js';
 import { catalogRoutes } from './catalog.js';
 import { inventoryRoutes } from './inventory.js';
 import { mailingRoutes } from './mailings.js';
+import { discountRoutes } from './discounts.js';
 import { messageRoutes } from './messages.js';
 import { assistantMayCall, userRoutes, type Role } from './users.js';
 
@@ -241,5 +242,6 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     await secured.register(userRoutes);
     await secured.register(inventoryRoutes);
     await secured.register(mailingRoutes);
+    await secured.register(discountRoutes);
   });
 };

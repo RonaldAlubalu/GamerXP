@@ -49,7 +49,9 @@ function updatePrice() {
   if (decorationOption.hidden) form.elements.decoration.checked = false;
   const decoration = form.elements.decoration.checked ? DECORATION_CENTS : 0;
   const evening = form.elements.timeSlot?.value === 'avond' ? 5000 : 0;
-  const total = selected.priceCents + Number(form.elements.extraStations.value) * EXTRA_STATION_CENTS + decoration + evening + (travel?.travelCents ?? 0);
+  // A discount code takes its percentage off the package price only.
+  const off = discount ? Math.round((selected.priceCents * discount.percent) / 100) : 0;
+  const total = selected.priceCents - off + Number(form.elements.extraStations.value) * EXTRA_STATION_CENTS + decoration + evening + (travel?.travelCents ?? 0);
   document.getElementById('price-total').textContent = formatPrice(total);
   document.getElementById('price-travel').textContent = travel?.km
     ? `Inclusief reiskosten ${formatPrice(travel.travelCents)} (${(travel.km * 2).toLocaleString('nl-NL', { maximumFractionDigits: 1 })} km retour)${evening ? ' en avondtoeslag €50' : ''}.`
@@ -57,6 +59,29 @@ function updatePrice() {
   if (form.elements.parking.value === 'paid') document.getElementById('price-travel').textContent += ' Excl. eventuele parkeerkosten.';
   box.hidden = false;
 }
+
+// A discount code: checked against the chosen date, and shown in the price straight away.
+let discount = null;
+async function updateDiscount() {
+  const input = form.elements.discountCode;
+  const note = document.getElementById('b-discount-note');
+  const code = input.value.trim();
+  const partyDate = form.elements.partyDate.value;
+  discount = null;
+  note.hidden = !code;
+  if (code && !partyDate) note.textContent = 'Kies eerst een datum, dan kijken we of de code daarvoor geldt.';
+  else if (code) {
+    try {
+      const found = await api(`/discount?${new URLSearchParams({ code, partyDate })}`);
+      discount = found.valid ? found : null;
+      note.textContent = found.valid ? `✓ ${found.percent}% korting op het pakket.` : found.reason;
+    } catch {
+      note.textContent = 'De code kon nu niet worden gecontroleerd. We kijken ernaar bij je aanvraag.';
+    }
+  }
+  updatePrice();
+}
+form.elements.discountCode.addEventListener('change', updateDiscount);
 
 // Estimate travel costs once postcode and city are filled in.
 async function updateTravel() {
@@ -126,6 +151,7 @@ function renderCalendar() {
 
 function selectDate(date) {
   form.elements.partyDate.value = date;
+  if (form.elements.discountCode.value.trim()) updateDiscount();
   document.getElementById('slot-date').textContent = formatDate(date);
   const previous = form.elements.timeSlot?.value;
   const free = availability.days[date] ?? [];

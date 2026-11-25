@@ -53,6 +53,8 @@ export const bookingRequest = z.object({
   billingStreet: text(200).default(''),
   billingPostalCode: z.union([postalCode, z.literal('')]).default(''),
   billingCity: text(100).default(''),
+  // A discount code, e.g. from a mailing. Checked against the party date when booking.
+  discountCode: text(40).default(''),
   // Parking at the party address: free, paid or unknown.
   parking: z.enum(['', 'free', 'paid', 'unknown']).default(''),
   notes: text(2000).default(''),

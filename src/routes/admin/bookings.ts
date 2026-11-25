@@ -9,6 +9,7 @@ import { HttpError } from '../../lib/errors.js';
 import { daySchedule, estimateTravelMinutes } from '../../lib/schedule.js';
 import { bookingRequest, bookingStatus, dateString, TIME_SLOTS, timeString } from '../../lib/schemas.js';
 import { createBooking, splitName, DECORATION_LABEL, getBookingMailData, recalculatePaid, recalculatePrice } from '../../services/bookings.js';
+import { upcomingBirthdays } from '../../services/birthdays.js';
 import { logCommunication, sendAndLog } from '../../services/communications.js';
 import { addEvent, createDefaultTasks, STAGE_INFO, STATUSES, type Status } from '../../services/pipeline.js';
 import { calculatePrice, type PriceExtra } from '../../services/pricing.js';
@@ -114,7 +115,8 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
     );
     // Broken connections (mail, payments, backups), from the latest background check.
     const systemProblems = app.systemStatus.current?.checks.filter((c) => c.state === 'error').length ?? 0;
-    return { ...rows[0], messagesWaiting: messages.rows[0]!.count, systemProblems };
+    const birthdays = (await upcomingBirthdays(app.db, t)).length;
+    return { ...rows[0], messagesWaiting: messages.rows[0]!.count, systemProblems, birthdays };
   });
 
   // Board view: every open booking, plus recently finished or cancelled ones.

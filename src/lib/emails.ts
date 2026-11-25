@@ -44,8 +44,13 @@ export interface MailContext {
 // The name a mail starts with: the first name.
 export const greetName = (b: { parentName: string; firstName?: string }) => b.firstName?.trim() || b.parentName.trim().split(/\s+/)[0] || '';
 
-const signature =
-  '\n\nGame on!\n\nRonald\nGamer Xperience\ncontact@gamerxp.nl · +31 (0)6 3420 6753\nhttps://gamerxp.nl';
+// The sign-off under every mail to a customer. The owner can change it in the admin.
+export const DEFAULT_SIGNATURE = 'Game on!\n\nRonald\nGamer Xperience\ncontact@gamerxp.nl · +31 (0)6 3420 6753\nhttps://gamerxp.nl';
+let signature = `\n\n${DEFAULT_SIGNATURE}`;
+export const currentSignature = () => signature.trim();
+export function setSignature(text: string): void {
+  signature = `\n\n${text.trim() || DEFAULT_SIGNATURE}`;
+}
 const euro = new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' });
 
 export const formatEuro = (cents: number) => euro.format(cents / 100);

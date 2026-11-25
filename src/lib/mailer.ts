@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url';
 import nodemailer from 'nodemailer';
 import type { Config } from '../config.js';
 import { renderEmailHtml } from './email-html.js';
+import { currentSignature } from './emails.js';
 
 export interface Mail {
   to: string;
@@ -56,6 +57,7 @@ export function createMailer(config: Config, log: (msg: string) => void): Mailer
         publicUrl: config.PUBLIC_URL,
         reviewUrl: config.GOOGLE_REVIEW_URL || undefined,
         logoUrl: 'cid:logo@gamerxp',
+        signature: currentSignature(),
         headerImage: headerImageData ? 'cid:header@gamerxp' : headerImage,
       });
       await transport.sendMail({ from: config.MAIL_FROM, ...mail, html, attachments: [...inline, ...(mail.attachments ?? [])] });

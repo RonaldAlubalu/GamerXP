@@ -13,6 +13,7 @@ import { inventoryRoutes } from './inventory.js';
 import { mailingRoutes } from './mailings.js';
 import { discountRoutes } from './discounts.js';
 import { messageRoutes } from './messages.js';
+import { templateRoutes } from './templates.js';
 import { assistantMayCall, userRoutes, type Role } from './users.js';
 
 declare module 'fastify' {
@@ -244,5 +245,6 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     await secured.register(inventoryRoutes);
     await secured.register(mailingRoutes);
     await secured.register(discountRoutes);
+    await secured.register(templateRoutes);
   });
 };

@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { HttpError } from '../../lib/errors.js';
 import { LOGO } from '../../lib/mailer.js';
 import { renderEmailHtml } from '../../lib/email-html.js';
-import { withSignature } from '../../lib/emails.js';
+import { currentSignature, withSignature } from '../../lib/emails.js';
 import { personalLinkToken } from '../../services/discounts.js';
 import { referralToken } from '../../services/referrals.js';
 import { actorOf } from './bookings.js';
@@ -205,7 +205,7 @@ export const mailingRoutes: FastifyPluginAsync = async (app) => {
   app.post('/mailings/preview', async (req) => {
     const body = message.extend({ subject: z.string().max(200).default(''), body: z.string().max(10_000).default('') }).parse(req.body);
     const text = personalise(body.body, req.admin!.name || 'Voornaam', `${app.config.PUBLIC_URL}/afmelden?t=voorbeeld`, `${app.config.PUBLIC_URL}/reserveer?korting=voorbeeld`, `${app.config.PUBLIC_URL}/reserveer?via=voorbeeld`);
-    return { html: renderEmailHtml(text, { publicUrl: app.config.PUBLIC_URL, reviewUrl: app.config.GOOGLE_REVIEW_URL || undefined, headerImage: body.headerImage ? `/api/mail-image/${body.headerImage}` : undefined, logoUrl: `data:image/png;base64,${(await readFile(LOGO)).toString('base64')}` }) };
+    return { html: renderEmailHtml(text, { publicUrl: app.config.PUBLIC_URL, reviewUrl: app.config.GOOGLE_REVIEW_URL || undefined, headerImage: body.headerImage ? `/api/mail-image/${body.headerImage}` : undefined, signature: currentSignature(), logoUrl: `data:image/png;base64,${(await readFile(LOGO)).toString('base64')}` }) };
   });
 
   // One mail to yourself, exactly as a customer would get it.

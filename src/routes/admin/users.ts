@@ -11,7 +11,7 @@ import { notify, vapidKeys } from '../../services/push.js';
 export type Role = 'owner' | 'assistant';
 
 // What an assistant may do: look at bookings and the calendar, and change the availability.
-const ASSISTANT_READ = [/^\/me$/, /^\/staff$/, /^\/push\/key$/, /^\/stages$/, /^\/overview$/, /^\/pipeline$/, /^\/bookings(\/[^/]+)?$/, /^\/calendar$/, /^\/packages$/, /^\/availability(\/|$)/, /^\/blocked-dates(\/|$)/];
+const ASSISTANT_READ = [/^\/templates$/, /^\/me$/, /^\/staff$/, /^\/push\/key$/, /^\/stages$/, /^\/overview$/, /^\/pipeline$/, /^\/bookings(\/[^/]+)?$/, /^\/calendar$/, /^\/packages$/, /^\/availability(\/|$)/, /^\/blocked-dates(\/|$)/];
 const ASSISTANT_WRITE = [/^\/logout$/, /^\/me\/password$/, /^\/me\/profile$/, /^\/me\/2fa\//, /^\/me\/devices\//, /^\/push\//, /^\/availability(\/|$)/, /^\/blocked-dates(\/|$)/];
 
 export function assistantMayCall(method: string, path: string): boolean {

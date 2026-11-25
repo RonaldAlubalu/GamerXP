@@ -433,6 +433,7 @@ async function boardView() {
       stat(o.messagesWaiting, 'Berichten te beantwoorden', '#/messages', 'alert'),
       stat(o.depositOpen, 'Aanbetaling nog open', '#/list?payment=deposit_open', 'warn'),
       stat(o.reviewsToRequest, 'Reviews te vragen', '#/reviews', 'warn'),
+      me.role === 'owner' && o.birthdays > 0 && stat(o.birthdays, o.birthdays === 1 ? 'Jarige in aantocht' : 'Jarigen in aantocht', '#/birthdays', 'warn'),
       me.role === 'owner' && o.systemProblems > 0 && stat(o.systemProblems, 'Storing in een koppeling', '#/system', 'alert')),
     h('div', { class: 'stats quiet-row' },
       stat(o.nextSevenDays, 'feestjes komende 7 dagen', '#/calendar', 'quiet'),
@@ -617,6 +618,13 @@ const TEMPLATES = [
     body: 'Hoi {naam},\n\nJammer dat het feest op {datum} niet doorgaat. Ik heb de boeking geannuleerd. Wil je later een nieuwe datum plannen, dan hoor ik het graag.' },
 ];
 
+// The mail a year after a party, when the child has a birthday again (see Verjaardagen).
+const BIRTHDAY_TEMPLATES = [
+  { group: 'Verjaardag', label: 'Bijna weer jarig',
+    subject: '{kind} is bijna weer jarig! 🎮',
+    body: 'Hoi {naam},\n\nHet is alweer bijna een jaar geleden dat ik bij jullie het feest van {kind} mocht verzorgen, op {vorigfeest}. Ik denk er nog met veel plezier aan terug.\n\nOver een paar weken wordt {kind} {leeftijd}. Zijn er al plannen voor het feest? Als jullie weer zin hebben in een gamefeest, kom ik graag opnieuw langs. De populaire dagen zijn vaak een paar weken vooruit vol, vandaar dat ik nu al even van me laat horen.\n\nOmdat jullie al eerder klant waren, krijgen jullie korting op het pakket. Reserveer via jullie persoonlijke link, dan gaat die er vanzelf af:\n\n{kortingslink}\n\nGeen plannen dit jaar? Geen probleem. Dan wens ik {kind} alvast een heel fijne verjaardag!' },
+];
+
 // For conversations from the contact form, where there is no booking yet.
 const CONTACT_TEMPLATES = [
   { group: 'Antwoorden', label: 'Bedankt, verwijs naar reserveren',
@@ -639,8 +647,24 @@ const CONTACT_TEMPLATES = [
     body: 'Hoi {naam},\n\nEen tijdje geleden beantwoordde ik je bericht, maar ik heb daarna niets meer gehoord. Misschien is mijn mail tussen de andere post beland.\n\nKan ik nog iets voor jullie betekenen? Heb je vragen over de pakketten, de prijs of een datum, dan hoor ik het graag. Bellen of appen mag ook: 06 3420 6753.' },
 ];
 
-// What the server puts under every mail to a customer.
-const SIGNATURE_HINT = 'Game on! · Ronald · Gamer Xperience · contact@gamerxp.nl · +31 (0)6 3420 6753 · gamerxp.nl';
+// What the owner changed or added to the templates, and the sign-off the server puts under every
+// mail to a customer. Read once after logging in, and again after a change.
+let saved = { templates: [], signature: '', defaultSignature: '' };
+const loadSaved = async () => { saved = await api('/templates'); };
+const signatureHint = () => saved.signature.split('\n').map((l) => l.trim()).filter(Boolean).join(' · ');
+const BUILT_IN = { booking: () => TEMPLATES, contact: () => CONTACT_TEMPLATES, birthday: () => BIRTHDAY_TEMPLATES };
+const KIND_LABELS = { booking: 'Bij een boeking', contact: 'Bij een bericht via het contactformulier', birthday: 'Verjaardag, een jaar later' };
+
+// The templates of one kind: the built-in ones as the owner changed them, then his own.
+function templatesOf(kind, { all = false } = {}) {
+  const list = BUILT_IN[kind]().map((t) => {
+    const key = `${kind}:${t.label}`;
+    const mine = saved.templates.find((x) => x.key === key);
+    return mine ? { ...t, ...mine, kind, key, changed: true, original: t } : { ...t, kind, key };
+  });
+  for (const mine of saved.templates) if (!mine.key && mine.kind === kind) list.push({ ...mine, own: true });
+  return all ? list : list.filter((t) => !t.hidden);
+}
 
 function lastSent(b) {
   const last = (b.communications ?? []).find((c) => c.direction === 'out' && c.delivery !== 'failed');
@@ -690,12 +714,12 @@ function composer({ booking, contact, onSubmit, emailConfigured, invoicing }) {
   let mode = 'email';
   const subject = h('input', { name: 'subject', maxlength: 200, placeholder: 'Onderwerp' });
   const body = h('textarea', { name: 'body', required: true, rows: 7, placeholder: 'Typ je bericht…' });
-  const signHint = h('small', {}, h('strong', {}, 'Komt er vanzelf onder: '), SIGNATURE_HINT);
+  const signHint = h('small', {}, h('strong', {}, 'Komt er vanzelf onder: '), signatureHint());
   const direction = h('select', { name: 'direction' }, h('option', { value: 'in' }, 'Ontvangen van klant'), h('option', { value: 'out' }, 'Verstuurd aan klant'));
   const channel = h('select', { name: 'channel' }, ['whatsapp', 'phone', 'email', 'in_person', 'other'].map((c) => h('option', { value: c }, CHANNELS[c])));
   // Templates fill the message for email and WhatsApp alike.
   // Templates that send an invoice along need the bookkeeping to be connected.
-  const templates = booking ? TEMPLATES.filter((t) => !t.invoice || invoicing) : contact ? CONTACT_TEMPLATES : [];
+  const templates = booking ? templatesOf('booking').filter((t) => !t.invoice || invoicing) : contact ? templatesOf('contact') : [];
   const groups = [...new Set(templates.map((t) => t.group))];
   const templateSelect = templates.length > 0 && h('select', {
     'aria-label': 'Sjabloon',
@@ -2073,6 +2097,129 @@ function twoFactorCard() {
   return box;
 }
 
+// Templates ---------------------------------------------------------------------
+
+const TEMPLATE_VARS = {
+  booking: '{naam} voornaam · {kind} · {feest} · {datum} · {adres} · {ref} · {totaal} · {aanbetaling} · {openstaand} · {prijsregels} · {aankomst} · {statuslink} · {vorigbericht}',
+  contact: '{naam} voornaam',
+  birthday: '{naam} voornaam · {kind} · {leeftijd} de leeftijd die het kind wordt · {vorigfeest} datum van het vorige feest · {kortingslink} persoonlijke kortingslink',
+};
+
+async function templatesView(kind, which) {
+  await loadSaved();
+  setPage('Sjablonen');
+  // One template open to change, or a new one.
+  if (kind && BUILT_IN[kind]) {
+    const all = templatesOf(kind, { all: true });
+    const t = which === 'nieuw' ? { kind, group: '', label: '', subject: '', body: '', own: true, fresh: true } : all[Number(which)];
+    if (!t) { location.hash = '#/templates'; return; }
+    const groups = [...new Set(all.map((x) => x.group).filter(Boolean))];
+    const form = h('form', { class: 'card', style: 'max-width:760px', onsubmit: action(async () => {
+      const body = { kind, group: form.elements.group.value, label: form.elements.label.value, subject: form.elements.subject.value, body: form.elements.body.value, hidden: Boolean(t.hidden) };
+      if (t.id) await patchJson(`/templates/${t.id}`, body);
+      else await post('/templates', { ...body, ...(t.key ? { key: t.key } : {}) });
+      flash('ok', 'Sjabloon opgeslagen.');
+      location.hash = '#/templates';
+      return false;
+    }) },
+      h('h2', {}, t.fresh ? 'Nieuw sjabloon' : t.label),
+      h('p', { class: 'muted' }, KIND_LABELS[kind]),
+      h('div', { class: 'row' },
+        field('Naam in de lijst', h('input', { name: 'label', required: true, maxlength: 100, value: t.label })),
+        field('Groep', h('input', { name: 'group', maxlength: 60, value: t.group, list: 'template-groups' }))),
+      h('datalist', { id: 'template-groups' }, groups.map((g) => h('option', { value: g }))),
+      field('Onderwerp (alleen voor e-mail)', h('input', { name: 'subject', maxlength: 200, value: t.subject })),
+      field('Tekst', h('textarea', { name: 'body', rows: 14, required: true }, t.body),
+        `Deze woorden worden vanzelf ingevuld: ${TEMPLATE_VARS[kind]}. Je ondertekening hoef je er niet onder te zetten; die komt er vanzelf bij.`),
+      h('div', { class: 'inline' },
+        h('button', { class: 'btn primary', type: 'submit' }, 'Opslaan'),
+        h('a', { class: 'btn', href: '#/templates' }, 'Annuleren')));
+    view.replaceChildren(form);
+    return;
+  }
+
+  const sign = h('textarea', { rows: 6, maxlength: 600 }, saved.signature);
+  const signCard = card('Ondertekening',
+    h('p', { class: 'muted' }, 'Komt vanzelf onder elke e-mail aan een klant en onder elke mailing. De eerste regel wordt roze en vet, de regel met je naam vet. Je e-mailadres, telefoonnummer en website staan ook al in de balk onderaan de mail.'),
+    h('div', { class: 'field' }, sign),
+    h('div', { class: 'inline' },
+      h('button', { class: 'btn primary', type: 'button', onclick: action(async () => { await put('/settings/signature', { text: sign.value }); await loadSaved(); }, 'Ondertekening opgeslagen.') }, 'Opslaan'),
+      saved.signature !== saved.defaultSignature && h('button', { class: 'btn', type: 'button', onclick: action(async () => {
+        if (!confirm('De standaard ondertekening terugzetten?')) return false;
+        await put('/settings/signature', { text: '' });
+        await loadSaved();
+      }, 'Standaard ondertekening teruggezet.') }, 'Standaard terugzetten')));
+
+  const section = (kind) => {
+    const all = templatesOf(kind, { all: true });
+    const groups = [...new Set(all.map((t) => t.group))];
+    return card(cardHead(KIND_LABELS[kind], kind !== 'birthday' && h('a', { class: 'btn small', href: `#/templates/${kind}/nieuw` }, '+ Nieuw sjabloon')),
+      groups.map((g) => h('div', { class: 'template-group' },
+        h('h3', {}, g || 'Overig'),
+        h('ul', { class: 'template-list' }, all.map((t, i) => t.group === g && h('li', { class: t.hidden ? 'off' : '' },
+          h('a', { class: 'template-name', href: `#/templates/${kind}/${i}` }, h('strong', {}, t.label), h('span', { class: 'muted small' }, t.body.replace(/\s+/g, ' ').slice(0, 90) + '…')),
+          h('span', { class: 'badges' }, t.own && badge('Eigen', 'info'), t.changed && badge('Aangepast', 'primary'), t.hidden && badge('Verborgen', 'warning')),
+          h('span', { class: 'inline' },
+            h('a', { class: 'btn small', href: `#/templates/${kind}/${i}` }, 'Bewerken'),
+            kind !== 'birthday' && h('button', { class: 'btn small', type: 'button', title: t.hidden ? 'Weer tonen in de keuzelijst' : 'Niet meer tonen in de keuzelijst', onclick: action(async () => {
+              const body = { kind, group: t.group, label: t.label, subject: t.subject, body: t.body, hidden: !t.hidden };
+              if (t.id) await patchJson(`/templates/${t.id}`, body);
+              else await post('/templates', { ...body, key: t.key });
+            }) }, t.hidden ? 'Tonen' : 'Verbergen'),
+            t.changed && h('button', { class: 'btn small', type: 'button', onclick: action(async () => (confirm(`"${t.label}" terugzetten naar de standaardtekst? Je aanpassingen gaan verloren.`) ? del(`/templates/${t.id}`) : false), 'Teruggezet naar de standaardtekst.') }, 'Terugzetten'),
+            t.own && h('button', { class: 'btn small danger', type: 'button', onclick: action(async () => (confirm(`Sjabloon "${t.label}" verwijderen?`) ? del(`/templates/${t.id}`) : false), 'Sjabloon verwijderd.') }, '✕'))))))));
+  };
+  view.replaceChildren(
+    h('p', { class: 'muted' }, 'De kant-en-klare berichten die je kiest bij "Sjabloon" als je een klant mailt of appt. Pas de teksten aan, verberg wat je niet gebruikt of schrijf er zelf een bij.'),
+    signCard, section('booking'), section('contact'), section('birthday'));
+}
+
+// Birthdays ---------------------------------------------------------------------
+
+// A year after a party the child has a birthday again: the moment to get in touch.
+async function birthdaysView() {
+  const list = await api('/birthdays');
+  setPage('Jarigen in aantocht');
+  const template = templatesOf('birthday', { all: true })[0];
+  const fill = (text, b) => {
+    const vars = {
+      naam: b.firstName || b.parentName.split(' ')[0],
+      kind: b.childName || 'jullie jarige',
+      leeftijd: b.turning ? String(b.turning) : 'weer een jaar ouder',
+      vorigfeest: fmtLongDate(b.lastParty),
+    };
+    const done = text.replace(/\{(\w+)\}/g, (m, k) => vars[k] ?? m);
+    return done.charAt(0).toUpperCase() + done.slice(1);
+  };
+  const cards = list.map((b) => {
+    const days = Math.round((new Date(`${b.around}T00:00:00Z`) - new Date(`${todayIso()}T00:00:00Z`)) / 86400000);
+    const when = days < 0 ? `${-days} dagen geleden` : days === 0 ? 'vandaag' : days < 14 ? `over ${days} dagen` : `over ${Math.round(days / 7)} weken`;
+    const subject = h('input', { name: 'subject', required: true, maxlength: 200, value: fill(template.subject, b) });
+    const body = h('textarea', { name: 'body', rows: 12, required: true }, fill(template.body, b));
+    const form = h('form', { hidden: true, class: 'birthday-form', onsubmit: action(async () => {
+      if (!confirm(`Deze mail versturen naar ${b.email}?`)) return false;
+      await post(`/birthdays/${b.id}/mail`, { subject: subject.value, body: body.value });
+    }, 'Verjaardagsmail verstuurd.') },
+      field('Onderwerp', subject),
+      field('Tekst', body, `Op de plek van {kortingslink} komt een persoonlijke link die één keer werkt. Komt er vanzelf onder: ${signatureHint()}`),
+      h('button', { class: 'btn primary', type: 'submit' }, `Versturen naar ${b.email}`));
+    return h('section', { class: 'card birthday' },
+      h('div', { class: 'card-head' },
+        h('h2', {}, b.childName || 'Jarige', b.turning ? ` wordt ${b.turning}` : ' is bijna weer jarig'),
+        h('div', { class: 'badges' }, badge(when, days <= 28 ? 'warning' : 'info'))),
+      h('p', {}, `Rond ${fmtLongDate(b.around)}. Vorig feest: ${fmtLongDate(b.lastParty)} in ${b.city} (${b.packageName}).`),
+      h('p', { class: 'muted' }, `${b.parentName} · ${b.email}`),
+      h('div', { class: 'inline' },
+        h('button', { class: 'btn primary', type: 'button', onclick: () => { form.hidden = !form.hidden; if (!form.hidden) body.focus(); } }, 'Mail schrijven'),
+        h('a', { class: 'btn', href: `#/bookings/${b.id}` }, 'Boeking bekijken'),
+        h('button', { class: 'btn', type: 'button', title: 'Haalt deze herinnering weg tot volgend jaar', onclick: action(async () => (confirm('Dit jaar overslaan? De herinnering komt volgend jaar terug.') ? post(`/birthdays/${b.id}/skip`) : false)) }, 'Dit jaar overslaan')),
+      form);
+  });
+  view.replaceChildren(
+    h('p', { class: 'muted' }, 'Kinderen die in de komende tien weken weer jarig zijn, een jaar of langer na hun feest. Klanten die alweer geboekt hebben of zich hebben afgemeld voor mailings staan er niet tussen. De tekst pas je aan onder ', h('a', { href: '#/templates' }, 'Sjablonen'), '.'),
+    ...(cards.length ? cards : [h('p', { class: 'empty' }, 'Er zijn nu geen jarigen in aantocht.')]));
+}
+
 // Mailing ----------------------------------------------------------------------
 
 // Names and addresses out of pasted text or the rows of a file: one person per line, as
@@ -2237,7 +2384,7 @@ async function mailingView() {
     h('h2', {}, 'Bericht'),
     field('Onderwerp', h('input', { name: 'subject', required: true, maxlength: 200, value: mailingDraft.subject })),
     field('Tekst', h('textarea', { name: 'body', rows: 12, required: true }, mailingDraft.body),
-      '{voornaam} wordt per klant ingevuld. Op de plek van {kortingslink} krijgt iedereen een eigen link die één keer werkt, en op de plek van {aanbeveellink} de eigen link om door te geven (10% voor wie ermee boekt, sparen voor wie hem deelt). Onder elke mail komen vanzelf je ondertekening (' + SIGNATURE_HINT + ') en een afmeldlink.'),
+      '{voornaam} wordt per klant ingevuld. Op de plek van {kortingslink} krijgt iedereen een eigen link die één keer werkt, en op de plek van {aanbeveellink} de eigen link om door te geven (10% voor wie ermee boekt, sparen voor wie hem deelt). Onder elke mail komen vanzelf je ondertekening (' + signatureHint() + ') en een afmeldlink.'),
     headerField,
     field('Korting achter de persoonlijke link', h('select', { name: 'discountCodeId' }, h('option', { value: '' }, 'Geen kortingslink in deze mail'),
       linkCodes.map((c) => h('option', { value: c.id, selected: c.id === mailingDraft.discountCodeId }, `${c.code}: ${c.percent}% op het pakket`)))),
@@ -2365,6 +2512,7 @@ async function updateCounts() {
     set('count-messages', o.messagesWaiting);
     set('count-reviews', o.reviewsToRequest);
     set('count-system', o.systemProblems);
+    set('count-birthdays', o.birthdays);
   } catch {}
 }
 
@@ -2387,10 +2535,11 @@ async function render() {
   photo.hidden = !me.avatar;
   if (me.avatar) photo.src = me.avatar;
   if (!staff.size) await loadStaff().catch(() => {});
+  if (!saved.signature) await loadSaved().catch(() => {});
   for (const el of document.querySelectorAll('[data-owner]')) el.hidden = assistant;
   const [path] = location.hash.slice(1).split('?');
   const parts = (path || '/board').split('/').filter(Boolean);
-  const ownerOnly = ['messages', 'reviews', 'packages', 'users', 'system'];
+  const ownerOnly = ['messages', 'reviews', 'packages', 'users', 'system', 'templates', 'birthdays'];
   if (assistant && ownerOnly.includes(parts[0])) parts[0] = 'board';
   for (const a of document.querySelectorAll('.side-nav a')) {
     a.classList.toggle('active', a.dataset.route === parts[0] || (a.dataset.route === 'list' && parts[0] === 'bookings') || (a.dataset.route === 'messages' && parts[0] === 'mailing'));
@@ -2407,6 +2556,8 @@ async function render() {
     else if (parts[0] === 'packages') await packagesView();
     else if (parts[0] === 'inventory') await inventoryView();
     else if (parts[0] === 'mailing') await mailingView();
+    else if (parts[0] === 'templates') await templatesView(parts[1], parts[2]);
+    else if (parts[0] === 'birthdays') await birthdaysView();
     else if (parts[0] === 'users') await usersView();
     else if (parts[0] === 'system') await systemView();
     else if (parts[0] === 'account') await accountView();

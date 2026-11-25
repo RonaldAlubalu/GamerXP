@@ -17,6 +17,8 @@ export interface EmailLook {
   headerImage?: string;
   // Where the logo comes from; by default the website. The mailer sends it along inside the mail.
   logoUrl?: string;
+  // The sign-off the text ends with (see emails.ts); it gets its own look.
+  signature?: string;
 }
 
 // The label of the button a link becomes, or undefined for an ordinary link.
@@ -75,8 +77,12 @@ export function renderEmailHtml(text: string, look: EmailLook): string {
   const footAt = text.lastIndexOf('\n\n--\n');
   const foot = footAt === -1 ? '' : text.slice(footAt + 5).trim();
   if (footAt !== -1) text = text.slice(0, footAt);
-  const signAt = text.lastIndexOf('\n\nGame on!');
+  const sign = (look.signature ?? 'Game on!\n\nRonald\nGamer Xperience').trim();
+  const signAt = text.lastIndexOf(`\n\n${sign.split('\n')[0]}`);
   const main = signAt === -1 ? text : text.slice(0, signAt);
+  // First line in pink, the name in bold; the address and phone are in the bar below already.
+  const [opening = '', name = '', ...rest] = (signAt === -1 ? '' : text.slice(signAt)).split('\n').map((l) => l.trim()).filter(Boolean);
+  const extra = rest.filter((l) => !/@|https?:\/\/|\+31|^0\d/.test(l));
 
   const body = main
     .split(/\n{2,}/)
@@ -96,8 +102,8 @@ export function renderEmailHtml(text: string, look: EmailLook): string {
     signAt === -1
       ? ''
       : `<table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:22px;border-top:1px solid #e3e8f0;padding-top:16px;width:100%"><tr><td>` +
-        `<p style="margin:0 0 6px;font:700 17px Arial,Helvetica,sans-serif;color:${PINK}">Game on!</p>` +
-        `<p style="margin:0;color:#1c2233"><strong>Ronald</strong><br>Gamer Xperience</p></td></tr></table>`;
+        `<p style="margin:0 0 6px;font:700 17px Arial,Helvetica,sans-serif;color:${PINK}">${esc(opening)}</p>` +
+        `<p style="margin:0;color:#1c2233"><strong>${esc(name)}</strong>${extra.map((l) => `<br>${esc(l)}`).join('')}</p></td></tr></table>`;
 
   const smallPrint = foot
     ? `<p style="margin:22px 0 0;font-size:12px;line-height:1.5;color:#7a8296">${paragraph(foot, look).replace(/^<p[^>]*>|<\/p>$/g, '')}</p>`

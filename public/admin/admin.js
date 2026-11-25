@@ -1971,8 +1971,8 @@ function contactsFrom(lines) {
 }
 
 let mailingDraft = {
-  subject: 'Bedankt voor 2026, en een cadeautje voor 2027 🎮',
-  body: 'Hoi {voornaam},\n\nDit jaar mocht ik bij jullie een gamefeestje verzorgen. Dank je wel daarvoor; het was een mooi jaar, mede dankzij jullie.\n\nAls bedankje krijg je 10% korting op een gamefeestje in 2027, zodat het volgend jaar weer een knallend feest wordt. Reserveer via je persoonlijke link en de korting gaat er vanzelf af:\n\n{kortingslink}\n\nZelf geen feestje gepland? Geef de link dan door aan iemand die je een knalfeest gunt. De link werkt één keer.\n\nFijne feestdagen en een goed nieuwjaar!\n\nGroetjes, Ronald – Gamer Xperience',
+  subject: 'Bedankt voor jullie vertrouwen in 2026 🎮',
+  body: "Hoi {voornaam},\n\n2026 was het eerste jaar waarin ik echt voluit met Gamer Xperience aan de slag ben gegaan. Dat dat gelukt is, komt door mensen zoals jij.\n\nEen verjaardag is een belangrijk moment, en vaak was het zelfs de tiende. Dat je mij het vertrouwen gaf om dat feest bij jullie thuis te verzorgen, vind ik nog steeds bijzonder. Ik heb van elk feestje genoten: van de spanning bij het opbouwen tot het gejuich bij de laatste ronde.\n\nDank je wel daarvoor. Echt.\n\nAls bedankje krijg je 10% korting op een gamefeestje in 2027. Reserveer via je persoonlijke link, dan gaat de korting er vanzelf af:\n\n{kortingslink}\n\nStaat er bij jullie volgend jaar geen feestje op de planning? Geef de link dan door aan iemand die je een knalfeest gunt. Hij werkt één keer.\n\nIk wens jullie fijne feestdagen en een mooi nieuw jaar. Wie weet tot in 2027!\n\nGroetjes,\nRonald – Gamer Xperience",
   discountCodeId: undefined,
 };
 

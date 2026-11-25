@@ -13,6 +13,8 @@ const URL_RE = /https?:\/\/[^\s<>"]+[^\s<>".,;:!?)]/g;
 export interface EmailLook {
   publicUrl: string;
   reviewUrl?: string;
+  // A picture under the logo, for a special mailing.
+  headerImage?: string;
 }
 
 // The label of the button a link becomes, or undefined for an ordinary link.
@@ -67,6 +69,10 @@ const isDetailLine = (line: string) => /^[A-ZÀ-Ü][\wÀ-ü' -]{1,28}: \S/.test(
 
 export function renderEmailHtml(text: string, look: EmailLook): string {
   // The sign-off at the end gets its own look.
+  // A mailing ends with a small print line (how to unsubscribe), after "--".
+  const footAt = text.lastIndexOf('\n\n--\n');
+  const foot = footAt === -1 ? '' : text.slice(footAt + 5).trim();
+  if (footAt !== -1) text = text.slice(0, footAt);
   const signAt = text.lastIndexOf('\n\nGame on!');
   const main = signAt === -1 ? text : text.slice(0, signAt);
 
@@ -91,6 +97,13 @@ export function renderEmailHtml(text: string, look: EmailLook): string {
         `<p style="margin:0 0 6px;font:700 17px Arial,Helvetica,sans-serif;color:${PINK}">Game on!</p>` +
         `<p style="margin:0;color:#1c2233"><strong>Ronald</strong><br>Gamer Xperience</p></td></tr></table>`;
 
+  const smallPrint = foot
+    ? `<p style="margin:22px 0 0;font-size:12px;line-height:1.5;color:#7a8296">${paragraph(foot, look).replace(/^<p[^>]*>|<\/p>$/g, '')}</p>`
+    : '';
+  const picture = look.headerImage
+    ? `<tr><td style="padding:0;line-height:0"><img src="${esc(look.headerImage)}" alt="" width="600" style="display:block;width:100%;max-width:600px;height:auto;border:0"></td></tr>\n`
+    : '';
+
   return `<!doctype html>
 <html lang="nl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"></head>
 <body style="margin:0;padding:0;background:#eef1f6">
@@ -100,9 +113,10 @@ export function renderEmailHtml(text: string, look: EmailLook): string {
 <a href="${esc(look.publicUrl)}" style="text-decoration:none"><img src="${esc(look.publicUrl)}/assets/img/logo-email.png" alt="Gamer Xperience" width="84" style="display:block;border:0;margin:0 auto 6px"></a>
 <div style="font:700 13px Arial,Helvetica,sans-serif;letter-spacing:.08em;color:${CYAN};text-transform:uppercase">Het ultieme gamefeestje bij jou thuis</div>
 </td></tr>
-<tr><td style="padding:28px 28px 26px;font:16px/1.6 Arial,Helvetica,sans-serif;color:#1c2233">
+${picture}<tr><td style="padding:28px 28px 26px;font:16px/1.6 Arial,Helvetica,sans-serif;color:#1c2233">
 ${body}
 ${signature}
+${smallPrint}
 </td></tr>
 <tr><td align="center" style="background:${NAVY};padding:18px 20px;font:13px/1.6 Arial,Helvetica,sans-serif;color:#aab3c8">
 <a href="mailto:contact@gamerxp.nl" style="color:${CYAN};text-decoration:none">contact@gamerxp.nl</a> &nbsp;·&nbsp;

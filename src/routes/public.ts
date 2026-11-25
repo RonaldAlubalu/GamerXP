@@ -151,6 +151,15 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
   );
 
   // Parent-facing progress page. Only shows what the parent needs: no address or contact details.
+  // The picture at the top of a mailing; mail programs fetch it from here.
+  app.get('/mail-image/:token', async (req, reply) => {
+    const { token } = z.object({ token: z.string().max(40) }).parse(req.params);
+    const { rows } = await app.db.query<{ mime: string; data: Buffer }>('SELECT mime, data FROM mailing_images WHERE token = $1', [token]);
+    if (!rows[0]) throw new HttpError(404, 'Niet gevonden.', 'not_found');
+    // Mail programs in a browser load it from another site.
+    return reply.header('Content-Type', rows[0].mime).header('Cross-Origin-Resource-Policy', 'cross-origin').header('Cache-Control', 'public, max-age=31536000, immutable').send(rows[0].data);
+  });
+
   // The way out of the mailings: the link at the bottom of every mailing leads here.
   app.post(
     '/unsubscribe',

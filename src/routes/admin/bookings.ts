@@ -3,12 +3,12 @@ import QRCode from 'qrcode';
 import { z } from 'zod';
 import { addDays, today } from '../../lib/dates.js';
 import {
-  formatEuro, paymentLinkMail, reminderMail, reminderText, reviewRequestMail, statusChangeMail, whatsappUrl, withSignature,
+  formatEuro, greetName, paymentLinkMail, reminderMail, reminderText, reviewRequestMail, statusChangeMail, whatsappUrl, withSignature,
 } from '../../lib/emails.js';
 import { HttpError } from '../../lib/errors.js';
 import { daySchedule, estimateTravelMinutes } from '../../lib/schedule.js';
 import { bookingRequest, bookingStatus, dateString, TIME_SLOTS, timeString } from '../../lib/schemas.js';
-import { createBooking, DECORATION_LABEL, getBookingMailData, recalculatePaid, recalculatePrice } from '../../services/bookings.js';
+import { createBooking, splitName, DECORATION_LABEL, getBookingMailData, recalculatePaid, recalculatePrice } from '../../services/bookings.js';
 import { logCommunication, sendAndLog } from '../../services/communications.js';
 import { addEvent, createDefaultTasks, STAGE_INFO, STATUSES, type Status } from '../../services/pipeline.js';
 import { calculatePrice, type PriceExtra } from '../../services/pricing.js';
@@ -21,7 +21,7 @@ const BOOKING_COLUMNS = `
   b.id, b.reference, b.package_id AS "packageId", p.name AS "packageName",
   b.party_date AS "partyDate", b.time_slot AS "timeSlot", to_char(b.start_time, 'HH24:MI') AS "startTime", to_char(b.end_time, 'HH24:MI') AS "endTime",
   b.extra_stations AS "extraStations",
-  b.parent_name AS "parentName", b.email, b.phone, b.email2, b.phone2, b.street, b.postal_code AS "postalCode", b.city,
+  b.parent_name AS "parentName", b.first_name AS "firstName", b.last_name AS "lastName", b.email, b.phone, b.email2, b.phone2, b.street, b.postal_code AS "postalCode", b.city,
   b.discount_code AS "discountCode", b.referred_by AS "referredBy", b.location_name AS "locationName", b.billing_street AS "billingStreet", b.billing_postal_code AS "billingPostalCode", b.billing_city AS "billingCity",
   b.child_name AS "childName", b.child_age AS "childAge", b.guest_count AS "guestCount",
   b.notes, b.parking, b.status, b.admin_notes AS "adminNotes", b.waiting_on AS "waitingOn",
@@ -371,7 +371,7 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
     const url = `${app.config.PUBLIC_URL}/reserveer?korting=${link.token}`;
     let mailed = false;
     if (send && !contact.unsubscribed) {
-      const first = String(b.parentName).trim().split(/\s+/)[0];
+      const first = greetName(b);
       mailed = await sendAndLog(app, { bookingId: id }, {
         to: b.email,
         subject: 'Bedankt dat jullie terugkomen! 🎮',
@@ -393,6 +393,8 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
     const body = z
       .object({
         parentName: shape.parentName,
+        firstName: z.string().trim().max(50),
+        lastName: z.string().trim().max(60),
         email: z.union([shape.email, z.literal('')]),
         email2: z.union([shape.email, z.literal('')]),
         phone: shape.phone,
@@ -416,12 +418,12 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
     type Key = keyof typeof body;
     const before = (await loadBooking(id)) as unknown as Record<Key, unknown>;
     const columns: Record<Key, string> = {
-      parentName: 'parent_name', email: 'email', email2: 'email2', phone: 'phone', phone2: 'phone2', street: 'street', postalCode: 'postal_code',
+      parentName: 'parent_name', firstName: 'first_name', lastName: 'last_name', email: 'email', email2: 'email2', phone: 'phone', phone2: 'phone2', street: 'street', postalCode: 'postal_code',
       locationName: 'location_name', billingStreet: 'billing_street', billingPostalCode: 'billing_postal_code', billingCity: 'billing_city',
       city: 'city', childName: 'child_name', childAge: 'child_age', guestCount: 'guest_count', parking: 'parking', notes: 'notes',
     };
     const labels: Record<Key, string> = {
-      parentName: 'Naam', email: 'E-mail', email2: 'Tweede e-mail', phone: 'Telefoon', phone2: 'Tweede telefoon', street: 'Straat', postalCode: 'Postcode',
+      parentName: 'Naam', firstName: 'Voornaam', lastName: 'Achternaam', email: 'E-mail', email2: 'Tweede e-mail', phone: 'Telefoon', phone2: 'Tweede telefoon', street: 'Straat', postalCode: 'Postcode',
       locationName: 'Naam locatie', billingStreet: 'Factuuradres straat', billingPostalCode: 'Factuuradres postcode', billingCity: 'Factuuradres plaats',
       city: 'Plaats', childName: 'Jarige', childAge: 'Leeftijd', guestCount: 'Aantal kinderen', parking: 'Parkeren', notes: 'Details',
     };
@@ -433,6 +435,14 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
       `UPDATE bookings SET ${changed.map((key, i) => `${columns[key]} = $${i + 2}`).join(', ')}, updated_at = now() WHERE id = $1`,
       [id, ...changed.map((key) => body[key])],
     );
+    // The full name and its two parts stay in step, whichever of them was changed.
+    if (changed.some((key) => key === 'firstName' || key === 'lastName' || key === 'parentName')) {
+      const byParts = changed.includes('firstName') || changed.includes('lastName');
+      const names = byParts
+        ? splitName('', String(body.firstName ?? before.firstName ?? ''), String(body.lastName ?? before.lastName ?? ''))
+        : splitName(String(body.parentName ?? ''));
+      await app.db.query('UPDATE bookings SET parent_name = $2, first_name = $3, last_name = $4 WHERE id = $1', [id, names.full || before.parentName, names.first, names.last]);
+    }
     // Another address means another distance, and with it other travel costs.
     if (changed.includes('postalCode') || changed.includes('city')) {
       const postalCode = String(body.postalCode ?? before.postalCode ?? '');

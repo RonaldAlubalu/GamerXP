@@ -11,6 +11,8 @@ export interface Mail {
   attachments?: { filename: string; path: string }[];
   // Notifications to the owner stay plain; emails to customers get the look of the website.
   plain?: boolean;
+  // Link of a picture to show at the top (a special mailing).
+  headerImage?: string;
 }
 
 export interface Mailer {
@@ -36,10 +38,10 @@ export function createMailer(config: Config, log: (msg: string) => void): Mailer
   });
 
   return {
-    async send({ plain, ...mail }) {
+    async send({ plain, headerImage, ...mail }) {
       const html = plain
         ? undefined
-        : renderEmailHtml(mail.text, { publicUrl: config.PUBLIC_URL, reviewUrl: config.GOOGLE_REVIEW_URL || undefined });
+        : renderEmailHtml(mail.text, { publicUrl: config.PUBLIC_URL, reviewUrl: config.GOOGLE_REVIEW_URL || undefined, headerImage });
       await transport.sendMail({ from: config.MAIL_FROM, ...mail, html });
     },
     async verify() {

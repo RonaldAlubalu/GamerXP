@@ -60,6 +60,9 @@ function updatePrice() {
   box.hidden = false;
 }
 
+// The form asks first and last name apart; the full name goes along too.
+const withFullName = (data) => ({ ...data, parentName: `${data.firstName ?? ''} ${data.lastName ?? ''}`.trim() });
+
 // A discount code: checked against the chosen date, and shown in the price straight away.
 let discount = null;
 async function updateDiscount() {
@@ -330,7 +333,7 @@ form.addEventListener('submit', async (e) => {
   }
   submitButton.disabled = true;
   try {
-    const { reference, statusUrl } = await api('/bookings', { method: 'POST', body: JSON.stringify(formData(form)) });
+    const { reference, statusUrl } = await api('/bookings', { method: 'POST', body: JSON.stringify(withFullName(formData(form))) });
     form.hidden = true;
     document.getElementById('booking-done').hidden = false;
     document.getElementById('booking-reference').textContent = reference;

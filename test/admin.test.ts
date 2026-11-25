@@ -106,6 +106,20 @@ describe('admin API', () => {
     expect(detail.events.map((e: { message: string }) => e.message).join(' | ')).toContain(`Pakket: ${from.name} → ${to.name}`);
   });
 
+  it('keeps first and last name apart and greets by first name', async () => {
+    await ctx.app.inject({ method: 'POST', url: '/api/bookings', payload: bookingBody(ctx, { parentName: 'Lina Kucharski', firstName: 'Lina', lastName: 'Kucharski' }) });
+    const [booking] = (await ctx.app.inject({ url: '/api/admin/bookings', headers: auth() })).json();
+    expect(booking).toMatchObject({ parentName: 'Lina Kucharski', firstName: 'Lina', lastName: 'Kucharski' });
+    // The confirmation the customer got starts with the first name only.
+    expect(ctx.sent.find((m) => m.to === booking.email)!.text).toContain('Hoi Lina,');
+    expect(ctx.sent.find((m) => m.to === booking.email)!.text).not.toContain('Hoi Lina Kucharski');
+
+    // Changing a part keeps the full name in step; an older client sending only the full name still works.
+    const change = (payload: object) => ctx.app.inject({ method: 'PATCH', url: `/api/admin/bookings/${booking.id}/contact`, headers: auth(), payload });
+    expect((await change({ firstName: 'Lina', lastName: 'de Vries' })).json()).toMatchObject({ parentName: 'Lina de Vries', firstName: 'Lina', lastName: 'de Vries' });
+    expect((await change({ parentName: 'Tom van Dam' })).json()).toMatchObject({ parentName: 'Tom van Dam', firstName: 'Tom', lastName: 'van Dam' });
+  });
+
   it('removes a booking with everything under it, for the owner only', async () => {
     const booking = await createBooking();
     await ctx.app.inject({ method: 'POST', url: `/api/admin/bookings/${booking.id}/payments`, headers: { authorization: `Bearer ${token}` }, payload: { kind: 'deposit', amountCents: 10000, method: 'bank', paidOn: '2026-11-01' } });

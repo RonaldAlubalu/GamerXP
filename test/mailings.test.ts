@@ -61,9 +61,34 @@ describe('mailings', () => {
     expect(jan.text).toMatch(/Meld je af: http.*\/afmelden\?t=\S+/);
     expect(ctx.sent.find((m) => m.to === 'piet@example.com')!.text).toContain('Hoi daar,');
 
+    // A first name given apart goes before the first word of the name.
+    await call('POST', '/mailing/contacts', { contacts: [{ email: 'tom@example.com', name: 'Tom (& Mar) Binnendijk', firstName: 'Tom en Mar' }] });
+    expect((await call('GET', '/mailing/contacts')).json().find((c: { email: string }) => c.email === 'tom@example.com').firstName).toBe('Tom en Mar');
+
     const [mailing] = (await call('GET', '/mailings')).json();
     expect(mailing).toMatchObject({ subject: 'Bedankt voor 2026', sent: 2, failed: 0, queued: 0 });
     expect(mailing.finishedAt).not.toBeNull();
+  });
+
+  it('sends a picture along at the top, and signs every mail', async () => {
+    await call('POST', '/mailing/contacts', { contacts: [{ email: 'jan@example.com', name: 'Jan Jansen' }] });
+    const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+    expect((await call('POST', '/mailing/images', { image: 'data:text/html;base64,AAAA' })).statusCode).toBe(400);
+    const made = (await call('POST', '/mailing/images', { image: pixel })).json();
+    expect((await call('GET', '/mailing/images')).json()).toEqual([made]);
+    // Mail programs fetch it without logging in.
+    const shown = await ctx.app.inject({ url: `/api/mail-image/${made.token}` });
+    expect(shown.statusCode).toBe(200);
+    expect(shown.headers['content-type']).toBe('image/png');
+    expect((await ctx.app.inject({ url: '/api/mail-image/bestaat-niet' })).statusCode).toBe(404);
+
+    ctx.sent.length = 0;
+    await call('POST', '/mailings', { subject: 'Fijne feestdagen', body: 'Hoi {voornaam},\n\nTot in 2027!', headerImage: made.token });
+    expect(ctx.sent[0]).toMatchObject({ to: 'jan@example.com', headerImage: made.url });
+    expect(ctx.sent[0]!.text).toMatch(/Tot in 2027!\n\nGame on![\s\S]*\n\n--\nJe krijgt/);
+
+    expect((await call('DELETE', `/mailing/images/${made.token}`)).statusCode).toBe(204);
+    expect((await ctx.app.inject({ url: `/api/mail-image/${made.token}` })).statusCode).toBe(404);
   });
 
   it('refuses an empty list, and is for the owner only', async () => {

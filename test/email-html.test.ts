@@ -30,4 +30,13 @@ describe('email in the look of the website', () => {
     expect(html).toContain('Game on!</p>');
     expect(html).toContain('https://gamerxp.nl/assets/img/logo-email.png');
   });
+
+  it('puts a picture under the logo and the way out in small print under the sign-off', () => {
+    const html = renderEmailHtml(`${withSignature('Hoi Jan,\n\nFijne feestdagen!')}\n\n--\nGeen mails meer? Meld je af: https://gamerxp.nl/afmelden?t=abc`, { ...look, headerImage: 'https://gamerxp.nl/api/mail-image/tok' });
+    expect(html).toContain('<img src="https://gamerxp.nl/api/mail-image/tok"');
+    expect(html.indexOf('mail-image/tok')).toBeLessThan(html.indexOf('Hoi Jan'));
+    expect(html.indexOf('Game on!</p>')).toBeLessThan(html.indexOf('Geen mails meer?'));
+    expect(html).toContain('>gamerxp.nl/afmelden?t=abc</a>');
+    expect(html).not.toContain('--');
+  });
 });

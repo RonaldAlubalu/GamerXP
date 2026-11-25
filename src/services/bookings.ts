@@ -16,6 +16,8 @@ export interface NewBooking {
   partyDate: string;
   timeSlot: 'ochtend' | 'middag' | 'avond';
   parentName: string;
+  firstName?: string;
+  lastName?: string;
   email: string;
   phone: string;
   street: string;
@@ -34,6 +36,14 @@ export interface NewBooking {
   guestCount?: number;
   parking?: '' | 'free' | 'paid' | 'unknown';
   notes: string;
+}
+
+// First and last name: as given apart, else the first word of the full name and the rest.
+export function splitName(full: string, first = '', last = ''): { first: string; last: string; full: string } {
+  const name = full.trim().replace(/\s+/g, ' ');
+  const f = first.trim() || name.split(' ')[0] || '';
+  const l = last.trim() || (first.trim() ? '' : name.slice(f.length).trim());
+  return { first: f, last: l, full: first.trim() || last.trim() ? `${f} ${l}`.trim() : name };
 }
 
 // The decoration extra as it appears in the price lines and on the invoice.
@@ -82,6 +92,7 @@ export async function createBooking(
 
     // The package price is fixed at booking time. Travel costs are added once the
     // distance is known; the evening slot ends after 19:30 so it gets the surcharge.
+    const names = splitName(input.parentName, input.firstName, input.lastName);
     const eveningSurcharge = input.timeSlot === 'avond';
     // Decoration is part of Ultimate; with another package it is a paid extra.
     const extras = input.decoration && pkg.rows[0].slug !== 'ultimate' ? [{ label: DECORATION_LABEL, amountCents: config.DECORATION_CENTS }] : [];
@@ -135,15 +146,15 @@ export async function createBooking(
           `INSERT INTO bookings (reference, package_id, extra_stations, party_date, time_slot, parent_name, email,
                                  phone, street, postal_code, city, child_name, child_age, guest_count, notes,
                                  price_cents, deposit_cents, status_token, evening_surcharge, package_price_cents, parking, price_extras,
-                                 location_name, billing_street, billing_postal_code, billing_city, discount_code, discount_link, referred_by)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)
+                                 location_name, billing_street, billing_postal_code, billing_city, discount_code, discount_link, referred_by, first_name, last_name)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31)
            RETURNING id, status`,
           [
-            reference, input.packageId, input.extraStations, input.partyDate, input.timeSlot, input.parentName,
+            reference, input.packageId, input.extraStations, input.partyDate, input.timeSlot, names.full,
             input.email, input.phone, input.street, input.postalCode, input.city, input.childName,
             input.childAge ?? null, input.guestCount ?? null, input.notes, priceCents, config.DEPOSIT_CENTS,
             statusToken, eveningSurcharge, pkg.rows[0].price_cents, input.parking ?? '', JSON.stringify(extras),
-            input.locationName ?? '', input.billingStreet ?? '', input.billingPostalCode ?? '', input.billingCity ?? '', discountCode, discountCode ? discountLink : '', referredBy,
+            input.locationName ?? '', input.billingStreet ?? '', input.billingPostalCode ?? '', input.billingCity ?? '', discountCode, discountCode ? discountLink : '', referredBy, names.first, names.last,
           ],
         );
         const booking = rows[0]!;
@@ -191,7 +202,7 @@ export async function getBookingMailData(db: Db, id: string): Promise<BookingMai
   const { rows } = await db.query<BookingMailData>(
     `SELECT b.reference, p.name AS "packageName", b.party_date AS "partyDate", to_char(b.start_time, 'HH24:MI') AS "startTime", to_char(b.end_time, 'HH24:MI') AS "endTime",
             b.time_slot AS "timeSlot", b.extra_stations AS "extraStations",
-            b.parent_name AS "parentName", b.email, b.phone, b.street, b.postal_code AS "postalCode", b.city,
+            b.parent_name AS "parentName", b.first_name AS "firstName", b.email, b.phone, b.street, b.postal_code AS "postalCode", b.city,
             b.child_name AS "childName", b.child_age AS "childAge", b.guest_count AS "guestCount", b.notes, b.parking,
             b.status_token AS "statusToken", b.price_cents AS "priceCents", b.deposit_cents AS "depositCents",
             b.paid_cents AS "paidCents", b.travel_km::float AS "travelKm"

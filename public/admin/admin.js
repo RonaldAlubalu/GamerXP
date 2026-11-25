@@ -290,7 +290,8 @@ async function newBookingView() {
       field('Fase', select('status', startStatuses), 'Waar staat deze boeking nu?'),
       field('Datum', input('partyDate', { type: 'date', required: true })),
       field('Tijdslot', select('timeSlot', SLOT_LABELS)),
-      field('Naam ouder of contactpersoon', input('parentName', { required: true, maxlength: 100 })),
+      field('Voornaam', input('firstName', { required: true, maxlength: 50 }), 'Hiermee begint een mail: "Hoi Lina,".'),
+      field('Achternaam', input('lastName', { maxlength: 60 })),
       field('E-mail', input('email', { type: 'email' }), 'Mag leeg blijven als je het nog niet weet.'),
       field('Telefoon', input('phone', { type: 'tel' })),
       field('Naam jarige', input('childName', { maxlength: 50 })),
@@ -313,6 +314,7 @@ async function newBookingView() {
     e.preventDefault();
     const data = Object.fromEntries(new FormData(form));
     const { status, askReview: _ask, ...body } = data;
+    body.parentName = `${body.firstName} ${body.lastName}`.trim();
     const past = ['party_held', 'completed'].includes(status);
     body.decoration = form.elements.decoration.checked;
     for (const key of ['childAge', 'guestCount']) if (!body[key]) delete body[key];
@@ -466,7 +468,13 @@ async function listView() {
           const created = await post('/bookings', x.body);
           added++;
           // A party that is already over gets no automatic review request.
-          if (x.status !== 'new') await patchJson(`/bookings/${created.id}`, { status: x.status, notifyCustomer: false, ...(['party_held', 'completed'].includes(x.status) ? { reviewStatus: 'declined' } : {}) });
+          const past = ['party_held', 'completed'].includes(x.status);
+          if (x.status !== 'new') await patchJson(`/bookings/${created.id}`, { status: x.status, notifyCustomer: false, ...(x.review || past ? { reviewStatus: x.review ?? 'declined' } : {}) });
+          // A party from before the admin that was paid: noted as paid in full, so nothing shows as open.
+          if (x.paid) {
+            const made = await api(`/bookings/${created.id}`);
+            if (made.outstandingCents > 0) await post(`/bookings/${created.id}/payments`, { kind: 'payment', amountCents: made.outstandingCents, method: 'other', paidOn: x.body.partyDate, note: 'Overgenomen uit eerdere administratie' });
+          }
         } catch (err) {
           failed.push(`Rij ${x.line} (${x.body.parentName}): ${err.message}`);
         }
@@ -547,6 +555,19 @@ const TEMPLATES = [
     subject: 'Je aanvraag bij Gamer Xperience ({ref})',
     body: 'Hoi {naam},\n\nBedankt voor je geduld! Het is op dit moment erg druk, waardoor het iets langer duurt dan je van ons gewend bent. Je aanvraag voor {datum} staat genoteerd en je hoort uiterlijk morgen van mij.' },
 
+  { group: 'Opvolgen (geen reactie)', label: 'Nog geen reactie op het voorstel',
+    subject: 'Nog even over je aanvraag voor {datum}',
+    body: 'Hoi {naam},\n\n{vorigbericht} stuurde ik je een mail met het voorstel voor {feest} op {datum}, maar ik heb nog geen reactie gezien. Misschien is hij tussen de andere mail beland; dat gebeurt zo.\n\nKan ik iets voor jullie betekenen? Als je nog twijfelt over het pakket, de ruimte of de prijs, denk ik graag met je mee. Bellen of appen mag ook: 06 3420 6753.\n\nDe datum houd ik voorlopig voor je vast. Laat je me weten of je door wilt gaan?' },
+  { group: 'Opvolgen (geen reactie)', label: 'Nog geen antwoord op mijn vragen',
+    subject: 'Nog een paar vragen over je feest ({ref})',
+    body: 'Hoi {naam},\n\n{vorigbericht} stuurde ik je een paar vragen over {feest} op {datum}. Ik heb nog geen antwoord gezien, vandaar dit berichtje.\n\nHet gaat om kleine dingen: hoeveel kinderen er ongeveer komen, in welke ruimte we opbouwen en welke games favoriet zijn. Een kort antwoord is genoeg, en appen mag ook: 06 3420 6753.\n\nDan kan ik alles goed voor jullie voorbereiden.' },
+  { group: 'Opvolgen (geen reactie)', label: 'Laatste bericht: de datum komt weer vrij',
+    subject: 'Zal ik {datum} nog voor je vasthouden?',
+    body: 'Hoi {naam},\n\nIk heb je een paar keer gemaild over {feest} op {datum}, maar nog niets van je gehoord. Dat kan natuurlijk: plannen veranderen.\n\nOmdat er meer aanvragen voor die dag binnenkomen, geef ik de datum over een paar dagen weer vrij. Wil je hem houden, laat het me dan even weten; een kort berichtje is genoeg.\n\nGaat het feest niet door, dan is dat ook goed. Dan hoor ik het graag, en je bent later altijd weer welkom.' },
+  { group: 'Opvolgen (geen reactie)', label: 'Een tijd later: nog interesse?',
+    subject: 'Nog steeds zin in een gamefeest?',
+    body: 'Hoi {naam},\n\nEen tijdje geleden hadden we contact over een gamefeest op {datum}. Dat is er toen niet van gekomen, en dat is helemaal prima.\n\nKomt er binnenkort weer een verjaardag of een ander feest aan? Dan denk ik graag met jullie mee. Op gamerxp.nl/reserveer zie je welke data nog vrij zijn, en een bericht terug mag natuurlijk ook.' },
+
   { group: 'Bevestigen en betalen', label: 'Datum is vrij, aanbetaling gevraagd', status: 'confirmed',
     subject: 'Goed nieuws: je datum is vrij ({ref})',
     body: 'Hoi {naam},\n\nGoed nieuws: {datum} is vrij en ik heb {feest} voor je vastgezet!\n\nDe prijs komt op {totaal}. Om de datum definitief te maken vragen we een aanbetaling van {aanbetaling}, binnen 5 dagen. Betalen en de voortgang volgen kan via deze link:\n{statuslink}\n\nHeb je nog vragen, stel ze gerust.' },
@@ -608,12 +629,23 @@ const CONTACT_TEMPLATES = [
   { group: 'Antwoorden', label: 'Leeftijd en games',
     subject: 'Re: je bericht aan Gamer Xperience',
     body: 'Hoi {naam},\n\nGoede vraag! Onze feestjes zijn geschikt voor kinderen van ongeveer 6 tot 14 jaar. We hebben onder andere Fortnite, Minecraft, Roblox, Rocket League en Mario Kart, en voor de jongsten rustigere games. De kinderen mogen zelf kiezen; ik stem het aanbod af op de groep.' },
+  { group: 'Opvolgen', label: 'Nog geen reactie op mijn antwoord',
+    subject: 'Re: je bericht aan Gamer Xperience',
+    body: 'Hoi {naam},\n\nEen tijdje geleden beantwoordde ik je bericht, maar ik heb daarna niets meer gehoord. Misschien is mijn mail tussen de andere post beland.\n\nKan ik nog iets voor jullie betekenen? Heb je vragen over de pakketten, de prijs of een datum, dan hoor ik het graag. Bellen of appen mag ook: 06 3420 6753.' },
 ];
+
+// What the server puts under every mail to a customer.
+const SIGNATURE_HINT = 'Game on! · Ronald · Gamer Xperience · contact@gamerxp.nl · +31 (0)6 3420 6753 · gamerxp.nl';
+
+function lastSent(b) {
+  const last = (b.communications ?? []).find((c) => c.direction === 'out' && c.delivery !== 'failed');
+  return last ? `Op ${fmtLongDate(last.createdAt.slice(0, 10))}` : 'Een tijdje geleden';
+}
 
 function fillTemplate(text, b) {
   const party = b.childName ? `het feest van ${b.childName}` : 'jullie feest';
   const vars = b.reference ? {
-    naam: b.parentName.split(' ')[0],
+    naam: b.firstName || b.parentName.split(' ')[0],
     ref: b.reference,
     kind: b.childName || 'de jarige',
     feest: party,
@@ -626,6 +658,8 @@ function fillTemplate(text, b) {
     openstaand: fmtEuro(b.outstandingCents),
     aankomst: b.startTime ? `een uur voor ${b.startTime}` : 'een uur voor de start',
     statuslink: `${location.origin}/status?t=${encodeURIComponent(b.statusToken)}`,
+    // When the last mail to the customer went out: "Op dinsdag 24 november".
+    vorigbericht: lastSent(b),
   } : { naam: (b.name ?? '').split(' ')[0] };
   return text.replace(/\{(\w+)\}/g, (m, k) => vars[k] ?? m);
 }
@@ -650,7 +684,8 @@ function messageThread(items) {
 function composer({ booking, contact, onSubmit, emailConfigured, invoicing }) {
   let mode = 'email';
   const subject = h('input', { name: 'subject', maxlength: 200, placeholder: 'Onderwerp' });
-  const body = h('textarea', { name: 'body', required: true, rows: 7, placeholder: 'Typ je bericht… (je ondertekening wordt bij e-mails automatisch toegevoegd)' });
+  const body = h('textarea', { name: 'body', required: true, rows: 7, placeholder: 'Typ je bericht…' });
+  const signHint = h('small', {}, h('strong', {}, 'Komt er vanzelf onder: '), SIGNATURE_HINT);
   const direction = h('select', { name: 'direction' }, h('option', { value: 'in' }, 'Ontvangen van klant'), h('option', { value: 'out' }, 'Verstuurd aan klant'));
   const channel = h('select', { name: 'channel' }, ['whatsapp', 'phone', 'email', 'in_person', 'other'].map((c) => h('option', { value: c }, CHANNELS[c])));
   // Templates fill the message for email and WhatsApp alike.
@@ -703,7 +738,10 @@ function composer({ booking, contact, onSubmit, emailConfigured, invoicing }) {
     type: 'button', class: 'btn',
     onclick: (e) => {
       if (!body.value.trim()) return flash('error', 'Typ eerst je bericht.');
-      window.open(`https://wa.me/${digits}?text=${encodeURIComponent(body.value.trim())}`, '_blank', 'noopener');
+      // WhatsApp gets a short sign-off, unless the message already ends with one.
+      const text = body.value.trim();
+      const signed = /(ronald|gamer xperience)\W*$/i.test(text) ? text : `${text}\n\nGroet,\nRonald – Gamer Xperience`;
+      window.open(`https://wa.me/${digits}?text=${encodeURIComponent(signed)}`, '_blank', 'noopener');
       action(() => onSubmit({ direction: 'out', channel: 'whatsapp', body: body.value, send: false }, moveTo()))(e);
     },
   }, 'Via WhatsApp sturen');
@@ -716,6 +754,7 @@ function composer({ booking, contact, onSubmit, emailConfigured, invoicing }) {
     tabButtons[0].classList.toggle('on', m === 'email');
     tabButtons[1].classList.toggle('on', m === 'log');
     emailFields.hidden = m !== 'email';
+    signHint.hidden = m !== 'email';
     logFields.hidden = m !== 'log';
     submit.textContent = m === 'email' ? 'E-mail versturen' : 'Opslaan in logboek';
   }
@@ -724,7 +763,7 @@ function composer({ booking, contact, onSubmit, emailConfigured, invoicing }) {
       ? { direction: 'out', channel: 'email', subject: subject.value, body: body.value, send: true, attachInvoice: attachInvoice() }
       : { direction: direction.value, channel: channel.value, body: body.value, send: false }, mode === 'email' ? moveTo() : undefined)),
   },
-    h('div', { class: 'tabs' }, tabButtons), templateRow, emailFields, logFields, h('div', { class: 'field' }, body), invoiceBox, moveBox,
+    h('div', { class: 'tabs' }, tabButtons), templateRow, emailFields, logFields, h('div', { class: 'field' }, body, signHint), invoiceBox, moveBox,
     !emailConfigured && h('p', { class: 'muted small' }, 'Let op: e-mail (SMTP) is nog niet ingesteld. Berichten worden gelogd maar niet echt verstuurd.'),
     h('div', { class: 'inline' }, submit, whatsapp));
 }
@@ -944,7 +983,8 @@ async function bookingDetailView(id) {
     }, 'Gegevens opgeslagen.') },
       h('h3', {}, 'Klant'),
       h('div', { class: 'row', style: grid },
-        field('Naam ouder of contactpersoon', input('parentName', { required: true, maxlength: 100 })),
+        field('Voornaam', input('firstName', { required: true, maxlength: 50 }), 'Hiermee begint een mail: "Hoi Lina,".'),
+        field('Achternaam', input('lastName', { maxlength: 60 })),
         field('E-mail', input('email', { type: 'email' })),
         field('Telefoon', input('phone', { type: 'tel' })),
         field('Tweede e-mail', input('email2', { type: 'email' }), 'Bijvoorbeeld van de andere ouder.'),
@@ -2034,6 +2074,21 @@ function twoFactorCard() {
 // "Naam <adres>", "Naam; adres", "adres; Naam" or just an address.
 function contactsFrom(lines) {
   const found = [];
+  // A file with headings (Voornaam, Achternaam, E-mail...) is read by its columns.
+  const head = lines.findIndex((l) => Array.isArray(l) && l.some((c) => /^voornaam$/i.test(String(c ?? '').trim())));
+  if (head >= 0) {
+    const labels = lines[head].map((c) => String(c ?? '').trim().toLowerCase());
+    const col = (...names) => labels.findIndex((l) => names.includes(l));
+    const [first, last, mail] = [col('voornaam'), col('achternaam'), col('e-mailadres', 'e-mail', 'email', 'mail')];
+    for (const row of lines.slice(head + 1)) {
+      const email = String(row[mail] ?? '').trim();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) continue;
+      const firstName = String(row[first] ?? '').trim();
+      const lastName = last >= 0 ? String(row[last] ?? '').trim() : '';
+      found.push({ email, firstName, name: `${firstName} ${/^onbekend$/i.test(lastName) ? '' : lastName}`.trim() });
+    }
+    return found;
+  }
   for (const line of lines) {
     const cells = (Array.isArray(line) ? line : String(line).split(/[;,\t<>]/)).map((c) => String(c ?? '').trim()).filter(Boolean);
     const email = cells.find((c) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c));
@@ -2045,12 +2100,13 @@ function contactsFrom(lines) {
 
 let mailingDraft = {
   subject: 'Bedankt voor jullie vertrouwen in 2026 🎮',
-  body: "Hoi {voornaam},\n\n2026 was het eerste jaar waarin ik echt voluit met Gamer Xperience aan de slag ben gegaan. Dat dat gelukt is, komt door mensen zoals jullie.\n\nEen verjaardag is een belangrijk moment, en vaak was het zelfs de tiende. Dat jullie mij het vertrouwen gaven om dat feest te verzorgen, vind ik nog steeds bijzonder. Ik heb van elk feestje genoten: van de spanning bij het opbouwen tot het gejuich bij de laatste ronde.\n\nDank je wel daarvoor. Echt.\n\nAls bedankje krijgen jullie 10% korting op een gamefeestje in 2027. Reserveer via jullie persoonlijke link, dan gaat de korting er vanzelf af:\n\n{kortingslink}\n\nStaat er bij jullie volgend jaar geen feestje op de planning? Geef de link dan door aan iemand die jullie een knalfeest gunnen. Hij werkt één keer.\n\nIk wens jullie fijne feestdagen en een mooi nieuw jaar. Wie weet tot in 2027!\n\nGroetjes,\nRonald – Gamer Xperience",
+  body: "Hoi {voornaam},\n\n2026 was het eerste jaar waarin ik echt voluit met Gamer Xperience aan de slag ben gegaan. Dat dat gelukt is, komt door mensen zoals jullie.\n\nEen verjaardag is een belangrijk moment, en vaak was het zelfs de tiende. Dat jullie mij het vertrouwen gaven om dat feest te verzorgen, vind ik nog steeds bijzonder. Ik heb van elk feestje genoten: van de spanning bij het opbouwen tot het gejuich bij de laatste ronde.\n\nDank je wel daarvoor. Echt.\n\nAls bedankje krijgen jullie 10% korting op een gamefeestje in 2027. Reserveer via jullie persoonlijke link, dan gaat de korting er vanzelf af:\n\n{kortingslink}\n\nStaat er bij jullie volgend jaar geen feestje op de planning? Geef de link dan door aan iemand die jullie een knalfeest gunnen. Hij werkt één keer.\n\nIk wens jullie fijne feestdagen en een mooi nieuw jaar. Wie weet tot in 2027!",
   discountCodeId: undefined,
+  headerImage: '',
 };
 
 async function mailingView() {
-  const [contacts, mailings, codes] = await Promise.all([api('/mailing/contacts'), api('/mailings'), api('/discount-codes')]);
+  const [contacts, mailings, codes, images] = await Promise.all([api('/mailing/contacts'), api('/mailings'), api('/discount-codes'), api('/mailing/images')]);
   // The discount the personal links are for: by default the first personal one that is switched on.
   const linkCodes = codes.filter((c) => c.active);
   if (mailingDraft.discountCodeId === undefined) mailingDraft.discountCodeId = linkCodes.find((c) => c.personal)?.id ?? null;
@@ -2080,7 +2136,7 @@ async function mailingView() {
       h('button', { class: 'btn', type: 'button', onclick: () => fileInput.click() }, 'Excel of CSV inladen'),
       h('button', { class: 'btn', type: 'button', title: 'Iedereen met een e-mailadres uit alle boekingen. Wie zich eerder heeft afgemeld, blijft afgemeld.', onclick: action(async () => { flash('ok', added(await post('/mailing/contacts/from-bookings'))); }) }, 'Alle klanten uit boekingen')),
     table(['Naam', 'E-mail', 'Herkomst', 'Status', ''], contacts.map((c) => h('tr', {},
-      h('td', {}, c.name || h('span', { class: 'muted' }, 'geen naam')),
+      h('td', {}, c.name || h('span', { class: 'muted' }, 'geen naam'), c.firstName && c.firstName !== c.name && h('div', { class: 'muted small' }, `Aanhef: Hoi ${c.firstName},`)),
       h('td', {}, c.email),
       h('td', {}, c.note || (c.bookings ? `${c.bookings} boeking(en)` : 'Zelf toegevoegd'),
         c.referrals > 0 && h('div', { class: 'muted small' }, `${c.referrals} aanbevolen · ${Math.min(25, c.referralsHeld * 5)}% gespaard`)),
@@ -2088,19 +2144,50 @@ async function mailingView() {
         c.unsubscribedAt && c.unsubscribeReason && h('div', { class: 'muted small' }, `Reden: ${c.unsubscribeReason}`)),
       h('td', { class: 'inline' },
         h('button', { class: 'btn small', onclick: action(async () => {
-          const name = prompt(`Naam voor ${c.email}:`, c.name);
+          const firstName = prompt(`Voornaam voor ${c.email} (hiermee begint de mail: "Hoi ...,"):`, c.firstName || c.name.split(' ')[0] || '');
+          if (firstName === null) return false;
+          const name = prompt('Volledige naam (voor je eigen lijst):', c.name || firstName);
           if (name === null) return false;
-          await patchJson(`/mailing/contacts/${c.id}`, { name });
+          await patchJson(`/mailing/contacts/${c.id}`, { firstName, name });
         }) }, 'Naam'),
         h('button', { class: 'btn small', onclick: action(() => patchJson(`/mailing/contacts/${c.id}`, { subscribed: Boolean(c.unsubscribedAt) })) }, c.unsubscribedAt ? 'Weer aanmelden' : 'Afmelden'),
         h('button', { class: 'btn small danger', onclick: action(() => (confirm(`${c.email} van de lijst halen?`) ? del(`/mailing/contacts/${c.id}`) : false)) }, '✕')))),
       'Nog niemand op de lijst.'));
 
+  // A picture across the top of the mail, e.g. for the end-of-year mail. Made smaller here first,
+  // so it loads quickly on a phone.
+  const pick = (token) => { mailingDraft.headerImage = token; render(); };
+  const upload = h('input', { type: 'file', accept: 'image/*', hidden: true, onchange: action(async () => {
+    const file = upload.files[0];
+    if (!file) return false;
+    const image = await createImageBitmap(file);
+    const width = Math.min(image.width, 1200);
+    const height = Math.round(image.height * (width / image.width));
+    if (height > width * 1.2) throw new Error('Kies een liggend plaatje (breder dan hoog); dat staat het mooist boven een mail.');
+    const canvas = Object.assign(document.createElement('canvas'), { width, height });
+    canvas.getContext('2d').drawImage(image, 0, 0, width, height);
+    const made = await post('/mailing/images', { image: canvas.toDataURL('image/jpeg', 0.82) });
+    mailingDraft.headerImage = made.token;
+  }, 'Plaatje toegevoegd.') });
+  const headerField = h('div', { class: 'field' }, h('label', {}, 'Plaatje bovenaan (optioneel)'),
+    h('div', { class: 'header-images' },
+      h('button', { type: 'button', class: `header-image none ${mailingDraft.headerImage ? '' : 'on'}`, onclick: () => pick('') }, 'Geen plaatje'),
+      images.map((i) => h('span', { class: `header-image ${i.token === mailingDraft.headerImage ? 'on' : ''}` },
+        h('button', { type: 'button', title: 'Dit plaatje gebruiken', onclick: () => pick(i.token) }, h('img', { src: `/api/mail-image/${i.token}`, alt: 'Plaatje voor boven de mail' })),
+        h('button', { type: 'button', class: 'remove', title: 'Plaatje verwijderen', onclick: action(async () => {
+          if (!confirm('Dit plaatje verwijderen? In mails die al verstuurd zijn verdwijnt het dan ook.')) return false;
+          await del(`/mailing/images/${i.token}`);
+          if (mailingDraft.headerImage === i.token) mailingDraft.headerImage = '';
+        }) }, '✕'))),
+      h('button', { type: 'button', class: 'btn', onclick: () => upload.click() }, '＋ Plaatje kiezen'), upload),
+    h('small', {}, 'Komt onder het logo, over de volle breedte. Een liggende foto of een kaartje werkt het best. Stuur eerst een testmail om te zien hoe het staat.'));
+
   const form = h('form', { class: 'card', onsubmit: (e) => e.preventDefault() },
     h('h2', {}, 'Bericht'),
     field('Onderwerp', h('input', { name: 'subject', required: true, maxlength: 200, value: mailingDraft.subject })),
     field('Tekst', h('textarea', { name: 'body', rows: 12, required: true }, mailingDraft.body),
-      '{voornaam} wordt per klant ingevuld. Op de plek van {kortingslink} krijgt iedereen een eigen link die één keer werkt, en op de plek van {aanbeveellink} de eigen link om door te geven (10% voor wie ermee boekt, sparen voor wie hem deelt). Onder elke mail komt vanzelf een afmeldlink.'),
+      '{voornaam} wordt per klant ingevuld. Op de plek van {kortingslink} krijgt iedereen een eigen link die één keer werkt, en op de plek van {aanbeveellink} de eigen link om door te geven (10% voor wie ermee boekt, sparen voor wie hem deelt). Onder elke mail komen vanzelf je ondertekening (' + SIGNATURE_HINT + ') en een afmeldlink.'),
+    headerField,
     field('Korting achter de persoonlijke link', h('select', { name: 'discountCodeId' }, h('option', { value: '' }, 'Geen kortingslink in deze mail'),
       linkCodes.map((c) => h('option', { value: c.id, selected: c.id === mailingDraft.discountCodeId }, `${c.code}: ${c.percent}% op het pakket`)))),
     h('div', { class: 'inline' },
@@ -2116,7 +2203,7 @@ async function mailingView() {
         const r = await post('/mailings', mailingDraft);
         flash('ok', `De mailing gaat de deur uit naar ${r.recipients} adressen. Dat duurt een paar minuten.`);
       }) }, running ? 'Er wordt al verstuurd…' : `Versturen naar ${active.length} ${active.length === 1 ? 'adres' : 'adressen'}`)));
-  const keep = () => { mailingDraft = { subject: form.elements.subject.value, body: form.elements.body.value, discountCodeId: Number(form.elements.discountCodeId.value) || null }; };
+  const keep = () => { mailingDraft = { ...mailingDraft, subject: form.elements.subject.value, body: form.elements.body.value, discountCodeId: Number(form.elements.discountCodeId.value) || null }; };
   form.addEventListener('input', keep);
 
   const history = mailings.length > 0 && card('Verstuurd',

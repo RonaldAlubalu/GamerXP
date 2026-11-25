@@ -39,6 +39,9 @@ export const bookingRequest = z.object({
   partyDate: dateString,
   timeSlot: z.enum(TIME_SLOTS, 'Kies een tijdslot.'),
   parentName: requiredText(100, 'Vul je naam in.'),
+  // First and last name apart (the forms send both, plus the full name above).
+  firstName: text(50).default(''),
+  lastName: text(60).default(''),
   email: z.email('Vul een geldig e-mailadres in.').max(200),
   phone: z.union([phone, z.literal('')]).default(''),
   street: requiredText(200, 'Vul je straat en huisnummer in.'),

@@ -70,10 +70,10 @@ export async function personalLinkToken(db: Queryable, codeId: number, contactId
 // The person behind an e-mail address on the mailing list; added when not there yet.
 export async function contactFor(db: Queryable, email: string, name: string, note: string): Promise<{ id: number; unsubscribed: boolean }> {
   const { rows } = await db.query<{ id: number; unsubscribed: boolean }>(
-    `INSERT INTO mail_contacts (email, name, note, token) VALUES ($1, $2, $3, $4)
+    `INSERT INTO mail_contacts (email, name, note, token, first_name) VALUES ($1, $2, $3, $4, $5)
      ON CONFLICT (lower(email)) DO UPDATE SET name = CASE WHEN mail_contacts.name = '' THEN EXCLUDED.name ELSE mail_contacts.name END
      RETURNING id, unsubscribed_at IS NOT NULL AS unsubscribed`,
-    [email, name, note, randomBytes(18).toString('base64url')],
+    [email, name, note, randomBytes(18).toString('base64url'), name.trim().split(/\s+/)[0] ?? ''],
   );
   return rows[0]!;
 }

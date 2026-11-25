@@ -12,6 +12,8 @@ export interface BookingMailData {
   endTime?: string | null;
   extraStations: number;
   parentName: string;
+  // For the greeting; without it the first word of the full name is used.
+  firstName?: string;
   email: string;
   phone: string;
   street: string;
@@ -38,6 +40,9 @@ export interface MailContext {
   // Online payment (Mollie) is switched on: add pay links to emails.
   onlinePayments?: boolean;
 }
+
+// The name a mail starts with: the first name.
+export const greetName = (b: { parentName: string; firstName?: string }) => b.firstName?.trim() || b.parentName.trim().split(/\s+/)[0] || '';
 
 const signature =
   '\n\nGame on!\n\nRonald\nGamer Xperience\ncontact@gamerxp.nl · +31 (0)6 3420 6753\nhttps://gamerxp.nl';
@@ -86,7 +91,7 @@ export function bookingReceivedMail(b: BookingMailData, ctx: MailContext): Mail 
     to: b.email,
     subject: `We hebben je aanvraag ontvangen (${b.reference})`,
     text:
-      `Hoi ${b.parentName},\n\n` +
+      `Hoi ${greetName(b)},\n\n` +
       `Bedankt voor je aanvraag! Wij duiken in onze agenda en streven ernaar je binnen 24 uur te laten weten ` +
       `of jouw datum nog vrij is. Bij drukte kan het iets langer duren, maar we doen altijd ons best. Je zit nog nergens aan vast.\n\n${summary(b)}` +
       (b.notes ? `\nDetails: ${b.notes}` : '') +
@@ -115,7 +120,7 @@ export function bookingOwnerNotification(b: BookingMailData, to: string, adminUr
 // The email a parent gets when their booking moves to a new stage.
 // Returns undefined for stages that don't need an email.
 export function statusChangeMail(status: Status, b: BookingMailData, ctx: MailContext): Mail | undefined {
-  const hi = `Hoi ${b.parentName},\n\n`;
+  const hi = `Hoi ${greetName(b)},\n\n`;
   const footer = `\n\n${summary(b)}${followLink(b, ctx)}${signature}`;
   const deposit = b.depositCents ?? 0;
   const party = b.childName ? `het feest van ${b.childName}` : 'jullie feest';
@@ -184,7 +189,7 @@ export function reminderText(b: BookingMailData): string {
     ? `Het feest begint om ${b.startTime}; wij komen ongeveer een uur eerder om alles op te bouwen.`
     : `We zijn er in de ${(TIME_SLOT_LABELS[b.timeSlot] ?? b.timeSlot).toLowerCase()} en komen ruim op tijd om alles op te bouwen.`;
   return (
-    `Hoi ${b.parentName.split(' ')[0]}! Morgen is het zover: ${party} 🎮 ${time} ` +
+    `Hoi ${greetName(b)}! Morgen is het zover: ${party} 🎮 ${time} ` +
     `Zorg je voor een vrije tafel, een stopcontact in de buurt en werkend internet? We kijken ernaar uit!\n\nGroetjes, Ronald – Gamer Xperience`
   );
 }
@@ -208,7 +213,7 @@ export function reviewRequestMail(b: BookingMailData, ctx: MailContext): Mail {
     to: b.email,
     subject: 'Hoe was het feest? ⭐',
     text:
-      `Hoi ${b.parentName},\n\n` +
+      `Hoi ${greetName(b)},\n\n` +
       `Nogmaals bedankt dat we ${b.childName ? `het feest van ${b.childName}` : 'jullie feest'} mochten verzorgen! ` +
       reviewAsk(ctx) +
       signature,
@@ -222,7 +227,7 @@ export function paymentLinkMail(b: BookingMailData, kind: 'deposit' | 'payment',
     to: b.email,
     subject: `Betaallink voor ${what} (${b.reference})`,
     text:
-      `Hoi ${b.parentName},\n\n` +
+      `Hoi ${greetName(b)},\n\n` +
       `Via onderstaande link betaal je ${what} van ${formatEuro(amountCents)} eenvoudig online met iDEAL:\n\n` +
       `${ctx.publicUrl}/betalen/${encodeURIComponent(b.statusToken)}/${slug}` +
       `\n\n${summary(b)}${followLink(b, ctx)}${signature}`,

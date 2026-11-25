@@ -27,4 +27,16 @@ describe('bookings from a spreadsheet', () => {
     expect(problems).toEqual([]);
     expect(bookings[0]).toMatchObject({ status: 'contacted', body: { packageId: 2, childAge: 9, guestCount: 8 } });
   });
+  it('reads a list of parties that are over: name in two parts, review and paid', () => {
+    const { bookings, problems } = bookingsFromRows([
+      ['Datum', 'Tijdslot', 'Pakket', 'Fase', 'Voornaam', 'Achternaam', 'E-mail', 'Plaats', 'Review', 'Betaald'],
+      ['31-01-2026', 'Middag', 'Standaard', 'Afgerond', 'Tahnee', 'de Bruin', 't@example.com', 'Apeldoorn', 'Ontvangen', 'Ja'],
+      ['08-02-2026', 'Middag', 'Standaard', 'Afgerond', 'Lia', '', 'lia@example.com / werk@example.com', 'Den Bosch', '', ''],
+      ['09-02-2026', 'Middag', 'Standaard', 'Afgerond', 'Fout', 'Review', '', 'Den Bosch', 'misschien', ''],
+    ], packages);
+    expect(bookings[0]).toMatchObject({ status: 'completed', review: 'received', paid: true, body: { parentName: 'Tahnee de Bruin', firstName: 'Tahnee', lastName: 'de Bruin' } });
+    expect(bookings[1]).toMatchObject({ review: undefined, paid: false, body: { parentName: 'Lia', firstName: 'Lia', email: 'lia@example.com', notes: 'Tweede e-mail: werk@example.com' } });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('misschien');
+  });
 });

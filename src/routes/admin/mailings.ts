@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import type { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { HttpError } from '../../lib/errors.js';
+import { withSignature } from '../../lib/emails.js';
 import { personalLinkToken } from '../../services/discounts.js';
 import { referralToken } from '../../services/referrals.js';
 import { actorOf } from './bookings.js';
@@ -13,6 +14,8 @@ const message = z.object({
   body: z.string().trim().min(1, 'Schrijf een bericht.').max(10_000),
   // The discount the personal link in the mail ({kortingslink}) is for.
   discountCodeId: z.number().int().positive().nullable().default(null),
+  // The picture at the top, when there is one (see /mailing/images).
+  headerImage: z.string().regex(/^[A-Za-z0-9_-]{10,40}$/).or(z.literal('')).default(''),
 });
 const LINK = /\{kortingslink\}/gi;
 
@@ -20,26 +23,27 @@ const LINK = /\{kortingslink\}/gi;
 const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? '';
 
 // The mail as one person gets it: their first name filled in, and the way out at the bottom.
-export function personalise(body: string, name: string, unsubscribeUrl: string, discountUrl = '', referralUrl = ''): string {
-  const first = firstName(name);
+export function personalise(body: string, name: string, unsubscribeUrl: string, discountUrl = '', referralUrl = '', given = ''): string {
+  const first = given.trim() || firstName(name);
   const text = body
     .replace(/\{voornaam\}/gi, first || 'daar')
     .replace(/\{naam\}/gi, name.trim() || 'daar')
     .replace(LINK, discountUrl)
     .replace(/\{aanbeveellink\}/gi, referralUrl);
-  return `${text.trim()}\n\n--\nJe krijgt deze mail omdat we een gamefeestje bij jullie hebben verzorgd. Geen mails meer ontvangen? Meld je af: ${unsubscribeUrl}`;
+  return `${withSignature(text)}\n\n--\nJe krijgt deze mail omdat we een gamefeestje bij jullie hebben verzorgd. Geen mails meer ontvangen? Meld je af: ${unsubscribeUrl}`;
 }
 
+const imageUrl = (app: FastifyInstance, token: string) => (token ? `${app.config.PUBLIC_URL}/api/mail-image/${token}` : undefined);
 const unsubscribeUrl = (app: FastifyInstance, token: string) => `${app.config.PUBLIC_URL}/afmelden?t=${token}`;
 
 // Sends a mailing one mail at a time, so every customer gets their own mail and a slow mail
 // server is not flooded. Runs on after the request that started it has answered.
 async function deliver(app: FastifyInstance, mailingId: number): Promise<void> {
-  const mailing = (await app.db.query<{ subject: string; body: string; codeId: number | null }>('SELECT subject, body, discount_code_id AS "codeId" FROM mailings WHERE id = $1', [mailingId])).rows[0];
+  const mailing = (await app.db.query<{ subject: string; body: string; codeId: number | null; image: string }>('SELECT subject, body, discount_code_id AS "codeId", header_image AS image FROM mailings WHERE id = $1', [mailingId])).rows[0];
   if (!mailing) return;
   for (;;) {
-    const { rows } = await app.db.query<{ id: number; email: string; name: string; token: string }>(
-      `SELECT c.id, c.email, c.name, c.token FROM mailing_recipients r JOIN mail_contacts c ON c.id = r.contact_id
+    const { rows } = await app.db.query<{ id: number; email: string; name: string; first: string; token: string }>(
+      `SELECT c.id, c.email, c.name, c.first_name AS first, c.token FROM mailing_recipients r JOIN mail_contacts c ON c.id = r.contact_id
         WHERE r.mailing_id = $1 AND r.status = 'queued' AND c.unsubscribed_at IS NULL ORDER BY c.id LIMIT 1`,
       [mailingId],
     );
@@ -51,7 +55,7 @@ async function deliver(app: FastifyInstance, mailingId: number): Promise<void> {
       const link = mailing.codeId ? `${app.config.PUBLIC_URL}/reserveer?korting=${await personalLinkToken(app.db, mailing.codeId, to.id)}` : '';
       // And a recommending link of their own, when the text asks for it.
       const via = /\{aanbeveellink\}/i.test(mailing.body) ? `${app.config.PUBLIC_URL}/reserveer?via=${await referralToken(app.db, to.id)}` : '';
-      await app.mailer.send({ to: to.email, subject: mailing.subject, text: personalise(mailing.body, to.name, unsubscribeUrl(app, to.token), link, via) });
+      await app.mailer.send({ to: to.email, subject: mailing.subject, headerImage: imageUrl(app, mailing.image), text: personalise(mailing.body, to.name, unsubscribeUrl(app, to.token), link, via, to.first) });
     } catch (err) {
       app.log.warn({ err, mailing: mailingId }, 'A mail of a mailing failed');
       status = 'failed';
@@ -77,7 +81,7 @@ export const mailingRoutes: FastifyPluginAsync = async (app) => {
   // Everyone a mailing can go to, with how many parties this address had here.
   app.get('/mailing/contacts', async () => {
     const { rows } = await app.db.query(
-      `SELECT c.id, c.email, c.name, c.note, c.unsubscribed_at AS "unsubscribedAt", c.unsubscribe_reason AS "unsubscribeReason", c.created_at AS "createdAt",
+      `SELECT c.id, c.email, c.name, c.first_name AS "firstName", c.note, c.unsubscribed_at AS "unsubscribedAt", c.unsubscribe_reason AS "unsubscribeReason", c.created_at AS "createdAt",
               (SELECT count(*)::int FROM bookings b WHERE lower(b.email) = lower(c.email) AND b.status <> 'cancelled') AS bookings,
               -- Whether a personal discount link of this person was used for a booking.
               EXISTS (SELECT 1 FROM discount_links l JOIN bookings b ON b.discount_link = l.token AND b.status <> 'cancelled' WHERE l.contact_id = c.id) AS "linkUsed",
@@ -93,7 +97,7 @@ export const mailingRoutes: FastifyPluginAsync = async (app) => {
   // place (and stays unsubscribed if it was); a missing name is filled in.
   app.post('/mailing/contacts', async (req) => {
     const body = z
-      .object({ contacts: z.array(z.object({ email: z.string().trim().max(200), name: z.string().trim().max(100).default(''), note: z.string().trim().max(200).default('') })).min(1).max(2000) })
+      .object({ contacts: z.array(z.object({ email: z.string().trim().max(200), name: z.string().trim().max(100).default(''), firstName: z.string().trim().max(50).default(''), note: z.string().trim().max(200).default('') })).min(1).max(2000) })
       .parse(req.body);
     let added = 0;
     let known = 0;
@@ -105,10 +109,11 @@ export const mailingRoutes: FastifyPluginAsync = async (app) => {
         continue;
       }
       const res = await app.db.query(
-        `INSERT INTO mail_contacts (email, name, note, token) VALUES ($1, $2, $3, $4)
-         ON CONFLICT (lower(email)) DO UPDATE SET name = CASE WHEN mail_contacts.name = '' THEN EXCLUDED.name ELSE mail_contacts.name END
+        `INSERT INTO mail_contacts (email, name, note, token, first_name) VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (lower(email)) DO UPDATE SET name = CASE WHEN mail_contacts.name = '' THEN EXCLUDED.name ELSE mail_contacts.name END,
+           first_name = CASE WHEN mail_contacts.first_name = '' THEN EXCLUDED.first_name ELSE mail_contacts.first_name END
          RETURNING (xmax = 0) AS inserted`,
-        [parsed.data, c.name, c.note, randomBytes(18).toString('base64url')],
+        [parsed.data, c.name, c.note, randomBytes(18).toString('base64url'), c.firstName || firstName(c.name)],
       );
       if (res.rows[0].inserted) added++;
       else known++;
@@ -119,15 +124,15 @@ export const mailingRoutes: FastifyPluginAsync = async (app) => {
   // Every customer in the admin with an e-mail address, from any year. Someone who unsubscribed
   // earlier stays unsubscribed.
   app.post('/mailing/contacts/from-bookings', async () => {
-    const { rows } = await app.db.query<{ email: string; name: string; year: number }>(
-      `SELECT DISTINCT ON (lower(email)) email, parent_name AS name, extract(year FROM party_date)::int AS year FROM bookings
+    const { rows } = await app.db.query<{ email: string; name: string; first: string; year: number }>(
+      `SELECT DISTINCT ON (lower(email)) email, parent_name AS name, first_name AS first, extract(year FROM party_date)::int AS year FROM bookings
         WHERE email <> '' AND status <> 'cancelled' ORDER BY lower(email), party_date DESC`,
     );
     let added = 0;
     for (const c of rows) {
       const res = await app.db.query(
-        `INSERT INTO mail_contacts (email, name, note, token) VALUES ($1, $2, $3, $4) ON CONFLICT (lower(email)) DO NOTHING`,
-        [c.email, c.name, `Boeking ${c.year}`, randomBytes(18).toString('base64url')],
+        `INSERT INTO mail_contacts (email, name, note, token, first_name) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (lower(email)) DO NOTHING`,
+        [c.email, c.name, `Boeking ${c.year}`, randomBytes(18).toString('base64url'), c.first || firstName(c.name)],
       );
       added += res.rowCount ?? 0;
     }
@@ -136,13 +141,13 @@ export const mailingRoutes: FastifyPluginAsync = async (app) => {
 
   app.patch('/mailing/contacts/:id', async (req) => {
     const { id } = idParam.parse(req.params);
-    const body = z.object({ name: z.string().trim().max(100).optional(), subscribed: z.boolean().optional() }).parse(req.body);
+    const body = z.object({ name: z.string().trim().max(100).optional(), firstName: z.string().trim().max(50).optional(), subscribed: z.boolean().optional() }).parse(req.body);
     const { rows } = await app.db.query(
-      `UPDATE mail_contacts SET name = COALESCE($2, name),
+      `UPDATE mail_contacts SET name = COALESCE($2, name), first_name = COALESCE($4, first_name),
               unsubscribed_at = CASE WHEN $3::boolean IS NULL THEN unsubscribed_at WHEN $3 THEN NULL ELSE COALESCE(unsubscribed_at, now()) END,
               unsubscribe_reason = CASE WHEN $3 THEN '' ELSE unsubscribe_reason END
         WHERE id = $1 RETURNING id`,
-      [id, body.name ?? null, body.subscribed ?? null],
+      [id, body.name ?? null, body.subscribed ?? null, body.firstName ?? null],
     );
     if (!rows[0]) throw new HttpError(404, 'Dit adres staat niet (meer) in de lijst.', 'not_found');
     return { ok: true };
@@ -151,6 +156,26 @@ export const mailingRoutes: FastifyPluginAsync = async (app) => {
   app.delete('/mailing/contacts/:id', async (req, reply) => {
     const { id } = idParam.parse(req.params);
     await app.db.query('DELETE FROM mail_contacts WHERE id = $1', [id]);
+    return reply.status(204).send();
+  });
+
+  // Pictures for the top of a mailing. The page makes them small enough before sending.
+  app.get('/mailing/images', async () => {
+    const { rows } = await app.db.query<{ token: string }>('SELECT token FROM mailing_images ORDER BY id DESC LIMIT 12');
+    return rows.map((r) => ({ token: r.token, url: imageUrl(app, r.token) }));
+  });
+
+  app.post('/mailing/images', { bodyLimit: 900 * 1024 }, async (req) => {
+    const { image } = z.object({ image: z.string().max(800_000).regex(/^data:image\/(jpeg|png);base64,[A-Za-z0-9+/=]+$/, 'Dit plaatje kan niet worden gebruikt.') }).parse(req.body);
+    const [head, data] = image.split(',') as [string, string];
+    const token = randomBytes(15).toString('base64url');
+    await app.db.query('INSERT INTO mailing_images (token, mime, data) VALUES ($1, $2, $3)', [token, head.includes('png') ? 'image/png' : 'image/jpeg', Buffer.from(data, 'base64')]);
+    return { token, url: imageUrl(app, token) };
+  });
+
+  app.delete('/mailing/images/:token', async (req, reply) => {
+    const { token } = z.object({ token: z.string().max(40) }).parse(req.params);
+    await app.db.query('DELETE FROM mailing_images WHERE token = $1', [token]);
     return reply.status(204).send();
   });
 
@@ -170,7 +195,7 @@ export const mailingRoutes: FastifyPluginAsync = async (app) => {
   app.post('/mailings/test', async (req) => {
     const body = message.parse(req.body);
     checkLink(body);
-    await app.mailer.send({ to: req.admin!.email, subject: `[Test] ${body.subject}`, text: personalise(body.body, req.admin!.name || 'Voornaam', `${app.config.PUBLIC_URL}/afmelden?t=voorbeeld`, `${app.config.PUBLIC_URL}/reserveer?korting=voorbeeld`, `${app.config.PUBLIC_URL}/reserveer?via=voorbeeld`) });
+    await app.mailer.send({ to: req.admin!.email, subject: `[Test] ${body.subject}`, headerImage: imageUrl(app, body.headerImage), text: personalise(body.body, req.admin!.name || 'Voornaam', `${app.config.PUBLIC_URL}/afmelden?t=voorbeeld`, `${app.config.PUBLIC_URL}/reserveer?korting=voorbeeld`, `${app.config.PUBLIC_URL}/reserveer?via=voorbeeld`) });
     return { to: req.admin!.email };
   });
 
@@ -181,7 +206,7 @@ export const mailingRoutes: FastifyPluginAsync = async (app) => {
     checkLink(body);
     const busy = await app.db.query('SELECT 1 FROM mailings WHERE finished_at IS NULL');
     if (busy.rowCount) throw new HttpError(409, 'Er wordt nog een mailing verstuurd. Wacht tot die klaar is.', 'busy');
-    const { rows } = await app.db.query<{ id: number }>('INSERT INTO mailings (subject, body, actor, discount_code_id) VALUES ($1, $2, $3, $4) RETURNING id', [body.subject, body.body, actorOf(req), body.discountCodeId]);
+    const { rows } = await app.db.query<{ id: number }>('INSERT INTO mailings (subject, body, actor, discount_code_id, header_image) VALUES ($1, $2, $3, $4, $5) RETURNING id', [body.subject, body.body, actorOf(req), body.discountCodeId, body.headerImage]);
     const id = rows[0]!.id;
     const queued = await app.db.query(
       'INSERT INTO mailing_recipients (mailing_id, contact_id) SELECT $1, id FROM mail_contacts WHERE unsubscribed_at IS NULL',

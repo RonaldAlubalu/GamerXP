@@ -3,17 +3,22 @@
       <div class="wrap">
         <h1>Hét vetste <span class="pink">game kinderfeestje</span><br>van Eindhoven!</h1>
         {{> stats}}
+        <div class="actions">
+          <a class="btn big" href="/reserveer">Check beschikbaarheid</a>
+          <a class="btn secondary" href="#pakketten">Bekijk pakketten</a>
+        </div>
       </div>
     </section>
 
     <section class="section wave">
       <div class="wrap split">
-        <div>
+        <div class="intro-block">
           <p class="kicker">Regio Eindhoven, Helmond en Veldhoven</p>
           <h2>Onze gaming-setup bij jou aan huis in Eindhoven</h2>
           <p>Zoek je een gamefeestje thuis in de regio Eindhoven, Helmond of Veldhoven? Jij doet de deur open, wij regelen de rest.</p>
           <p>Van Strijp en Woensel tot Gestel en Nuenen, wij komen naar jou toe met een complete gaming-setup. Geen gedoe met rijden of plannen. Wij bouwen alles op, begeleiden het feestje en breken daarna alles weer af.</p>
-          <p><a class="btn" href="/pakketten-prijzen">Bekijk onze pakketten</a></p>
+          <p>Jij zorgt alleen voor een grote tafel, een stopcontact en internet.</p>
+          <p class="intro-action"><a class="btn" href="/pakketten-prijzen">Bekijk pakketten &amp; prijzen</a></p>
         </div>
         {{> games}}
       </div>
@@ -31,8 +36,10 @@
       </div>
     </section>
 
-    {{> packages}}
     {{> reviews}}
+
+    {{> packages}}
+
     {{> faq}}
     {{> gallery}}
     {{> cta}}

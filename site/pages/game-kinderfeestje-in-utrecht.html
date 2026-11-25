@@ -3,17 +3,22 @@
       <div class="wrap">
         <h1>Game kinderfeestje<br><span class="pink">aan huis in Utrecht</span></h1>
         {{> stats}}
+        <div class="actions">
+          <a class="btn big" href="/reserveer">Check beschikbaarheid</a>
+          <a class="btn secondary" href="#pakketten">Bekijk pakketten</a>
+        </div>
       </div>
     </section>
 
     <section class="section wave">
       <div class="wrap split">
-        <div>
+        <div class="intro-block">
           <p class="kicker">Utrecht, Amersfoort, Nieuwegein en omgeving</p>
           <h2>Onze gaming-setup bij jou aan huis in Utrecht</h2>
           <p>Zoek je een gamefeestje thuis in de regio Utrecht, voor een kinderfeestje of gameverjaardag? Wij komen naar jou toe. Jij doet de deur open, wij bouwen alles op, begeleiden het feestje en breken daarna alles weer af.</p>
           <p>Wij komen bij je langs om een spectaculaire middag te verzorgen met de populairste games van nu.</p>
-          <p><a class="btn" href="/pakketten-prijzen">Bekijk onze pakketten</a></p>
+          <p>Jij zorgt alleen voor een grote tafel, een stopcontact en internet.</p>
+          <p class="intro-action"><a class="btn" href="/pakketten-prijzen">Bekijk pakketten &amp; prijzen</a></p>
         </div>
         {{> games}}
       </div>
@@ -31,8 +36,10 @@
       </div>
     </section>
 
-    {{> packages}}
     {{> reviews}}
+
+    {{> packages}}
+
     {{> faq}}
     {{> gallery}}
     {{> cta}}

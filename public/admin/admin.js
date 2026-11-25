@@ -1079,7 +1079,7 @@ async function bookingDetailView(id) {
       await post(`/bookings/${id}/apply-reward`);
     }, 'Beloning toegepast.') }, `Beloning toepassen (${b.reward.percent}%)`));
   if (contactEditingFor !== id) { contactEditing = false; contactEditingFor = id; }
-  const customer = card(cardHead('Klant en feest', me.role === 'owner' && !contactEditing && h('button', { class: 'btn small', type: 'button', onclick: () => { contactEditing = true; render(); } }, 'Wijzigen')),
+  const customer = card(cardHead('Klant en feest', me.role === 'owner' && h('a', { class: 'btn small', href: customerHref(b) }, 'Klantkaart'), me.role === 'owner' && !contactEditing && h('button', { class: 'btn small', type: 'button', onclick: () => { contactEditing = true; render(); } }, 'Wijzigen')),
     contactEditing ? contactForm() : null,
     h('dl', { class: 'details', hidden: contactEditing },
       h('dt', {}, 'Klant'), h('dd', {}, b.parentName),
@@ -2097,6 +2097,129 @@ function twoFactorCard() {
   return box;
 }
 
+// Customers ---------------------------------------------------------------------
+
+// A customer is everything under one e-mail address; a booking without address stands on its own.
+const customerHref = (c) => (c.email ? `#/customers/${encodeURIComponent(c.email.toLowerCase())}` : `#/customers/b-${c.bookingId ?? c.id}`);
+let customerSearch = '';
+
+async function customersView() {
+  const customers = await api('/customers');
+  setPage('Klanten');
+  const MAILING = { on: ['Krijgt mailing', 'success'], off: ['Afgemeld', 'danger'] };
+  const rows = customers.map((c) => ({
+    text: `${c.name} ${c.email} ${c.phone} ${c.city}`.toLowerCase(),
+    row: h('tr', { class: 'clickable', onclick: () => (location.hash = customerHref(c)) },
+      h('td', {}, h('strong', {}, c.name || 'Naam onbekend'), c.city && h('div', { class: 'muted small' }, c.city)),
+      h('td', {}, c.email || h('span', { class: 'muted' }, 'geen e-mail'), c.phone && h('div', { class: 'muted small' }, c.phone)),
+      h('td', {}, c.parties ? String(c.parties) : h('span', { class: 'muted' }, 'nog geen'), c.reviews > 0 && h('span', { title: 'Review ontvangen' }, ' ★')),
+      h('td', { class: 'nowrap' }, c.nextParty ? ['Komt: ', fmtDate(c.nextParty)] : c.lastParty ? fmtDate(c.lastParty) : '–'),
+      h('td', { class: 'nowrap' }, c.paidCents ? fmtEuro(c.paidCents) : '–'),
+      h('td', {}, MAILING[c.mailing] && badge(...MAILING[c.mailing]))),
+  }));
+  const count = h('span', { class: 'muted' });
+  const search = h('input', { type: 'search', placeholder: 'Zoek op naam, e-mail, telefoon of plaats…', 'aria-label': 'Zoeken in klanten', value: customerSearch, oninput: () => { customerSearch = search.value; filter(); } });
+  const filter = () => {
+    const q = search.value.trim().toLowerCase();
+    let shown = 0;
+    for (const r of rows) { r.row.hidden = Boolean(q) && !r.text.includes(q); if (!r.row.hidden) shown++; }
+    count.textContent = `${shown} ${shown === 1 ? 'klant' : 'klanten'}`;
+  };
+  filter();
+  view.replaceChildren(
+    h('div', { class: 'toolbar' }, h('div', { class: 'field', style: 'flex:1 1 260px' }, h('label', {}, 'Zoeken'), search), count),
+    h('div', { class: 'customer-list' }, table(['Klant', 'Contact', 'Feestjes', 'Laatste feest', 'Betaald', 'Mailing'], rows.map((r) => r.row), 'Nog geen klanten.')));
+}
+
+async function customerView(key) {
+  const byBooking = key.startsWith('b-');
+  const c = await api(`/customers/card?${byBooking ? `booking=${key.slice(2)}` : `email=${encodeURIComponent(key)}`}`);
+  setPage(c.name || c.email || 'Klant', h('a', { class: 'btn', href: '#/customers' }, '← Klanten'));
+  const uniq = (list) => [...new Set(list.map((x) => (x ?? '').trim()).filter(Boolean))];
+  const live = c.bookings.filter((b) => b.status !== 'cancelled');
+  const phones = uniq([...c.bookings.flatMap((b) => [b.phone, b.phone2]), ...c.messages.map((m) => m.phone)]);
+  const otherMails = uniq(c.bookings.map((b) => b.email2)).filter((m) => m.toLowerCase() !== c.email);
+  const addresses = uniq(c.bookings.map((b) => [b.street, [b.postalCode, b.city].filter(Boolean).join(' ')].filter(Boolean).join(', ')));
+  const wa = (p) => p.replace(/\D/g, '').replace(/^00/, '').replace(/^0/, '31');
+  const copyLink = (url) => h('button', { class: 'btn small', type: 'button', onclick: async () => {
+    try { await navigator.clipboard.writeText(url); flash('ok', 'Link gekopieerd.'); } catch { prompt('Kopieer de link:', url); }
+  } }, 'Link kopiëren');
+  const line = (label, ...value) => value.flat().filter(Boolean).length > 0 && h('div', { class: 'kv' }, h('span', { class: 'muted' }, label), h('div', {}, value));
+
+  // Children, from the parties: the age counts on from the party it was given at.
+  const children = new Map();
+  for (const b of [...live].reverse()) if (b.childName) children.set(b.childName.toLowerCase(), b);
+  const year = new Date().getFullYear();
+  const kids = [...children.values()].map((b) => {
+    const now = b.childAge ? b.childAge + Math.max(0, year - Number(b.partyDate.slice(0, 4))) : null;
+    return `${b.childName}${now ? ` (nu ongeveer ${now})` : ''}`;
+  });
+
+  const paid = live.reduce((t, b) => t + b.paidCents, 0);
+  const open = live.reduce((t, b) => t + Math.max(0, b.priceCents - b.paidCents), 0);
+  const first = live.at(-1);
+  const stat = (num, label) => h('div', { class: 'stat quiet' }, h('div', { class: 'num' }, num), h('div', { class: 'lbl' }, label));
+
+  const noteBox = h('textarea', { rows: 3, maxlength: 2000, placeholder: 'Bijv. "Heeft een hond", "Opa betaalt", "Wil altijd op zaterdag".' }, c.note);
+  const person = card(cardHead('Gegevens', c.mailing && (c.mailing.subscribed ? badge('Krijgt mailing', 'success') : badge('Afgemeld voor mailing', 'danger'))),
+    line('Naam', c.name || 'Onbekend', c.firstName && c.firstName !== c.name && h('div', { class: 'muted small' }, `Aanhef in mails: Hoi ${c.firstName},`)),
+    line('E-mail', c.email && h('a', { href: `mailto:${c.email}` }, c.email), otherMails.map((m) => h('div', {}, h('a', { href: `mailto:${m}` }, m), h('span', { class: 'muted small' }, ' (tweede adres)')))),
+    line('Telefoon', phones.map((p) => h('div', {}, h('a', { href: `tel:${p.replace(/[^\d+]/g, '')}` }, p), ' · ', h('a', { href: `https://wa.me/${wa(p)}`, target: '_blank', rel: 'noopener' }, 'WhatsApp')))),
+    line('Adres', addresses.map((a) => h('div', {}, a))),
+    line('Kinderen', kids.join(', ')),
+    c.email && h('div', { class: 'field', style: 'margin-top:14px' }, h('label', {}, 'Notitie over deze klant'), noteBox,
+      h('div', { class: 'inline', style: 'margin-top:8px' }, h('button', { class: 'btn small', type: 'button', onclick: action(() => put('/customers/note', { email: c.email, note: noteBox.value }), 'Notitie opgeslagen.') }, 'Notitie opslaan'))),
+    !c.email && h('p', { class: 'muted small' }, 'Bij deze boeking staat geen e-mailadres. Vul dat in bij de boeking, dan komen alle feesten van deze klant hier samen.'));
+
+  const parties = card(cardHead('Feestjes', h('a', { class: 'btn small', href: '#/bookings/new' }, '+ Boeking')),
+    c.bookings.length
+      ? table(['Datum', 'Jarige', 'Pakket', 'Fase', 'Betaald'], c.bookings.map((b) => h('tr', { class: 'clickable', onclick: () => (location.hash = `#/bookings/${b.id}`) },
+          h('td', { class: 'nowrap' }, fmtDate(b.partyDate), h('div', { class: 'muted small' }, b.reference)),
+          h('td', {}, b.childName ? `${b.childName}${b.childAge ? ` (${b.childAge})` : ''}` : '–', h('div', { class: 'muted small' }, b.locationName || b.city)),
+          h('td', {}, b.packageName, b.discountCode && h('div', { class: 'muted small' }, `Korting ${b.discountCode}`)),
+          h('td', {}, statusBadge(b.status), b.reviewStatus === 'received' && h('div', { class: 'muted small' }, '★ review')),
+          h('td', { class: 'nowrap' }, `${fmtEuro(b.paidCents)} / ${fmtEuro(b.priceCents)}`))))
+      : h('p', { class: 'empty' }, 'Nog geen feestjes. Deze klant staat op de mailinglijst of stuurde een bericht via de site.'));
+
+  const m = c.mailing;
+  const mailing = m && card('Mailing, korting en aanbevelen',
+    line('Mailing', m.subscribed ? 'Krijgt mailings' : `Afgemeld op ${fmtDate(m.unsubscribedAt.slice(0, 10))}${m.unsubscribeReason ? `. Reden: ${m.unsubscribeReason}` : ''}`,
+      m.source && h('div', { class: 'muted small' }, `Op de lijst via: ${m.source}`)),
+    line('Ontvangen', m.mailings.map((x) => h('div', {}, x.subject, h('span', { class: 'muted small' }, ` · ${x.status === 'sent' ? fmtDate(x.sentAt.slice(0, 10)) : x.status === 'failed' ? 'mislukt' : 'in de wachtrij'}`)))),
+    line('Kortingslinks', m.links.map((l) => h('div', { class: 'inline', style: 'margin-bottom:6px' },
+      h('span', {}, `${l.code} (${l.percent}%)`, h('span', { class: 'muted small' }, ` · ${l.note || 'Mailing'}`)),
+      l.usedFor ? badge(`Gebruikt voor ${l.usedFor}`, 'info') : [badge('Nog niet gebruikt', 'warning'), copyLink(l.url)]))),
+    line('Aanbevelen', h('div', { class: 'inline' },
+      h('span', {}, m.referred.length ? `${m.referred.length} ${m.referred.length === 1 ? 'feest' : 'feesten'} via deze klant · ${m.reward.percent}% gespaard` : 'Nog niemand aangebracht'),
+      copyLink(m.referralUrl)),
+      m.referred.map((r) => h('div', {}, h('a', { href: `#/bookings/${r.id}` }, `${r.parentName} · ${fmtDate(r.partyDate)}`), ' ', statusBadge(r.status)))));
+
+  const thread = card(cardHead('Alle berichten', h('span', { class: 'muted' }, `${c.timeline.length}${c.timeline.length === 200 ? '+' : ''}`)),
+    c.timeline.length
+      ? h('ul', { class: 'thread' }, c.timeline.map((x) => {
+          const long = x.body.length > 300;
+          const body = h('div', { class: `msg-body ${long ? 'clamped' : ''}`, title: long ? 'Klik om alles te tonen' : null }, x.body);
+          if (long) body.addEventListener('click', () => body.classList.toggle('clamped'));
+          return h('li', { class: `msg ${x.direction}` },
+            h('div', { class: 'msg-meta' },
+              badge(x.direction === 'in' ? `↓ ${CHANNELS[x.channel]}` : `↑ ${CHANNELS[x.channel]}`, x.direction === 'in' ? 'warning' : 'primary'),
+              x.delivery === 'failed' && badge('Versturen mislukt', 'danger'),
+              h('span', {}, `${fmtDateTime(x.createdAt)} · `),
+              x.bookingId ? h('a', { href: `#/bookings/${x.bookingId}` }, x.reference) : h('a', { href: `#/messages/${x.messageId}` }, 'contactformulier')),
+            x.subject && h('div', { class: 'msg-subject' }, x.subject),
+            body);
+        }))
+      : h('p', { class: 'empty' }, 'Nog geen berichten met deze klant.'));
+
+  view.replaceChildren(...[
+    h('div', { class: 'stats' },
+      stat(String(live.length), live.length === 1 ? 'feestje' : 'feestjes'),
+      stat(fmtEuro(paid), 'betaald'),
+      open > 0 && stat(fmtEuro(open), 'nog open'),
+      first && stat(String(first.partyDate.slice(0, 4)), 'klant sinds')),
+    person, parties, mailing, thread].filter(Boolean));
+}
+
 // Templates ---------------------------------------------------------------------
 
 const TEMPLATE_VARS = {
@@ -2539,7 +2662,7 @@ async function render() {
   for (const el of document.querySelectorAll('[data-owner]')) el.hidden = assistant;
   const [path] = location.hash.slice(1).split('?');
   const parts = (path || '/board').split('/').filter(Boolean);
-  const ownerOnly = ['messages', 'reviews', 'packages', 'users', 'system', 'templates', 'birthdays'];
+  const ownerOnly = ['messages', 'reviews', 'packages', 'users', 'system', 'templates', 'birthdays', 'customers'];
   if (assistant && ownerOnly.includes(parts[0])) parts[0] = 'board';
   for (const a of document.querySelectorAll('.side-nav a')) {
     a.classList.toggle('active', a.dataset.route === parts[0] || (a.dataset.route === 'list' && parts[0] === 'bookings') || (a.dataset.route === 'messages' && parts[0] === 'mailing'));
@@ -2556,6 +2679,7 @@ async function render() {
     else if (parts[0] === 'packages') await packagesView();
     else if (parts[0] === 'inventory') await inventoryView();
     else if (parts[0] === 'mailing') await mailingView();
+    else if (parts[0] === 'customers') await (parts[1] ? customerView(decodeURIComponent(parts[1])) : customersView());
     else if (parts[0] === 'templates') await templatesView(parts[1], parts[2]);
     else if (parts[0] === 'birthdays') await birthdaysView();
     else if (parts[0] === 'users') await usersView();

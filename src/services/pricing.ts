@@ -49,7 +49,7 @@ export function calculatePrice(input: PriceInput, config: Config): { lines: Pric
     lines.push({ key: 'travel', label: 'Reiskosten (afstand nog niet bekend)', amountCents: 0 });
   }
   if (input.eveningSurcharge) {
-    lines.push({ key: 'evening', label: 'Avondtoeslag (eindtijd na 19:30)', amountCents: config.EVENING_SURCHARGE_CENTS });
+    lines.push({ key: 'evening', label: 'Avondtoeslag (eindtijd na 20:00)', amountCents: config.EVENING_SURCHARGE_CENTS });
   }
   input.extras.forEach((e, i) => lines.push({ key: `extra_${i}`, label: e.label, amountCents: e.amountCents }));
   return { lines, totalCents: Math.max(0, lines.reduce((sum, l) => sum + l.amountCents, 0)) };

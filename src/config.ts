@@ -28,7 +28,7 @@ const schema = z.object({
   // Travel costs: cents per km of the round trip (so per km one way it is double), with a maximum.
   TRAVEL_CENTS_PER_KM: z.coerce.number().int().min(0).default(50),
   TRAVEL_MAX_CENTS: z.coerce.number().int().min(0).default(10000),
-  // Surcharge when the party ends after 19:30.
+  // Surcharge when the party ends after 20:00.
   EVENING_SURCHARGE_CENTS: z.coerce.number().int().min(0).default(5000),
   // Time needed on location before and after a party, for the day planning.
   SETUP_MINUTES: z.coerce.number().int().min(0).max(240).default(60),

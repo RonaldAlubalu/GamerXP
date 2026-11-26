@@ -1155,7 +1155,7 @@ async function bookingDetailView(id) {
         h('input', { name: 'travelKm', value: b.travelKm ?? '', inputmode: 'decimal', style: 'width:90px' }),
         h('button', { type: 'button', class: 'btn small', onclick: action(() => post(`/bookings/${id}/distance`), 'Afstand berekend.') }, 'Bereken'))),
       field('Aanbetaling (€)', h('input', { name: 'deposit', value: euroInput(b.depositCents), inputmode: 'decimal' }))),
-    h('label', { class: 'check' }, h('input', { type: 'checkbox', name: 'eveningSurcharge', checked: b.eveningSurcharge }), ' Avondtoeslag (eindtijd na 19:30)'),
+    h('label', { class: 'check' }, h('input', { type: 'checkbox', name: 'eveningSurcharge', checked: b.eveningSurcharge }), ' Avondtoeslag (eindtijd na 20:00)'),
     h('div', { class: 'label', style: 'margin:12px 0 6px' }, "Extra's en kortingen"),
     extrasBox,
     h('div', { class: 'inline' },

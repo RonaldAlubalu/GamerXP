@@ -93,7 +93,7 @@ export async function createBooking(
     const onRequest = !manual && (await getSettings(client)).onRequestWeekdays.includes(isoWeekday(input.partyDate));
 
     // The package price is fixed at booking time. Travel costs are added once the
-    // distance is known; the evening slot ends after 19:30 so it gets the surcharge.
+    // distance is known; the evening slot ends after 20:00 so it gets the surcharge.
     const names = splitName(input.parentName, input.firstName, input.lastName);
     const eveningSurcharge = input.timeSlot === 'avond';
     // Decoration is part of Ultimate; with another package it is a paid extra.

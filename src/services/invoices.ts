@@ -42,7 +42,7 @@ export function invoiceLines(b: BookingForInvoice, kind: InvoiceKind, depositInv
     .map((l) => {
       if (l.key === 'package') return { description: b.packageName, quantity: 1, priceCents: l.amountCents, productCode: products?.full };
       if (l.key === 'extra_stations') return { description: 'Extra gamestation', quantity: b.extraStations, priceCents: app.config.EXTRA_STATION_CENTS, productCode: STATION_PRODUCT };
-      if (l.key === 'evening') return { description: 'Avondtarief (eindtijd na 19:30)', quantity: 1, priceCents: l.amountCents, productCode: EVENING_PRODUCT };
+      if (l.key === 'evening') return { description: 'Avondtarief (eindtijd na 20:00)', quantity: 1, priceCents: l.amountCents, productCode: EVENING_PRODUCT };
       if (l.label === DECORATION_LABEL) return { description: 'Decoratie', quantity: 1, priceCents: l.amountCents, productCode: DECORATION_PRODUCT };
       return { description: l.label, quantity: 1, priceCents: l.amountCents };
     });

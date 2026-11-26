@@ -121,7 +121,7 @@ Server settings live in `.env` (see [`.env.example`](.env.example)). Availabilit
 | `DEPOSIT_CENTS` | Deposit asked on confirmation. Default `10000` (€100). |
 | `EXTRA_STATION_CENTS` | Price per extra game station. Default `2500` (€25). |
 | `TRAVEL_CENTS_PER_KM` / `TRAVEL_MAX_CENTS` | Travel costs per km of the round trip and the maximum. Defaults: €0.50 and €100. |
-| `EVENING_SURCHARGE_CENTS` | Evening surcharge (party ends after 19:30). Default `5000` (€50). |
+| `EVENING_SURCHARGE_CENTS` | Evening surcharge (party ends after 20:00). Default `5000` (€50). |
 | `BASE_LOCATION` | Where the bus leaves from, for distance calculation. Default `5611AB Eindhoven`; set your own postcode. |
 | `MOLLIE_API_KEY` | Your Mollie API key (`test_…` to try it out, `live_…` for real payments). Empty switches online payment off. |
 

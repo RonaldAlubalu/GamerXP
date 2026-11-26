@@ -567,3 +567,7 @@ tr.picked > td { background: color-mix(in srgb, var(--primary, #2563eb) 9%, tran
 .kv a { word-break: break-word; }
 .customer-list tr[hidden] { display: none !important; }
 @media (max-width: 520px) { .kv { grid-template-columns: 1fr; gap: 2px; } }
+
+/* Closing an open amount ---------------------------------------------------------- */
+.settle { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0; }
+.settle.wide { flex-basis: 100%; }

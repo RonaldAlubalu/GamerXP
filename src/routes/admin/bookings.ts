@@ -74,6 +74,8 @@ const PAYMENT_METHODS = { bank: 'overboeking', cash: 'contant', tikkie: 'Tikkie'
 
 export const actorOf = (req: FastifyRequest) => req.admin?.email ?? 'admin';
 
+const WRITE_OFF_LABEL = 'Afgeboekt (niet meer te innen)';
+
 export const bookingRoutes: FastifyPluginAsync = async (app) => {
   const mailContext = () => ({
     publicUrl: app.config.PUBLIC_URL,
@@ -803,6 +805,32 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
       actor: actorOf(req),
     });
     return reply.status(201).send(await loadBooking(id));
+  });
+
+  // Closes what is still open in one go: noted as paid, or written off because it will not come in.
+  app.post('/bookings/:id/settle', async (req) => {
+    if (req.admin!.role !== 'owner') throw new HttpError(403, 'Je hebt geen rechten voor deze actie.', 'forbidden');
+    const { id } = idParam.parse(req.params);
+    const { how } = z.object({ how: z.enum(['paid', 'waive']) }).parse(req.body);
+    const b = await loadBooking(id);
+    const open = b.outstandingCents as number;
+    if (open <= 0) throw new HttpError(409, 'Er staat niets meer open op deze boeking.', 'nothing_open');
+    if (how === 'paid') {
+      // Dated on the party when that is over, else today.
+      await app.db.query(
+        `INSERT INTO payments (booking_id, kind, amount_cents, method, paid_on, note, actor)
+         VALUES ($1, 'payment', $2, 'other', least($3::date, CURRENT_DATE), 'Afgesloten als betaald', $4)`,
+        [id, open, b.partyDate, actorOf(req)],
+      );
+      await recalculatePaid(app.db, id);
+      await addEvent(app.db, id, { type: 'payment', message: `Openstaand bedrag afgesloten als betaald: ${formatEuro(open)}`, actor: actorOf(req) });
+    } else {
+      const extras = [...(b.priceExtras as PriceExtra[]), { label: WRITE_OFF_LABEL, amountCents: -open }];
+      await app.db.query('UPDATE bookings SET price_extras = $2::jsonb, deposit_cents = least(deposit_cents, paid_cents) WHERE id = $1', [id, JSON.stringify(extras)]);
+      await recalculatePrice(app.db, app.config, id);
+      await addEvent(app.db, id, { type: 'update', message: `Openstaand bedrag afgeboekt: ${formatEuro(open)}`, actor: actorOf(req) });
+    }
+    return loadBooking(id);
   });
 
   app.delete('/bookings/:id/payments/:itemId', async (req) => {

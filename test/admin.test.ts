@@ -473,6 +473,26 @@ describe('admin API', () => {
     expect(res.json()).toMatchObject({ reviewStatus: 'requested', waitingOn: 'nobody' });
   });
 
+  it('closes an open amount in one go: as paid, or written off', async () => {
+    const call = (method: 'GET' | 'POST', url: string, payload?: object) => ctx.app.inject({ method, url: `/api/admin${url}`, headers: auth(), payload });
+    const one = (await ctx.app.inject({ method: 'POST', url: '/api/bookings', payload: bookingBody(ctx) })).json();
+    const list = async () => (await call('GET', '/bookings')).json() as { id: string; reference: string; priceCents: number; paidCents: number; outstandingCents: number }[];
+    const first = (await list()).find((b) => b.reference === one.reference)!;
+    expect(first.outstandingCents).toBeGreaterThan(0);
+
+    const paid = (await call('POST', `/bookings/${first.id}/settle`, { how: 'paid' })).json();
+    expect(paid).toMatchObject({ outstandingCents: 0, paidCents: first.priceCents, priceCents: first.priceCents });
+    expect((await call('POST', `/bookings/${first.id}/settle`, { how: 'paid' })).json().code).toBe('nothing_open');
+
+    // Written off: the total drops to what was paid, and no deposit is asked any more.
+    await ctx.db.query("UPDATE bookings SET status = 'cancelled'");
+    const two = (await ctx.app.inject({ method: 'POST', url: '/api/bookings', payload: bookingBody(ctx) })).json();
+    const second = (await list()).find((b) => b.reference === two.reference)!;
+    const waived = (await call('POST', `/bookings/${second.id}/settle`, { how: 'waive' })).json();
+    expect(waived).toMatchObject({ outstandingCents: 0, paidCents: 0, priceCents: 0, depositCents: 0 });
+    expect(waived.priceExtras.at(-1)).toEqual({ label: 'Afgeboekt (niet meer te innen)', amountCents: -second.priceCents });
+  });
+
   it('edits the weekly schedule, slot hours and capacity', async () => {
     const current = (await ctx.app.inject({ url: '/api/admin/availability', headers: auth() })).json();
     expect(current.settings).toEqual({ slotCapacity: 1, dailyCapacity: 2, minLeadDays: 3, maxAdvanceDays: 365, onRequestWeekdays: [] });

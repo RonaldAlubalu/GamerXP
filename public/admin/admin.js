@@ -520,10 +520,22 @@ async function listView() {
   // Under the list: what the bookings shown add up to. Cancelled ones don't count.
   const counted = bookings.filter((b) => b.status !== 'cancelled');
   const sum = (key) => counted.reduce((total, b) => total + (b[key] ?? 0), 0);
+  // Parties that are over but still show an amount: close them all at once.
+  const leftOpen = bookings.filter((b) => ['party_held', 'completed'].includes(b.status) && b.outstandingCents > 0);
+  const closeAll = (how, question, done) => action(async () => {
+    if (!confirm(question)) return false;
+    for (const b of leftOpen) await post(`/bookings/${b.id}/settle`, { how });
+  }, done);
+  const leftSum = fmtEuro(leftOpen.reduce((t, b) => t + b.outstandingCents, 0));
+  const settleAll = me.role === 'owner' && leftOpen.length > 0 && h('div', { class: 'settle wide' },
+    h('span', { class: 'muted' }, `${leftOpen.length} ${leftOpen.length === 1 ? 'feest dat geweest is heeft' : 'feesten die geweest zijn hebben'} nog een bedrag open (${leftSum}).`),
+    h('button', { class: 'btn small', type: 'button', onclick: closeAll('paid', `Bij ${leftOpen.length} feest(en) het open bedrag noteren als ontvangen (samen ${leftSum})?\n\nGebruik dit als het geld binnen is.`, 'Genoteerd als betaald.') }, 'Alle: is betaald'),
+    h('button', { class: 'btn small', type: 'button', onclick: closeAll('waive', `Bij ${leftOpen.length} feest(en) het open bedrag afboeken (samen ${leftSum})?\n\nHet totaal van elke boeking wordt gelijk aan wat betaald is.`, 'Bedragen afgeboekt.') }, 'Alle: afboeken'));
   const totalsBar = counted.length > 0 && h('div', { class: 'list-totals' },
     h('div', {}, h('span', {}, `${counted.length} ${counted.length === 1 ? 'boeking' : 'boekingen'}`), h('strong', {}, fmtEuro(sum('priceCents')))),
     h('div', {}, h('span', {}, 'Betaald'), h('strong', {}, fmtEuro(sum('paidCents')))),
     h('div', {}, h('span', {}, 'Nog te ontvangen'), h('strong', { class: sum('outstandingCents') ? 'warn' : '' }, fmtEuro(sum('outstandingCents')))),
+    settleAll,
     bookings.length > counted.length && h('p', { class: 'muted small' }, `${bookings.length - counted.length} geannuleerde boeking(en) niet meegeteld.`));
   view.replaceChildren(
     h('div', { class: 'toolbar' },
@@ -1182,6 +1194,10 @@ async function bookingDetailView(id) {
           h('span', {}, h('strong', {}, PAYMENT_KINDS[p.kind]), ` ${fmtEuro(p.amountCents)} · ${PAYMENT_METHODS[p.method]} · ${fmtDate(p.paidOn)}`, p.note && h('span', { class: 'muted' }, ` – ${p.note}`)),
           h('button', { class: 'icon-btn', title: 'Verwijderen', onclick: action(() => confirm('Deze betaling verwijderen?') ? del(`/bookings/${id}/payments/${p.id}`) : false, 'Betaling verwijderd.') }, '✕'))))
       : h('p', { class: 'muted' }, 'Nog geen betalingen.'),
+    me.role === 'owner' && b.outstandingCents > 0 && b.status !== 'cancelled' && h('div', { class: 'settle' },
+      h('span', { class: 'muted' }, `Nog ${fmtEuro(b.outstandingCents)} open. In één keer sluiten:`),
+      h('button', { class: 'btn small', type: 'button', onclick: action(() => confirm(`${fmtEuro(b.outstandingCents)} noteren als ontvangen?\n\nGebruik dit als het geld binnen is.`) ? post(`/bookings/${id}/settle`, { how: 'paid' }) : false, 'Genoteerd als betaald.') }, 'Is betaald'),
+      h('button', { class: 'btn small', type: 'button', onclick: action(() => confirm(`${fmtEuro(b.outstandingCents)} afboeken?\n\nGebruik dit als het bedrag niet klopt of niet meer binnenkomt. Het totaal van de boeking wordt gelijk aan wat betaald is; de regel "Afgeboekt" kun je later weer weghalen bij de prijs.`) ? post(`/bookings/${id}/settle`, { how: 'waive' }) : false, 'Bedrag afgeboekt.') }, 'Afboeken')),
     b.depositPaid && ['new', 'contacted', 'confirmed'].includes(b.status) &&
       h('p', {}, h('button', { class: 'btn success', onclick: action(() => moveBooking(id, 'deposit_paid')) }, 'Aanbetaling is binnen → zet op "Aanbetaling ontvangen"')),
     me.bookkeepingConfigured && invoicesBox(b, me),

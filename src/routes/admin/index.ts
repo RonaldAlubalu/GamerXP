@@ -31,16 +31,17 @@ function bearerToken(req: FastifyRequest): string | undefined {
 // A dummy hash so a login for an unknown email takes as long as a wrong password.
 const DUMMY_HASH = '$2b$12$S7333sHhnxTEx1ayGNjnRuORrSn9Jxd0CQNP9DvJqelEUm2piol6G';
 
-async function startSession(app: FastifyInstance, userId: number) {
+// On a remembered device the login lasts 30 days from its last use, so an installed app stays signed in.
+async function startSession(app: FastifyInstance, userId: number, remembered = false) {
   const token = generateSessionToken();
   const expires = await app.db.query<{ expires_at: Date }>(
-    `INSERT INTO admin_sessions (token_hash, user_id, expires_at)
-     VALUES ($1, $2, now() + make_interval(hours => $3)) RETURNING expires_at`,
-    [hashToken(token), userId, app.config.SESSION_TTL_HOURS],
+    `INSERT INTO admin_sessions (token_hash, user_id, expires_at, remembered)
+     VALUES ($1, $2, now() + make_interval(hours => $3), $4) RETURNING expires_at`,
+    [hashToken(token), userId, remembered ? TRUST_DAYS * 24 : app.config.SESSION_TTL_HOURS, remembered],
   );
   // Opportunistically clean up old sessions.
   await app.db.query('DELETE FROM admin_sessions WHERE expires_at < now()');
-  return { token, expiresAt: expires.rows[0]!.expires_at };
+  return { token, expiresAt: expires.rows[0]!.expires_at, remembered };
 }
 
 const MAX_LINK_ATTEMPTS = 5;
@@ -89,7 +90,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           'SELECT 1 FROM trusted_devices WHERE user_id = $1 AND token_hash = $2 AND expires_at > now()',
           [user.id, hashToken(device)],
         );
-        if (known.rowCount) return startSession(app, user.id);
+        if (known.rowCount) return startSession(app, user.id, true);
       }
 
       // Second step: a code from the authenticator app, or a one-time backup code.
@@ -104,7 +105,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         } else {
           throw new HttpError(401, 'Deze code klopt niet of is al gebruikt. Probeer de volgende code.', 'invalid_code');
         }
-        const session = await startSession(app, user.id);
+        const session = await startSession(app, user.id, remember);
         return remember ? { ...session, deviceToken: await trustDevice(app, user.id, req) } : session;
       }
 
@@ -144,7 +145,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         return { step: 'email' as const, pending, minutes };
       }
 
-      return startSession(app, user.id);
+      return startSession(app, user.id, remember);
     },
   );
 
@@ -173,7 +174,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       // One use only.
       const used = await app.db.query('DELETE FROM login_links WHERE id = $1', [link.id]);
       if (!used.rowCount) throw expired;
-      const session = await startSession(app, link.user_id);
+      const session = await startSession(app, link.user_id, link.remember);
       return link.remember ? { ...session, deviceToken: await trustDevice(app, link.user_id, req) } : session;
     },
   );
@@ -184,13 +185,16 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       const token = bearerToken(req);
       if (!token) throw new HttpError(401, 'Niet ingelogd.', 'unauthenticated');
       const tokenHash = hashToken(token);
-      const { rows } = await app.db.query<{ id: number; email: string; name: string; role: Role; twoFactor: boolean }>(
-        `SELECT u.id, u.email, u.name, u.role, u.totp_enabled AS "twoFactor" FROM admin_sessions s JOIN admin_users u ON u.id = s.user_id
+      const { rows } = await app.db.query<{ id: number; email: string; name: string; role: Role; twoFactor: boolean; renew: boolean }>(
+        `SELECT u.id, u.email, u.name, u.role, u.totp_enabled AS "twoFactor",
+                s.remembered AND s.expires_at < now() + make_interval(days => ${TRUST_DAYS - 1}) AS renew FROM admin_sessions s JOIN admin_users u ON u.id = s.user_id
           WHERE s.token_hash = $1 AND s.expires_at > now()`,
         [tokenHash],
       );
       if (!rows[0]) throw new HttpError(401, 'Sessie verlopen, log opnieuw in.', 'unauthenticated');
-      req.admin = { ...rows[0], tokenHash };
+      // Used again: a remembered login counts its 30 days from today (written at most once a day).
+      if (rows[0].renew) await app.db.query(`UPDATE admin_sessions SET expires_at = now() + make_interval(days => ${TRUST_DAYS}) WHERE token_hash = $1`, [tokenHash]);
+      req.admin = { id: rows[0].id, email: rows[0].email, name: rows[0].name, role: rows[0].role, twoFactor: rows[0].twoFactor, tokenHash };
       const path = req.url.split('?')[0]!.replace(/^\/api\/admin/, '');
       if (req.admin.role === 'assistant' && !assistantMayCall(req.method, path)) {
         throw new HttpError(403, 'Je hebt geen rechten voor deze actie.', 'forbidden');

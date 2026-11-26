@@ -298,6 +298,16 @@ details.collapsible summary { cursor: pointer; font-weight: 600; }
 .schedule th, .schedule td { text-align: center; }
 .schedule tbody th { text-align: left; text-transform: capitalize; color: var(--text); background: none; font-size: .9rem; letter-spacing: 0; }
 .time-range { display: flex; gap: 6px; align-items: center; }
+.time-range input { flex: 1; min-width: 0; }
+.row.times { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+/* On a phone the whole week fits without scrolling sideways. */
+@media (max-width: 560px) {
+  .schedule { table-layout: fixed; }
+  .schedule th:first-child { width: 26%; }
+  .schedule th, .schedule td { padding: 9px 2px; }
+  .schedule thead th { font-size: .58rem; letter-spacing: 0; }
+  .schedule .slot-hours { display: none; }
+}
 
 /* Calendar ---------------------------------------------------------------------- */
 .cal-nav { display: flex; gap: 8px; align-items: center; }

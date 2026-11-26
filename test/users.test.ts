@@ -253,6 +253,35 @@ describe('remember this device for 30 days', () => {
     expect((await post(loginUrl, { ...creds, device: deviceToken })).json().step).toBe('email');
   });
 
+  it('keeps a remembered device signed in for 30 days from its last use, and any other for a working day', async () => {
+    const days = async (token: string) => {
+      const { hashToken } = await import('../src/lib/auth.js');
+      const { rows } = await ctx.db.query<{ days: number }>('SELECT extract(epoch FROM (expires_at - now())) / 86400 AS days FROM admin_sessions WHERE token_hash = $1', [hashToken(token)]);
+      return Number(rows[0]!.days);
+    };
+    const first = await post(loginUrl, creds);
+    const code = /inlogscherm: (\d{6})/.exec(ctx.sent.at(-1)!.text)![1]!;
+    const plain = (await post('/api/admin/login/link', { pending: first.json().pending, code })).json();
+    expect(plain.remembered).toBe(false);
+    expect(await days(plain.token)).toBeLessThan(1);
+
+    const kept = await rememberedDevice() as { token: string; deviceToken: string; remembered?: boolean };
+    expect(kept.remembered).toBe(true);
+    expect(await days(kept.token)).toBeGreaterThan(29.9);
+    // Ten days later the app is opened again: the 30 days start over.
+    await ctx.db.query(`UPDATE admin_sessions SET expires_at = expires_at - interval '10 days' WHERE remembered`);
+    expect((await call(kept.token, 'GET', '/me')).statusCode).toBe(200);
+    expect(await days(kept.token)).toBeGreaterThan(29.9);
+    // Logging in again on the remembered device keeps it signed in as well.
+    expect((await post(loginUrl, { ...creds, device: kept.deviceToken })).json().remembered).toBe(true);
+
+    // Forgetting the devices signs the other ones out; the one asking stays in.
+    const other = await rememberedDevice();
+    expect((await call(other.token, 'POST', '/me/devices/forget')).statusCode).toBe(204);
+    expect((await call(kept.token, 'GET', '/me')).statusCode).toBe(401);
+    expect((await call(other.token, 'GET', '/me')).statusCode).toBe(200);
+  });
+
   it('forgets devices on request and when the password changes', async () => {
     const a = await rememberedDevice();
     expect((await call(a.token, 'GET', '/me')).json().trustedDevices).toBe(1);

@@ -67,6 +67,8 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
   // Forget every remembered device: the next login on each asks for the second step again.
   app.post('/me/devices/forget', async (req, reply) => {
     await app.db.query('DELETE FROM trusted_devices WHERE user_id = $1', [req.admin!.id]);
+    // Other devices that stayed signed in are signed out too.
+    await app.db.query('DELETE FROM admin_sessions WHERE user_id = $1 AND remembered AND token_hash <> $2', [req.admin!.id, req.admin!.tokenHash]);
     return reply.status(204).send();
   });
 

@@ -66,11 +66,16 @@ const isOpen = (b) => !['completed', 'cancelled'].includes(b.status);
 function storeTheme(value) {
   try { localStorage.setItem(THEME_KEY, value); } catch {}
 }
+// The login lives as long as the window; on a remembered device it is kept, so the installed app stays signed in.
 function getToken() {
-  try { return sessionStorage.getItem(TOKEN_KEY); } catch { return null; }
+  try { return sessionStorage.getItem(TOKEN_KEY) ?? localStorage.getItem(TOKEN_KEY); } catch { return null; }
 }
-function setToken(token) {
-  try { token ? sessionStorage.setItem(TOKEN_KEY, token) : sessionStorage.removeItem(TOKEN_KEY); } catch {}
+function setToken(token, keep = false) {
+  try {
+    sessionStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(TOKEN_KEY);
+    if (token) (keep ? localStorage : sessionStorage).setItem(TOKEN_KEY, token);
+  } catch {}
 }
 
 async function api(path, options = {}) {
@@ -202,7 +207,7 @@ function getDevice() {
 function finishLogin(res) {
   if (res.deviceToken) { try { localStorage.setItem(DEVICE_KEY, res.deviceToken); } catch {} }
   setPending(null);
-  setToken(res.token);
+  setToken(res.token, res.remembered);
   render();
 }
 
@@ -1473,14 +1478,14 @@ async function availabilityView() {
     }) });
   }, 'Beschikbaarheid opgeslagen. De website toont dit direct.') },
     h('div', { class: 'table-wrap' }, h('table', { class: 'schedule' },
-      h('thead', {}, h('tr', {}, h('th', {}, ''), av.slots.map((s) => h('th', {}, `${s.label} (${s.start}–${s.end})`)), h('th', {}, 'Op aanvraag'))),
+      h('thead', {}, h('tr', {}, h('th', {}, ''), av.slots.map((s) => h('th', {}, s.label, h('span', { class: 'slot-hours' }, ` (${s.start}–${s.end})`))), h('th', {}, 'Op aanvraag'))),
       h('tbody', {}, WEEKDAYS.map((name, i) => h('tr', {},
         h('th', {}, name),
         av.slots.map((s) => h('td', {}, h('input', { type: 'checkbox', name: `w${i + 1}-${s.key}`, checked: av.weekly[i + 1][s.key], 'aria-label': `${name} ${s.label}` }))),
         h('td', {}, h('input', { type: 'checkbox', name: `r${i + 1}`, checked: (av.settings.onRequestWeekdays ?? []).includes(i + 1), 'aria-label': `${name} op aanvraag` }))))))),
     h('p', { class: 'muted' }, 'Op aanvraag: de dag staat oranje in de agenda op de website. Klanten kunnen hem aanvragen en lezen erbij dat jij eerst kijkt of het lukt. Vink ook de dagdelen aan die dan mogelijk zijn.'),
     h('h3', { style: 'margin-top:16px' }, 'Tijden per dagdeel'),
-    h('div', { class: 'row' }, av.slots.map((s) => field(s.label, h('div', { class: 'time-range' },
+    h('div', { class: 'row times' }, av.slots.map((s) => field(s.label, h('div', { class: 'time-range' },
       h('input', { type: 'time', name: `start-${s.key}`, value: s.start, required: true }), '–',
       h('input', { type: 'time', name: `end-${s.key}`, value: s.end, required: true }))))),
     h('h3', {}, 'Capaciteit en boekingsperiode'),

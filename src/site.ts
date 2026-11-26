@@ -2,6 +2,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
+import { applyTexts, loadSiteContent, type SiteContent } from './services/site-content.js';
 
 // Server-rendered website pages.
 //
@@ -87,7 +88,7 @@ function structuredData(html: string, meta: PageMeta, route: string, publicUrl: 
   return `<script type="application/ld+json">${json}</script>`;
 }
 
-async function listHtml(dir: string, prefix = ''): Promise<string[]> {
+export async function listHtml(dir: string, prefix = ''): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true });
   const files: string[] = [];
   for (const e of entries) {
@@ -110,12 +111,15 @@ function includePartials(html: string, partials: Map<string, string>, depth = 0)
   });
 }
 
-export async function loadSite(publicUrl: string, dir: string = SITE_DIR, hidden = false): Promise<Site> {
-  const layout = await readFile(path.join(dir, 'layout.html'), 'utf8');
+export async function loadSite(publicUrl: string, dir: string = SITE_DIR, hidden = false, content?: SiteContent): Promise<Site> {
+  // Texts the owner changed in the admin go over the wording in the files.
+  const read = async (file: string) => applyTexts(await readFile(path.join(dir, file), 'utf8'), content?.texts.get(file));
+  const layout = await read('layout.html');
   const partials = new Map<string, string>();
   for (const file of await listHtml(path.join(dir, 'partials'))) {
-    partials.set(file.replace(/\.html$/, ''), await readFile(path.join(dir, 'partials', file), 'utf8'));
+    partials.set(file.replace(/\.html$/, ''), await read(`partials/${file}`));
   }
+  if (content?.gallery !== undefined) partials.set('gallery', content.gallery);
 
   const render = (meta: PageMeta, body: string, route: string) => {
     const vars: Record<string, string> = {
@@ -137,10 +141,13 @@ export async function loadSite(publicUrl: string, dir: string = SITE_DIR, hidden
   const sitemap: string[] = [];
   let notFound = '';
   for (const file of await listHtml(path.join(dir, 'pages'))) {
-    const source = await readFile(path.join(dir, 'pages', file), 'utf8');
+    const source = await read(`pages/${file}`);
     const match = META_RE.exec(source);
     if (!match) throw new Error(`site/pages/${file} must start with a <!--{...}--> metadata comment`);
     const meta = JSON.parse(match[1]!) as PageMeta;
+    const changed = content?.texts.get(`pages/${file}`);
+    meta.title = changed?.get('@title') ?? meta.title;
+    meta.description = changed?.get('@description') ?? meta.description;
     const route = routeFor(file);
     const html = render(meta, source.slice(match[0].length), route);
     if (route === '/404') {
@@ -157,7 +164,8 @@ export async function loadSite(publicUrl: string, dir: string = SITE_DIR, hidden
 
 export async function registerSite(app: FastifyInstance): Promise<void> {
   const { PUBLIC_URL, NODE_ENV, SITE_NOINDEX } = app.config;
-  let site = await loadSite(PUBLIC_URL, SITE_DIR, SITE_NOINDEX);
+  const load = async () => loadSite(PUBLIC_URL, SITE_DIR, SITE_NOINDEX, await loadSiteContent(app.db));
+  let site = await load();
   // A test address stays out of search engines: every answer says so, pages and files alike.
   if (SITE_NOINDEX) {
     app.addHook('onSend', async (_req, reply) => {
@@ -165,7 +173,7 @@ export async function registerSite(app: FastifyInstance): Promise<void> {
     });
   }
   // In development pages are re-read on every request, so edits show up without a restart.
-  const current = async () => (NODE_ENV === 'development' ? (site = await loadSite(PUBLIC_URL, SITE_DIR, SITE_NOINDEX)) : site);
+  const current = async () => (NODE_ENV === 'development' ? (site = await load()) : site);
 
   for (const route of site.pages.keys()) {
     app.get(route, async (req, reply) => {
@@ -190,11 +198,16 @@ export async function registerSite(app: FastifyInstance): Promise<void> {
     reply.type('text/plain').send(`User-agent: *\nDisallow: /admin/\nDisallow: /api/\nDisallow: /status\n\nSitemap: ${PUBLIC_URL}/sitemap.xml\n`),
   );
 
+  // After a change in the admin the pages are put together again.
+  app.decorate('reloadSite', async () => {
+    site = await load();
+  });
   app.decorate('notFoundPage', async () => (await current()).notFound);
 }
 
 declare module 'fastify' {
   interface FastifyInstance {
     notFoundPage: () => Promise<string>;
+    reloadSite: () => Promise<void>;
   }
 }

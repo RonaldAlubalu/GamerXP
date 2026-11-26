@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadSite } from '../src/site.js';
-import { setupApp, teardown, type TestContext } from './helpers.js';
+import { loginAdmin, setupApp, teardown, type TestContext } from './helpers.js';
 
 const PUBLIC_DIR = path.resolve(import.meta.dirname, '../public');
 
@@ -133,5 +133,68 @@ describe('stylesheets', () => {
       }
       expect(depth, `${file}: a "{" is never closed`).toBe(0);
     }
+  });
+});
+
+describe('website from the admin', () => {
+  let ctx: TestContext;
+  let token: string;
+  const admin = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', url: string, payload?: object) =>
+    ctx.app.inject({ method, url: `/api/admin${url}`, headers: { authorization: `Bearer ${token}` }, payload });
+  const home = async () => (await ctx.app.inject({ url: '/' })).body;
+
+  beforeAll(async () => {
+    ctx = await setupApp();
+    token = await loginAdmin(ctx);
+  });
+  afterAll(async () => teardown(ctx));
+
+  it('changes a text on a page, keeps it safe, and puts the original back', async () => {
+    const files = (await admin('GET', '/site/files')).json();
+    expect(files.find((f: { file: string }) => f.file === 'pages/index.html')).toMatchObject({ label: 'Home', route: '/', changed: 0 });
+    const page = (await admin('GET', '/site/file?file=pages/index.html')).json();
+    const heading = page.blocks.find((b: { tag: string }) => b.tag === 'h1');
+    expect(await home()).toContain(heading.original);
+
+    const saved = await admin('PUT', '/site/text', { file: 'pages/index.html', original: heading.original, replacement: 'Nieuwe <strong onclick="x()">kop</strong><script>alert(1)</script> <div>hier</div> 1 < 2' });
+    expect(saved.json().current).toBe('Nieuwe <strong>kop</strong>alert(1) hier 1 &lt; 2');
+    expect(await home()).toContain('Nieuwe <strong>kop</strong>');
+    expect(await home()).not.toContain(heading.original);
+    expect((await admin('GET', '/site/file?file=pages/index.html')).json().blocks.find((b: { tag: string }) => b.tag === 'h1')).toMatchObject({ changed: true, original: heading.original });
+
+    await admin('PUT', '/site/text', { file: 'pages/index.html', original: '@title', replacement: 'Een andere titel' });
+    expect(await home()).toContain('<title>Een andere titel</title>');
+
+    expect((await admin('PUT', '/site/text', { file: 'pages/index.html', original: 'Dit staat er niet', replacement: 'x' })).statusCode).toBe(409);
+    expect((await admin('PUT', '/site/text', { file: 'pages/index.html', original: heading.original, replacement: ' <br> ' })).statusCode).toBe(400);
+    expect((await admin('GET', '/site/file?file=../package.json')).statusCode).toBe(404);
+
+    await admin('PUT', '/site/text', { file: 'pages/index.html', original: heading.original, replacement: null });
+    await admin('PUT', '/site/text', { file: 'pages/index.html', original: '@title', replacement: null });
+    expect(await home()).toContain(heading.original);
+  });
+
+  it('manages the photo strip: add, describe, reorder, hide and remove', async () => {
+    const start = (await admin('GET', '/site/photos')).json();
+    expect(start).toHaveLength(21);
+    const image = `data:image/png;base64,${Buffer.from('not really a picture').toString('base64')}`;
+    const made = await admin('POST', '/site/photos', { image, alt: 'Nieuw "feest"', width: 1200, height: 900 });
+    expect(made.statusCode).toBe(201);
+    const { id } = made.json();
+    expect(await home()).toContain(`<img src="/api/site-photo/${id}" alt="Nieuw &quot;feest&quot;" loading="lazy" width="1200" height="900">`);
+    const served = await ctx.app.inject({ url: `/api/site-photo/${id}` });
+    expect(served.headers['content-type']).toBe('image/png');
+    expect(served.body).toBe('not really a picture');
+
+    // To the front, and the first built-in photo hidden.
+    await admin('PUT', '/site/photos/order', { ids: [id, ...start.map((p: { id: number }) => p.id)] });
+    await admin('PATCH', `/site/photos/${start[0].id}`, { hidden: true });
+    const html = await home();
+    expect(html).not.toContain(start[0].url);
+    expect(html.indexOf(`/api/site-photo/${id}`)).toBeLessThan(html.indexOf(start[1].url));
+
+    expect((await admin('DELETE', `/site/photos/${start[1].id}`)).statusCode).toBe(409);
+    expect((await admin('DELETE', `/site/photos/${id}`)).statusCode).toBe(204);
+    expect((await ctx.app.inject({ url: `/api/site-photo/${id}` })).statusCode).toBe(404);
   });
 });

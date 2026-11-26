@@ -2649,6 +2649,133 @@ function who(actor) {
   return h('span', { class: 'who', title: actor }, person.avatar && h('img', { src: person.avatar, alt: '' }), person.name || actor);
 }
 
+// Website: the wording per page and the photos in the strip, without touching the files.
+const websiteTabs = (current) => h('div', { class: 'tabs page-tabs' },
+  h('button', { type: 'button', class: current === 'texts' ? 'on' : '', onclick: () => { location.hash = '#/website'; } }, 'Teksten'),
+  h('button', { type: 'button', class: current === 'photos' ? 'on' : '', onclick: () => { location.hash = '#/website/fotos'; } }, "Foto's"));
+
+const TEXT_KINDS = { h1: 'Grote kop', h2: 'Kop', h3: 'Tussenkop', h4: 'Tussenkop', h5: 'Tussenkop', h6: 'Tussenkop', p: 'Tekst', li: 'Punt in een lijst', summary: 'Vraag', a: 'Link of knop', button: 'Knop', label: 'Label', legend: 'Kopje in formulier', option: 'Keuze', figcaption: 'Onderschrift', th: 'Tabelkop', td: 'Tabelcel', blockquote: 'Citaat', span: 'Label', small: 'Kleine tekst', strong: 'Vette tekst', dt: 'Term', dd: 'Uitleg' };
+let websiteFile = 'pages/index.html';
+
+async function websiteView(sub) {
+  if (sub === 'fotos') return websitePhotosView();
+  const files = await api('/site/files');
+  if (!files.some((f) => f.file === websiteFile)) websiteFile = files[0].file;
+  const page = await api(`/site/file?file=${encodeURIComponent(websiteFile)}`);
+  setPage('Website', page.route && h('a', { class: 'btn', href: page.route, target: '_blank', rel: 'noopener' }, '↗ Bekijk pagina'));
+
+  const option = (f) => h('option', { value: f.file, selected: f.file === websiteFile }, `${f.label}${f.changed ? ` (${f.changed} aangepast)` : ''}`);
+  const picker = h('select', { onchange: () => { websiteFile = picker.value; render(); } },
+    h('optgroup', { label: "Pagina's" }, files.filter((f) => f.group === 'page').map(option)),
+    h('optgroup', { label: 'Blokken die op meerdere pagina\'s staan' }, files.filter((f) => f.group === 'shared').map(option)));
+
+  // One piece of text: type in it like in a document. The buttons show up once it differs.
+  const block = (label, item, original, rich) => {
+    const box = rich
+      ? h('div', { class: 'site-edit', contenteditable: 'true', role: 'textbox', 'aria-label': label })
+      : h('textarea', { class: 'site-edit', rows: 2, 'aria-label': label }, item.current);
+    if (rich) box.innerHTML = item.current;
+    const value = () => (rich ? box.innerHTML : box.value);
+    let saved = value();
+    const save = h('button', { type: 'button', class: 'btn primary', hidden: true }, 'Opslaan');
+    const undo = h('button', { type: 'button', class: 'btn', hidden: true }, 'Wijziging weggooien');
+    const reset = h('button', { type: 'button', class: 'btn', hidden: !item.changed }, 'Terug naar origineel');
+    const mark = h('span', { class: 'badge warning', hidden: !item.changed }, 'Aangepast');
+    const sync = () => { const dirty = value() !== saved; save.hidden = undo.hidden = !dirty; wrap.classList.toggle('dirty', dirty); };
+    const set = (text) => { if (rich) box.innerHTML = text; else box.value = text; saved = value(); sync(); };
+    box.addEventListener('input', sync);
+    if (rich) {
+      box.addEventListener('keydown', (e) => { if (e.key === 'Enter') e.preventDefault(); });
+      box.addEventListener('paste', (e) => { e.preventDefault(); document.execCommand('insertText', false, (e.clipboardData.getData('text/plain') || '').replace(/\s+/g, ' ')); });
+    }
+    save.addEventListener('click', action(async () => {
+      const r = await put('/site/text', { file: page.file, original, replacement: value() });
+      set(r.current);
+      reset.hidden = mark.hidden = false;
+      flash('ok', 'Opgeslagen. Het staat nu op de website.');
+      return false;
+    }));
+    undo.addEventListener('click', () => set(saved));
+    reset.addEventListener('click', action(async () => {
+      if (!confirm('De oorspronkelijke tekst terugzetten?')) return false;
+      await put('/site/text', { file: page.file, original, replacement: null });
+      set(item.original);
+      reset.hidden = mark.hidden = true;
+      flash('ok', 'De oorspronkelijke tekst staat er weer.');
+      return false;
+    }));
+    const wrap = h('div', { class: 'site-block' }, h('div', { class: 'site-block-head' }, h('small', {}, label), mark), box, h('div', { class: 'inline' }, save, undo, reset));
+    return wrap;
+  };
+
+  view.replaceChildren(...[
+    websiteTabs('texts'),
+    h('div', { class: 'card' },
+      field('Welke pagina?', picker, 'Klik in een tekst, typ je wijziging en kies Opslaan. Het staat dan direct op de website. Met "Terug naar origineel" maak je het ongedaan.')),
+    page.meta && h('div', { class: 'card' }, h('h2', {}, 'In Google'),
+      h('p', { class: 'muted' }, 'De titel en de omschrijving zoals ze in de zoekresultaten staan.'),
+      block('Titel (liefst korter dan 60 tekens)', page.meta[0], '@title', false),
+      block('Omschrijving (liefst korter dan 160 tekens)', page.meta[1], '@description', false)),
+    h('div', { class: 'card' }, h('h2', {}, 'Teksten op de pagina'),
+      page.blocks.length ? page.blocks.map((b) => block(TEXT_KINDS[b.tag] ?? 'Tekst', b, b.original, true)) : h('p', { class: 'muted' }, 'Hier staat geen tekst die je kunt aanpassen.')),
+    page.stale.length > 0 && h('div', { class: 'card' }, h('h2', {}, 'Vervallen wijzigingen'),
+      h('p', { class: 'muted' }, 'Deze wijzigingen horen bij tekst die inmiddels anders op de pagina staat. Ze doen niets meer.'),
+      page.stale.map((t) => h('div', { class: 'site-block' }, h('div', { class: 'muted' }, t.replacement.replace(/<[^>]+>/g, '')),
+        h('button', { type: 'button', class: 'btn', onclick: action(async () => { await put('/site/text', { file: page.file, original: t.original, replacement: null }); }) }, 'Opruimen')))),
+  ].filter(Boolean));
+}
+
+async function websitePhotosView() {
+  const photos = await api('/site/photos');
+  setPage('Website', h('a', { class: 'btn', href: '/', target: '_blank', rel: 'noopener' }, '↗ Bekijk website'));
+  const move = (index, step) => action(async () => {
+    const ids = photos.map((p) => p.id);
+    const [id] = ids.splice(index, 1);
+    ids.splice(index + step, 0, id);
+    await put('/site/photos/order', { ids });
+  });
+  const upload = h('input', { type: 'file', accept: 'image/*', multiple: true, hidden: true, onchange: action(async () => {
+    const chosen = [...upload.files];
+    upload.value = '';
+    if (!chosen.length) return false;
+    for (const file of chosen) {
+      const image = await createImageBitmap(file);
+      const scale = Math.min(1, 1200 / Math.max(image.width, image.height));
+      const width = Math.round(image.width * scale);
+      const height = Math.round(image.height * scale);
+      const canvas = Object.assign(document.createElement('canvas'), { width, height });
+      canvas.getContext('2d').drawImage(image, 0, 0, width, height);
+      await post('/site/photos', { image: canvas.toDataURL('image/jpeg', 0.8), width, height, alt: '' });
+    }
+    flash('ok', chosen.length === 1 ? 'Foto toegevoegd, achteraan in de strook.' : `${chosen.length} foto's toegevoegd, achteraan in de strook.`);
+    render();
+    return false;
+  }) });
+  const tile = (p, i) => {
+    const alt = h('input', { value: p.alt, maxlength: 150, placeholder: 'Wat is er te zien?', 'aria-label': 'Omschrijving van de foto', onchange: action(async () => { await patchJson(`/site/photos/${p.id}`, { alt: alt.value }); return false; }) });
+    return h('div', { class: `site-photo ${p.hidden ? 'off' : ''}` },
+      h('img', { src: p.url, alt: p.alt, loading: 'lazy' }),
+      alt,
+      h('div', { class: 'inline' },
+        h('button', { type: 'button', class: 'btn', disabled: i === 0, title: 'Eerder in de strook', onclick: move(i, -1) }, '←'),
+        h('button', { type: 'button', class: 'btn', disabled: i === photos.length - 1, title: 'Later in de strook', onclick: move(i, 1) }, '→'),
+        h('button', { type: 'button', class: 'btn', onclick: action(async () => { await patchJson(`/site/photos/${p.id}`, { hidden: !p.hidden }); render(); return false; }) }, p.hidden ? 'Tonen' : 'Verbergen'),
+        p.own && h('button', { type: 'button', class: 'btn danger', onclick: action(async () => {
+          if (!confirm('Deze foto verwijderen?')) return false;
+          await del(`/site/photos/${p.id}`);
+          render();
+          return false;
+        }) }, 'Verwijderen')));
+  };
+  view.replaceChildren(
+    websiteTabs('photos'),
+    h('div', { class: 'card' }, h('h2', {}, "Foto's in de fotostrook"),
+      h('p', { class: 'muted' }, 'De strook waar bezoekers doorheen vegen, op de homepage en zeven andere pagina\'s. De volgorde hier is de volgorde op de website. Zet alleen foto\'s online waarop kinderen niet herkenbaar zijn, of waarvoor je toestemming hebt.'),
+      h('div', { class: 'inline' }, h('button', { type: 'button', class: 'btn primary', onclick: () => upload.click() }, "＋ Foto's toevoegen"), upload),
+      h('div', { class: 'site-photos' }, photos.map(tile))),
+  );
+}
+
 async function updateCounts() {
   try {
     const o = await api('/overview');
@@ -2687,7 +2814,7 @@ async function render() {
   for (const el of document.querySelectorAll('[data-owner]')) el.hidden = assistant;
   const [path] = location.hash.slice(1).split('?');
   const parts = (path || '/board').split('/').filter(Boolean);
-  const ownerOnly = ['messages', 'reviews', 'packages', 'users', 'system', 'templates', 'birthdays', 'customers'];
+  const ownerOnly = ['messages', 'reviews', 'packages', 'users', 'system', 'templates', 'birthdays', 'customers', 'website'];
   if (assistant && ownerOnly.includes(parts[0])) parts[0] = 'board';
   for (const a of document.querySelectorAll('.side-nav a')) {
     a.classList.toggle('active', a.dataset.route === parts[0] || (a.dataset.route === 'list' && parts[0] === 'bookings') || (a.dataset.route === 'messages' && parts[0] === 'mailing'));
@@ -2707,6 +2834,7 @@ async function render() {
     else if (parts[0] === 'customers') await (parts[1] ? customerView(decodeURIComponent(parts[1])) : customersView());
     else if (parts[0] === 'templates') await templatesView(parts[1], parts[2]);
     else if (parts[0] === 'birthdays') await birthdaysView();
+    else if (parts[0] === 'website') await websiteView(parts[1]);
     else if (parts[0] === 'users') await usersView();
     else if (parts[0] === 'system') await systemView();
     else if (parts[0] === 'account') await accountView();

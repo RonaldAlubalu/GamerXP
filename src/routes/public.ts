@@ -163,6 +163,14 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
     return reply.header('Content-Type', rows[0].mime).header('Cross-Origin-Resource-Policy', 'cross-origin').header('Cache-Control', 'public, max-age=31536000, immutable').send(rows[0].data);
   });
 
+  // A photo the owner added to the strip on the website.
+  app.get('/site-photo/:id', async (req, reply) => {
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(req.params);
+    const { rows } = await app.db.query<{ mime: string; data: Buffer }>('SELECT mime, data FROM site_photos WHERE id = $1 AND data IS NOT NULL', [id]);
+    if (!rows[0]) throw new HttpError(404, 'Niet gevonden.', 'not_found');
+    return reply.header('Content-Type', rows[0].mime).header('Cache-Control', 'public, max-age=31536000, immutable').send(rows[0].data);
+  });
+
   // The way out of the mailings: the link at the bottom of every mailing leads here.
   app.post(
     '/unsubscribe',

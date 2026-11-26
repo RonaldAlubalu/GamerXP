@@ -24,6 +24,8 @@ export interface AvailabilitySettings {
   minLeadDays: number;
   // ...and at most this many days ahead.
   maxAdvanceDays: number;
+  // Weekdays (1 = Monday) that can be asked for, but need arranging before the owner can say yes.
+  onRequestWeekdays: number[];
 }
 
 export interface SlotStatus {
@@ -42,7 +44,7 @@ export interface DayAvailability {
 }
 
 export async function getSettings(db: Queryable): Promise<AvailabilitySettings> {
-  const defaults: AvailabilitySettings = { slotCapacity: 1, dailyCapacity: 2, minLeadDays: 3, maxAdvanceDays: 365 };
+  const defaults: AvailabilitySettings = { slotCapacity: 1, dailyCapacity: 2, minLeadDays: 3, maxAdvanceDays: 365, onRequestWeekdays: [] };
   const { rows } = await db.query<{ value: Partial<AvailabilitySettings> }>(
     "SELECT value FROM settings WHERE key = 'availability'",
   );
@@ -86,7 +88,7 @@ export async function bookingWindow(
   return { minDate: addDays(t, settings.minLeadDays), maxDate: addDays(t, settings.maxAdvanceDays) };
 }
 
-const isoWeekday = (date: string) => ((new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7) + 1;
+export const isoWeekday = (date: string) => ((new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7) + 1;
 
 // Works out, for every date between from and to, which slots are open, booked and still available.
 // Every booking except a cancelled one occupies its slot.

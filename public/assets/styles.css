@@ -395,6 +395,10 @@ dl.summary dd { margin: 0; }
 .cal-day.free { cursor: pointer; opacity: 1; color: var(--text); border-color: var(--green); background: rgba(82, 204, 24, .12); }
 .cal-day.free:hover { background: rgba(82, 204, 24, .3); }
 .cal-day.selected { background: var(--green); color: var(--bg); box-shadow: 0 0 0 3px rgba(82, 204, 24, .35); }
+.cal-day.on-request { border-color: #ffa726; border-style: dashed; background: rgba(255, 167, 38, .12); }
+.cal-day.on-request:hover { background: rgba(255, 167, 38, .3); }
+.cal-day.on-request.selected { background: #ffa726; color: var(--bg); box-shadow: 0 0 0 3px rgba(255, 167, 38, .35); }
+.legend-dot.on-request { background: #ffa726; }
 .legend-dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: var(--green); vertical-align: middle; }
 .slot-date { margin: 18px 0 10px; }
 

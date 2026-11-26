@@ -23,7 +23,7 @@ const BOOKING_COLUMNS = `
   b.party_date AS "partyDate", b.time_slot AS "timeSlot", to_char(b.start_time, 'HH24:MI') AS "startTime", to_char(b.end_time, 'HH24:MI') AS "endTime",
   b.extra_stations AS "extraStations",
   b.parent_name AS "parentName", b.first_name AS "firstName", b.last_name AS "lastName", b.email, b.phone, b.email2, b.phone2, b.street, b.postal_code AS "postalCode", b.city,
-  b.discount_code AS "discountCode", b.referred_by AS "referredBy", b.location_name AS "locationName", b.billing_street AS "billingStreet", b.billing_postal_code AS "billingPostalCode", b.billing_city AS "billingCity",
+  b.discount_code AS "discountCode", b.referred_by AS "referredBy", b.on_request AS "onRequest", b.location_name AS "locationName", b.billing_street AS "billingStreet", b.billing_postal_code AS "billingPostalCode", b.billing_city AS "billingCity",
   b.child_name AS "childName", b.child_age AS "childAge", b.guest_count AS "guestCount",
   b.notes, b.parking, b.status, b.admin_notes AS "adminNotes", b.waiting_on AS "waitingOn",
   b.package_price_cents AS "packagePriceCents", b.travel_km::float AS "travelKm", b.travel_minutes AS "travelMinutes",

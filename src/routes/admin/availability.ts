@@ -22,6 +22,7 @@ const availabilityInput = z.object({
     dailyCapacity: z.number().int().min(1).max(10),
     minLeadDays: z.number().int().min(0).max(60),
     maxAdvanceDays: z.number().int().min(7).max(730),
+    onRequestWeekdays: z.array(z.number().int().min(1).max(7)).max(7).default([]),
   }),
   slots: z
     .array(z.object({ key: slotKey, start: timeString, end: timeString }))

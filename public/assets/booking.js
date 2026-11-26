@@ -12,7 +12,7 @@ const DECORATION_CENTS = 2500;
 const monthName = new Intl.DateTimeFormat('nl-NL', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 
 let packages = [];
-let availability = { days: {}, slots: [], minDate: '', maxDate: '' };
+let availability = { days: {}, slots: [], onRequest: [], minDate: '', maxDate: '' };
 let month = ''; // 'YYYY-MM' shown in the calendar
 let travel = null; // { km, travelCents } for the entered address
 
@@ -181,8 +181,10 @@ function renderCalendar() {
     button.textContent = String(d.getUTCDate());
     button.className = 'cal-day';
     if (free) {
+      const asked = availability.onRequest.includes(date);
       button.classList.add('free');
-      button.setAttribute('aria-label', `${formatDate(date)}: ${free.length} ${free.length === 1 ? 'tijdslot' : 'tijdslots'} vrij`);
+      if (asked) button.classList.add('on-request');
+      button.setAttribute('aria-label', `${formatDate(date)}: ${asked ? 'op aanvraag' : `${free.length} ${free.length === 1 ? 'tijdslot' : 'tijdslots'} vrij`}`);
       button.addEventListener('click', () => selectDate(date));
     } else {
       button.disabled = true;
@@ -199,6 +201,7 @@ function selectDate(date) {
   if (personalLink) updatePersonalDiscount();
   else if (form.elements.discountCode.value.trim()) updateDiscount();
   document.getElementById('slot-date').textContent = formatDate(date);
+  document.getElementById('on-request-note').hidden = !availability.onRequest.includes(date);
   const previous = form.elements.timeSlot?.value;
   const free = availability.days[date] ?? [];
   const open = availability.slots.filter((s) => free.includes(s.key));
@@ -250,6 +253,7 @@ async function loadAvailability() {
     const firstFree = Object.keys(availability.days).sort()[0];
     month = (firstFree ?? availability.minDate).slice(0, 7);
   }
+  document.getElementById('on-request-legend').hidden = !availability.onRequest.length;
   renderCalendar();
   renderAvailabilityNote();
   const chosen = form.elements.partyDate.value;

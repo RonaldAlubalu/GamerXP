@@ -5,7 +5,7 @@ import type { Db } from '../db/pool.js';
 import { generateReference, generateSessionToken } from '../lib/auth.js';
 import { HttpError } from '../lib/errors.js';
 import type { BookingMailData } from '../lib/emails.js';
-import { availableSlots, bookingWindow } from './availability.js';
+import { availableSlots, bookingWindow, getSettings, isoWeekday } from './availability.js';
 import { addEvent, createDefaultTasks } from './pipeline.js';
 import { calculatePrice, type PriceExtra } from './pricing.js';
 
@@ -90,6 +90,8 @@ export async function createBooking(
       );
     }
 
+    const onRequest = !manual && (await getSettings(client)).onRequestWeekdays.includes(isoWeekday(input.partyDate));
+
     // The package price is fixed at booking time. Travel costs are added once the
     // distance is known; the evening slot ends after 19:30 so it gets the surcharge.
     const names = splitName(input.parentName, input.firstName, input.lastName);
@@ -146,15 +148,15 @@ export async function createBooking(
           `INSERT INTO bookings (reference, package_id, extra_stations, party_date, time_slot, parent_name, email,
                                  phone, street, postal_code, city, child_name, child_age, guest_count, notes,
                                  price_cents, deposit_cents, status_token, evening_surcharge, package_price_cents, parking, price_extras,
-                                 location_name, billing_street, billing_postal_code, billing_city, discount_code, discount_link, referred_by, first_name, last_name)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31)
+                                 location_name, billing_street, billing_postal_code, billing_city, discount_code, discount_link, referred_by, first_name, last_name, on_request)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32)
            RETURNING id, status`,
           [
             reference, input.packageId, input.extraStations, input.partyDate, input.timeSlot, names.full,
             input.email, input.phone, input.street, input.postalCode, input.city, input.childName,
             input.childAge ?? null, input.guestCount ?? null, input.notes, priceCents, config.DEPOSIT_CENTS,
             statusToken, eveningSurcharge, pkg.rows[0].price_cents, input.parking ?? '', JSON.stringify(extras),
-            input.locationName ?? '', input.billingStreet ?? '', input.billingPostalCode ?? '', input.billingCity ?? '', discountCode, discountCode ? discountLink : '', referredBy, names.first, names.last,
+            input.locationName ?? '', input.billingStreet ?? '', input.billingPostalCode ?? '', input.billingCity ?? '', discountCode, discountCode ? discountLink : '', referredBy, names.first, names.last, onRequest,
           ],
         );
         const booking = rows[0]!;
@@ -177,6 +179,7 @@ export async function createBooking(
           reference,
           statusToken,
           startTime: null,
+          onRequest,
           packageName: pkg.rows[0].name,
           priceCents,
           depositCents: config.DEPOSIT_CENTS,
@@ -205,7 +208,7 @@ export async function getBookingMailData(db: Db, id: string): Promise<BookingMai
             b.parent_name AS "parentName", b.first_name AS "firstName", b.email, b.phone, b.street, b.postal_code AS "postalCode", b.city,
             b.child_name AS "childName", b.child_age AS "childAge", b.guest_count AS "guestCount", b.notes, b.parking,
             b.status_token AS "statusToken", b.price_cents AS "priceCents", b.deposit_cents AS "depositCents",
-            b.paid_cents AS "paidCents", b.travel_km::float AS "travelKm"
+            b.paid_cents AS "paidCents", b.on_request AS "onRequest", b.travel_km::float AS "travelKm"
        FROM bookings b JOIN packages p ON p.id = b.package_id
       WHERE b.id = $1`,
     [id],

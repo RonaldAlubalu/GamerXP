@@ -106,8 +106,24 @@ describe('public API', () => {
     expect(res.statusCode).toBe(201);
   });
 
+  it('marks a day on request: it can be asked for, and customer and owner read that it is not certain', async () => {
+    const body = bookingBody(ctx);
+    const weekday = ((new Date(`${body.partyDate}T00:00:00Z`).getUTCDay() + 6) % 7) + 1;
+    expect((await ctx.app.inject({ url: '/api/availability' })).json().onRequest).toEqual([]);
+    await saveSettings(ctx.db, { slotCapacity: 1, dailyCapacity: 2, minLeadDays: 3, maxAdvanceDays: 365, onRequestWeekdays: [weekday] });
+    const shown = (await ctx.app.inject({ url: '/api/availability' })).json();
+    expect(shown.onRequest).toContain(body.partyDate);
+    expect(shown.onRequest.every((d: string) => shown.days[d])).toBe(true);
+
+    ctx.sent.length = 0;
+    expect((await ctx.app.inject({ method: 'POST', url: '/api/bookings', payload: body })).statusCode).toBe(201);
+    expect(ctx.sent.find((m) => m.to === body.email)!.text).toContain('op aanvraag');
+    expect(ctx.sent.find((m) => m.to !== body.email)!.subject).toContain('(op aanvraag)');
+    expect((await ctx.db.query('SELECT on_request FROM bookings')).rows[0].on_request).toBe(true);
+  });
+
   it('respects the slot and daily capacity settings', async () => {
-    await saveSettings(ctx.db, { slotCapacity: 2, dailyCapacity: 2, minLeadDays: 3, maxAdvanceDays: 365 });
+    await saveSettings(ctx.db, { slotCapacity: 2, dailyCapacity: 2, minLeadDays: 3, maxAdvanceDays: 365, onRequestWeekdays: [] });
     const codes = [];
     for (let i = 0; i < 3; i++) {
       codes.push((await ctx.app.inject({ method: 'POST', url: '/api/bookings', payload: bookingBody(ctx) })).statusCode);

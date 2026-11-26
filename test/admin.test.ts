@@ -475,7 +475,7 @@ describe('admin API', () => {
 
   it('edits the weekly schedule, slot hours and capacity', async () => {
     const current = (await ctx.app.inject({ url: '/api/admin/availability', headers: auth() })).json();
-    expect(current.settings).toEqual({ slotCapacity: 1, dailyCapacity: 2, minLeadDays: 3, maxAdvanceDays: 365 });
+    expect(current.settings).toEqual({ slotCapacity: 1, dailyCapacity: 2, minLeadDays: 3, maxAdvanceDays: 365, onRequestWeekdays: [] });
 
     const weekly = Object.fromEntries([1, 2, 3, 4, 5, 6, 7].map((d) => [d, { ochtend: false, middag: d === 6, avond: false }]));
     const res = await ctx.app.inject({
@@ -483,13 +483,14 @@ describe('admin API', () => {
       url: '/api/admin/availability',
       headers: auth(),
       payload: {
-        settings: { slotCapacity: 1, dailyCapacity: 1, minLeadDays: 7, maxAdvanceDays: 180 },
+        settings: { slotCapacity: 1, dailyCapacity: 1, minLeadDays: 7, maxAdvanceDays: 180, onRequestWeekdays: [3, 4] },
         slots: [{ key: 'middag', start: '12:30', end: '16:30' }],
         weekly,
       },
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().settings.minLeadDays).toBe(7);
+    expect(res.json().settings.onRequestWeekdays).toEqual([3, 4]);
     expect(res.json().slots[1]).toMatchObject({ key: 'middag', start: '12:30', end: '16:30' });
     expect(res.json().weekly['6']).toEqual({ ochtend: false, middag: true, avond: false });
 

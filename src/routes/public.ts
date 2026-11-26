@@ -7,7 +7,7 @@ import type { Mail } from '../lib/mailer.js';
 import { contactFor, findDiscount, findDiscountByLink } from '../services/discounts.js';
 import { findReferrer, REFERRAL_NEW_PERCENT, referralToken, REWARD_MAX_PERCENT, REWARD_STEP_PERCENT, rewardOf } from '../services/referrals.js';
 import { bookingRequest, contactRequest, dateString } from '../lib/schemas.js';
-import { availableSlots, bookingWindow, getTimeSlots } from '../services/availability.js';
+import { availableSlots, bookingWindow, getSettings, getTimeSlots, isoWeekday } from '../services/availability.js';
 import { createBooking, recalculatePrice } from '../services/bookings.js';
 import { sendAndLog } from '../services/communications.js';
 import { estimateTravelMinutes } from '../lib/schedule.js';
@@ -44,9 +44,12 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
     const from = query.from && query.from > window.minDate ? query.from : window.minDate;
     const to = query.to && query.to < window.maxDate ? query.to : window.maxDate;
     const slots = await getTimeSlots(app.db);
-    if (from > to) return { ...window, from, to, slots, days: {} };
+    if (from > to) return { ...window, from, to, slots, days: {}, onRequest: [] };
     if (daysBetween(from, to) > 400) throw new HttpError(400, 'Periode is te lang.');
-    return { ...window, from, to, slots, days: await availableSlots(app.db, app.config, from, to) };
+    const days = await availableSlots(app.db, app.config, from, to);
+    // Days that can be asked for, but are not certain yet: the calendar shows them in another colour.
+    const { onRequestWeekdays } = await getSettings(app.db);
+    return { ...window, from, to, slots, days, onRequest: Object.keys(days).filter((d) => onRequestWeekdays.includes(isoWeekday(d))) };
   });
 
   app.post(

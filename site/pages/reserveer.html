@@ -38,11 +38,12 @@
                 </div>
                 <div class="cal-weekdays" aria-hidden="true"><span>ma</span><span>di</span><span>wo</span><span>do</span><span>vr</span><span>za</span><span>zo</span></div>
                 <div class="cal-grid" id="cal-grid"><p class="muted">Beschikbaarheid laden…</p></div>
-                <p class="hint"><span class="legend-dot"></span> Groen = nog plek. Grijs = vol of niet beschikbaar.</p>
+                <p class="hint"><span class="legend-dot"></span> Groen = nog plek. <span id="on-request-legend" hidden><span class="legend-dot on-request"></span> Oranje = op aanvraag: wij kijken eerst of het lukt.</span> Grijs = vol of niet beschikbaar.</p>
                 <p class="hint"><strong>Staat jouw datum er niet bij?</strong> <a href="mailto:contact@gamerxp.nl?subject=Is%20deze%20datum%20mogelijk%3F">Mail ons</a> of stuur een <a href="https://wa.me/31634206753?text=Hoi%20Ronald%2C%20mijn%20datum%20staat%20niet%20open%20in%20de%20agenda.%20Is%20er%20iets%20mogelijk%20op%20" target="_blank" rel="noopener">WhatsApp</a>, dan kijken we wat er mogelijk is. Soms lukt een doordeweekse dag toch.</p>
               </div>
               <input type="hidden" name="partyDate">
               <div id="slot-picker" hidden>
+                <p class="notice warn" id="on-request-note" hidden><strong>Deze dag is op aanvraag.</strong> Vraag hem gerust aan: wij moeten hiervoor eerst zelf iets regelen en laten je zo snel mogelijk weten of het lukt.</p>
                 <p class="slot-date">Tijdslots op <strong id="slot-date"></strong>:</p>
                 <div class="choice-cards" id="slot-buttons" role="radiogroup" aria-label="Tijdslot"></div>
                 <small class="hint">Bij een combinatie graag bij details aangeven. Eindigt je feestje na 19:30 uur? Dan bespreken we vooraf of een avondtoeslag van toepassing is.</small>

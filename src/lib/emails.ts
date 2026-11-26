@@ -29,6 +29,8 @@ export interface BookingMailData {
   depositCents?: number;
   paidCents?: number;
   travelKm?: number | null;
+  // Asked for a day that is only possible after arranging things first.
+  onRequest?: boolean;
 }
 
 export interface MailContext {
@@ -97,8 +99,12 @@ export function bookingReceivedMail(b: BookingMailData, ctx: MailContext): Mail 
     subject: `We hebben je aanvraag ontvangen (${b.reference})`,
     text:
       `Hoi ${greetName(b)},\n\n` +
-      `Bedankt voor je aanvraag! Wij duiken in onze agenda en streven ernaar je binnen 24 uur te laten weten ` +
-      `of jouw datum nog vrij is. Bij drukte kan het iets langer duren, maar we doen altijd ons best. Je zit nog nergens aan vast.\n\n${summary(b)}` +
+      (b.onRequest
+        ? `Bedankt voor je aanvraag! Je koos een dag die bij ons op aanvraag is: daarvoor moeten wij eerst zelf iets regelen. ` +
+          `We gaan kijken of het lukt en laten het je zo snel mogelijk weten. Je zit nog nergens aan vast.`
+        : `Bedankt voor je aanvraag! Wij duiken in onze agenda en streven ernaar je binnen 24 uur te laten weten ` +
+          `of jouw datum nog vrij is. Bij drukte kan het iets langer duren, maar we doen altijd ons best. Je zit nog nergens aan vast.`) +
+      `\n\n${summary(b)}` +
       (b.notes ? `\nDetails: ${b.notes}` : '') +
       `\n\nDe prijs is een indicatie. De definitieve prijs kan afwijken door de berekening van de reiskosten ` +
       `(altijd op basis van retour) en eventuele parkeerkosten. Je hoort het exacte bedrag bij onze bevestiging.` +
@@ -112,9 +118,9 @@ export function bookingOwnerNotification(b: BookingMailData, to: string, adminUr
     to,
     plain: true,
     replyTo: b.email,
-    subject: `Nieuwe aanvraag: ${formatDutchDate(b.partyDate)} – ${b.packageName} in ${b.city} (${b.reference})`,
+    subject: `Nieuwe aanvraag${b.onRequest ? ' (op aanvraag)' : ''}: ${formatDutchDate(b.partyDate)} – ${b.packageName} in ${b.city} (${b.reference})`,
     text:
-      `Nieuwe aanvraag binnen.\n\n${summary(b)}\n\n` +
+      `Nieuwe aanvraag binnen.${b.onRequest ? ' Let op: deze dag staat op aanvraag, eerst regelen voor je ja zegt.' : ''}\n\n${summary(b)}\n\n` +
       `Naam: ${b.parentName}\nE-mail: ${b.email}\nTelefoon: ${b.phone || '-'}\n` +
       (b.parking ? `Parkeren: ${PARKING_LABELS[b.parking] ?? b.parking}\n` : '') +
       (b.notes ? `Details: ${b.notes}\n` : '') +

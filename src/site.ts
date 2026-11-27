@@ -202,6 +202,7 @@ export async function registerSite(app: FastifyInstance): Promise<void> {
   app.decorate('reloadSite', async () => {
     site = await load();
   });
+  app.decorate('sitePaths', new Set(site.pages.keys()));
   app.decorate('notFoundPage', async () => (await current()).notFound);
 }
 
@@ -209,5 +210,6 @@ declare module 'fastify' {
   interface FastifyInstance {
     notFoundPage: () => Promise<string>;
     reloadSite: () => Promise<void>;
+    sitePaths: Set<string>;
   }
 }

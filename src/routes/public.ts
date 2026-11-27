@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { daysBetween, formatDutchDate } from '../lib/dates.js';
+import { daysBetween, formatDutchDate, today } from '../lib/dates.js';
+import { recordVisit, sourceOf } from '../services/visits.js';
 import { bookingOwnerNotification, bookingReceivedMail, contactOwnerNotification, statusUrl } from '../lib/emails.js';
 import { HttpError } from '../lib/errors.js';
 import type { Mail } from '../lib/mailer.js';
@@ -161,6 +162,22 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
     if (!rows[0]) throw new HttpError(404, 'Niet gevonden.', 'not_found');
     // Mail programs in a browser load it from another site.
     return reply.header('Content-Type', rows[0].mime).header('Cross-Origin-Resource-Policy', 'cross-origin').header('Cache-Control', 'public, max-age=31536000, immutable').send(rows[0].data);
+  });
+
+  // One page seen by a visitor. Counted without cookies; see services/visits.ts.
+  app.post('/hit', { config: { rateLimit: { max: 120, timeWindow: '10 minutes' } } }, async (req, reply) => {
+    const body = z.object({ path: z.string().max(300), referrer: z.string().max(500).default(''), source: z.string().max(100).default('') }).safeParse(req.body);
+    const path = body.success ? body.data.path.replace(/(.)\/$/, '$1') : '';
+    if (body.success && app.sitePaths.has(path)) {
+      await recordVisit(app.db, {
+        day: today(app.config.TIMEZONE),
+        ip: req.ip,
+        userAgent: String(req.headers['user-agent'] ?? ''),
+        path,
+        source: sourceOf(body.data.referrer, body.data.source, new URL(app.config.PUBLIC_URL).hostname),
+      });
+    }
+    return reply.status(204).send();
   });
 
   // A photo the owner added to the strip on the website.

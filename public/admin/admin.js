@@ -2811,6 +2811,53 @@ async function websitePhotosView() {
   );
 }
 
+// Bezoekers: how many people look at the website, what they look at and where they come from.
+let visitorDays = 30;
+const SOURCE_NAMES = { 'google.com': 'Google', 'google.nl': 'Google', 'bing.com': 'Bing', 'duckduckgo.com': 'DuckDuckGo', 'instagram.com': 'Instagram', 'l.instagram.com': 'Instagram', 'facebook.com': 'Facebook', 'm.facebook.com': 'Facebook', 'l.facebook.com': 'Facebook', 'lm.facebook.com': 'Facebook', 'tiktok.com': 'TikTok', 'youtube.com': 'YouTube', 'linkedin.com': 'LinkedIn', 'com.google.android.gm': 'Gmail', 'mail.google.com': 'Gmail' };
+const DEVICE_NAMES = { phone: 'Telefoon', tablet: 'Tablet', desktop: 'Computer' };
+
+async function visitorsView() {
+  const s = await api(`/site/visits?days=${visitorDays}`);
+  setPage('Bezoekers');
+  const nr = (n) => n.toLocaleString('nl-NL');
+  const day = (d) => new Intl.DateTimeFormat('nl-NL', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date(`${d}T00:00:00Z`));
+  const periods = h('div', { class: 'segmented' }, [[7, '7 dagen'], [30, '30 dagen'], [90, '90 dagen'], [365, 'Jaar']].map(([n, label]) =>
+    h('button', { type: 'button', class: n === visitorDays ? 'on' : '', onclick: () => { visitorDays = n; render(); } }, label)));
+  const tile = (label, value, note) => h('div', { class: 'stat' }, h('div', { class: 'num' }, value), h('div', { class: 'lbl' }, label), note && h('small', { class: 'muted' }, note));
+
+  // One bar per day; a tap or hover shows that day's numbers above the chart.
+  const top = Math.max(1, ...s.days.map((d) => d.visitors));
+  const readout = h('p', { class: 'visit-readout muted' }, 'Tik op een dag voor de cijfers.');
+  const show = (d) => { readout.textContent = `${day(d.day)}: ${nr(d.visitors)} bezoekers, ${nr(d.views)} pagina's bekeken${d.requests ? `, ${d.requests} ${d.requests === 1 ? 'aanvraag' : 'aanvragen'}` : ''}`; };
+  const chart = h('div', { class: 'visit-chart', role: 'img', 'aria-label': `Bezoekers per dag, hoogste dag ${top}` }, s.days.map((d) => {
+    const bar = h('button', { type: 'button', class: `visit-day ${d.requests ? 'asked' : ''}`, title: `${day(d.day)}: ${d.visitors} bezoekers`, onclick: () => show(d), onmouseenter: () => show(d), onfocus: () => show(d) },
+      h('span', { style: `height:${d.visitors ? Math.max(3, Math.round((d.visitors / top) * 100)) : 0}%` }));
+    return bar;
+  }));
+  const share = (n) => (s.visitors ? `${Math.round((n / s.visitors) * 100)}%` : '');
+  const list = (rows, name, empty) => (rows.length
+    ? h('table', { class: 'visit-table' }, h('tbody', {}, rows.map((r) => h('tr', {}, h('td', {}, name(r)), h('td', { class: 'num' }, nr(r.visitors)), h('td', { class: 'num muted' }, share(r.visitors))))))
+    : h('p', { class: 'muted' }, empty));
+  const none = 'Nog geen bezoeken geteld in deze periode.';
+
+  view.replaceChildren(
+    h('div', { class: 'card' }, periods,
+      h('div', { class: 'stats', style: 'margin-top:14px' },
+        tile('Bezoekers', nr(s.visitors), 'Wie op meerdere dagen komt, telt per dag.'),
+        tile("Pagina's bekeken", nr(s.views)),
+        tile('Aanvragen via de site', nr(s.requests), s.visitors ? `${(s.requests / s.visitors * 100).toLocaleString('nl-NL', { maximumFractionDigits: 1 })}% van de bezoekers` : ''),
+        tile('Berichten via contact', nr(s.messages))),
+      h('h2', {}, 'Bezoekers per dag'),
+      readout, chart,
+      h('div', { class: 'visit-axis muted' }, h('span', {}, day(s.from)), h('span', {}, `hoogste dag: ${nr(top)}`), h('span', {}, 'vandaag')),
+      h('p', { class: 'muted' }, h('span', { class: 'visit-key' }), ' Dag met een aanvraag via de site.')),
+    h('div', { class: 'card' }, h('h2', {}, 'Meest bekeken pagina\'s'), list(s.pages, (r) => h('a', { href: r.path, target: '_blank', rel: 'noopener' }, r.path === '/' ? 'Home' : r.path), none)),
+    h('div', { class: 'card' }, h('h2', {}, 'Waar komen ze vandaan?'), list(s.sources, (r) => (r.source ? SOURCE_NAMES[r.source] ?? r.source : 'Rechtstreeks (adres getypt, WhatsApp, app of mail)'), none)),
+    h('div', { class: 'card' }, h('h2', {}, 'Apparaat'), list(s.devices, (r) => DEVICE_NAMES[r.device] ?? r.device, none),
+      h('p', { class: 'muted' }, 'Geteld zonder cookies. Bezoeken vanaf een apparaat waarop je dit beheer gebruikt tellen niet mee, zoekrobots ook niet. Het tellen is begonnen op de dag dat deze pagina erbij kwam.')),
+  );
+}
+
 async function updateCounts() {
   try {
     const o = await api('/overview');
@@ -2825,6 +2872,9 @@ async function updateCounts() {
     set('count-birthdays', o.birthdays);
   } catch {}
 }
+
+// Visits from a device where the admin is used are the owner's own: the website leaves them out.
+try { localStorage.setItem('gx-own-device', '1'); } catch {}
 
 async function render() {
   const linkToken = location.hash.startsWith('#/inloggen') ? new URLSearchParams(location.hash.split('?')[1] || '').get('t') : null;
@@ -2849,7 +2899,7 @@ async function render() {
   for (const el of document.querySelectorAll('[data-owner]')) el.hidden = assistant;
   const [path] = location.hash.slice(1).split('?');
   const parts = (path || '/board').split('/').filter(Boolean);
-  const ownerOnly = ['messages', 'reviews', 'packages', 'users', 'system', 'templates', 'birthdays', 'customers', 'website'];
+  const ownerOnly = ['messages', 'reviews', 'packages', 'users', 'system', 'templates', 'birthdays', 'customers', 'website', 'visitors'];
   if (assistant && ownerOnly.includes(parts[0])) parts[0] = 'board';
   for (const a of document.querySelectorAll('.side-nav a')) {
     a.classList.toggle('active', a.dataset.route === parts[0] || (a.dataset.route === 'list' && parts[0] === 'bookings') || (a.dataset.route === 'messages' && parts[0] === 'mailing'));
@@ -2870,6 +2920,7 @@ async function render() {
     else if (parts[0] === 'templates') await templatesView(parts[1], parts[2]);
     else if (parts[0] === 'birthdays') await birthdaysView();
     else if (parts[0] === 'website') await websiteView(parts[1]);
+    else if (parts[0] === 'visitors') await visitorsView();
     else if (parts[0] === 'users') await usersView();
     else if (parts[0] === 'system') await systemView();
     else if (parts[0] === 'account') await accountView();

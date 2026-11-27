@@ -5,6 +5,8 @@ import { z } from 'zod';
 import { HttpError } from '../../lib/errors.js';
 import { cleanText, listPhotos, META_KEYS, pageImages, textBlocks, textKey } from '../../services/site-content.js';
 import { listHtml, SITE_DIR } from '../../site.js';
+import { addDays, today } from '../../lib/dates.js';
+import { visitStats } from '../../services/visits.js';
 
 // The website from the admin: the wording per page, and the photos in the strip.
 
@@ -63,6 +65,13 @@ async function reload(app: FastifyInstance) {
 
 export const siteRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('preHandler', async (req) => requireOwner(req));
+
+  // Visitors of the website over the last days, today included.
+  app.get('/site/visits', async (req) => {
+    const { days } = z.object({ days: z.coerce.number().int().min(1).max(730).default(30) }).parse(req.query);
+    const to = today(app.config.TIMEZONE);
+    return visitStats(app.db, addDays(to, -(days - 1)), to, app.config.TIMEZONE);
+  });
 
   app.get('/site/files', async () => {
     const changed = await app.db.query<{ file: string; count: number }>('SELECT file, count(*)::int AS count FROM site_texts GROUP BY file');

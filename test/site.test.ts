@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadSite } from '../src/site.js';
-import { loginAdmin, setupApp, teardown, type TestContext } from './helpers.js';
+import { bookingBody, loginAdmin, setupApp, teardown, type TestContext } from './helpers.js';
 
 const PUBLIC_DIR = path.resolve(import.meta.dirname, '../public');
 
@@ -197,6 +197,32 @@ describe('website from the admin', () => {
 
     for (const slot of ['hero', photo.slot]) await admin('PUT', '/site/image', { file: 'pages/about.html', slot, image: null });
     expect(await about()).toBe(before);
+  });
+
+  it('counts visitors without cookies and shows them to the owner', async () => {
+    const hit = (path: string, agent: string, ip: string, more: object = {}) =>
+      ctx.app.inject({ method: 'POST', url: '/api/hit', remoteAddress: ip, headers: { 'user-agent': agent }, payload: { path, ...more } });
+    const phone = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Mobile Safari';
+    const laptop = 'Mozilla/5.0 (Windows NT 10.0) Chrome/130';
+    expect((await hit('/', phone, '10.0.0.1', { referrer: 'https://www.google.com/' })).statusCode).toBe(204);
+    await hit('/pakketten-prijzen', phone, '10.0.0.1', { referrer: 'https://gamerxp.nl/' });
+    await hit('/reserveer/', laptop, '10.0.0.2', { source: 'Instagram' });
+    // Not counted: a search robot, and an address that is no page.
+    await hit('/', 'Googlebot/2.1', '10.0.0.3');
+    await hit('/wp-login.php', laptop, '10.0.0.4');
+    await ctx.app.inject({ method: 'POST', url: '/api/bookings', payload: bookingBody(ctx) });
+
+    const stats = (await admin('GET', '/site/visits?days=7')).json();
+    expect(stats).toMatchObject({ visitors: 2, views: 3, requests: 1 });
+    expect(stats.days).toHaveLength(7);
+    expect(stats.days.at(-1)).toMatchObject({ visitors: 2, views: 3, requests: 1 });
+    expect(stats.pages.map((p: { path: string }) => p.path).sort()).toEqual(['/', '/pakketten-prijzen', '/reserveer']);
+    expect(stats.sources).toEqual([{ source: 'google.com', visitors: 1 }, { source: 'instagram', visitors: 1 }]);
+    expect(stats.devices).toEqual(expect.arrayContaining([{ device: 'phone', visitors: 1 }, { device: 'desktop', visitors: 1 }]));
+    // Nothing that points to a person is kept.
+    const { rows } = await ctx.db.query('SELECT * FROM site_visits');
+    expect(JSON.stringify(rows)).not.toContain('10.0.0.');
+    expect(JSON.stringify(rows)).not.toContain('iPhone');
   });
 
   it('manages the photo strip: add, describe, reorder, hide and remove', async () => {

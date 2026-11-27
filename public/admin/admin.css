@@ -587,3 +587,17 @@ tr.picked > td { background: color-mix(in srgb, var(--primary, #2563eb) 9%, tran
 .site-photo.off img { opacity: .35; filter: grayscale(1); }
 .site-photo .inline { flex-wrap: wrap; gap: 6px; }
 @media (max-width: 560px) { .site-photos { grid-template-columns: 1fr 1fr; gap: 8px; } .site-photo img { height: 130px; } .site-photo .btn { padding-inline: 9px; } }
+
+/* Bezoekers */
+.visit-readout { min-height: 1.5em; margin: 4px 0 8px; }
+.visit-chart { display: flex; align-items: flex-end; gap: 2px; height: 160px; border-bottom: 1px solid var(--border); }
+.visit-day { flex: 1 1 0; min-width: 0; height: 100%; padding: 0; border: 0; background: none; display: flex; align-items: flex-end; cursor: pointer; }
+.visit-day span { display: block; width: 100%; background: var(--primary); border-radius: 4px 4px 0 0; opacity: .8; }
+.visit-day.asked span { background: var(--success); opacity: 1; }
+.visit-day:hover span, .visit-day:focus-visible span { opacity: 1; outline: 2px solid var(--text); outline-offset: -1px; }
+.visit-axis { display: flex; justify-content: space-between; font-size: .8rem; margin-top: 4px; }
+.visit-key { display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: var(--success); }
+.visit-table { width: 100%; border-collapse: collapse; }
+.visit-table td { padding: 7px 0; border-top: 1px solid var(--border); overflow-wrap: anywhere; }
+.visit-table tr:first-child td { border-top: 0; }
+.visit-table .num { text-align: right; white-space: nowrap; padding-left: 12px; width: 1%; font-variant-numeric: tabular-nums; }

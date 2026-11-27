@@ -186,3 +186,12 @@ if (chatButton && chatCard) {
     if (!chatCard.hidden && !chatCard.contains(event.target) && !chatButton.contains(event.target)) openChat(false);
   });
 }
+
+// Counts this page view for the owner's visitor figures: no cookies, nothing that points to a
+// person. The owner's own devices (where the admin was opened) are left out.
+try {
+  if (!localStorage.getItem('gx-own-device')) {
+    const tagged = new URLSearchParams(location.search).get('utm_source') || '';
+    fetch('/api/hit', { method: 'POST', keepalive: true, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path: location.pathname, referrer: document.referrer, source: tagged }) }).catch(() => {});
+  }
+} catch {}

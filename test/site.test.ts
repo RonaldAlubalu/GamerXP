@@ -227,7 +227,7 @@ describe('website from the admin', () => {
 
   it('manages the photo strip: add, describe, reorder, hide and remove', async () => {
     const start = (await admin('GET', '/site/photos')).json();
-    expect(start).toHaveLength(21);
+    expect(start).toHaveLength(22);
     const image = `data:image/png;base64,${Buffer.from('not really a picture').toString('base64')}`;
     const made = await admin('POST', '/site/photos', { image, alt: 'Nieuw "feest"', width: 1200, height: 900 });
     expect(made.statusCode).toBe(201);

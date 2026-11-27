@@ -12,6 +12,8 @@ export interface SiteContent {
   texts: Map<string, Map<string, string>>;
   // The photo strip, replacing site/partials/gallery.html.
   gallery?: string;
+  // file -> which photo ("hero", or the address of the original) -> the photo put in its place.
+  images?: Map<string, Map<string, NewImage>>;
 }
 
 export interface TextBlock {
@@ -103,6 +105,57 @@ export function cleanText(html: string): string {
   return out.replace(/&nbsp;/g, ' ').replace(/[ \t\r\n]+/g, ' ').trim();
 }
 
+export interface NewImage {
+  url: string;
+  width: number;
+  height: number;
+}
+
+export interface PageImage {
+  slot: string;
+  alt: string;
+  original: string;
+}
+
+export const HERO = 'hero';
+const DEFAULT_HERO = '/assets/img/nummer-1-game-feestje.webp';
+const HERO_RE = /<section class="hero(?: [\w -]*)?"( style="[^"]*")?>/;
+const HERO_VAR = /--hero-image:\s*url\('([^']*)'\);?\s*/;
+const IMG_RE = /<img\b[^>]*>/g;
+const attrOf = (tag: string, name: string) => new RegExp(`\\s${name}="([^"]*)"`).exec(tag)?.[1];
+
+// The photos on a page that can be replaced: the big one at the top and the real photos in the
+// page. Icons and logos are left out.
+export function pageImages(source: string): PageImage[] {
+  const images: PageImage[] = [];
+  const hero = HERO_RE.exec(source);
+  if (hero && !/class="hero[^"]*compact/.test(hero[0])) images.push({ slot: HERO, alt: '', original: HERO_VAR.exec(hero[1] ?? '')?.[1] ?? DEFAULT_HERO });
+  for (const [tag] of source.matchAll(IMG_RE)) {
+    const src = attrOf(tag, 'src');
+    if (!src || Number(attrOf(tag, 'width') ?? 0) < 200 || images.some((i) => i.slot === src)) continue;
+    images.push({ slot: src, alt: attrOf(tag, 'alt') ?? '', original: src });
+  }
+  return images;
+}
+
+export function applyImages(source: string, changes: Map<string, NewImage> | undefined): string {
+  if (!changes?.size) return source;
+  let html = source;
+  const hero = changes.get(HERO);
+  if (hero) {
+    html = html.replace(HERO_RE, (tag, style: string | undefined) => {
+      const rest = (style ?? '').replace(/^ style="|"$/g, '').replace(HERO_VAR, '').trim();
+      const next = ` style="--hero-image: url('${hero.url}');${rest ? ` ${rest}` : ''}"`;
+      return style ? tag.replace(style, () => next) : tag.replace(/>$/, () => `${next}>`);
+    });
+  }
+  return html.replace(IMG_RE, (tag) => {
+    const to = changes.get(attrOf(tag, 'src') ?? '');
+    if (!to) return tag;
+    return tag.replace(/\ssrc="[^"]*"/, () => ` src="${to.url}"`).replace(/\swidth="[^"]*"/, ` width="${to.width}"`).replace(/\sheight="[^"]*"/, ` height="${to.height}"`);
+  });
+}
+
 export interface SitePhoto {
   id: number;
   url: string;
@@ -136,5 +189,11 @@ export async function loadSiteContent(db: Db): Promise<SiteContent> {
     if (!texts.has(r.file)) texts.set(r.file, new Map());
     texts.get(r.file)!.set(r.original, r.replacement);
   }
-  return { texts, gallery: galleryHtml(await listPhotos(db)) };
+  const images = new Map<string, Map<string, NewImage>>();
+  const replaced = await db.query<{ id: number; file: string; slot: string; width: number; height: number }>('SELECT id::int, file, slot, width, height FROM site_images');
+  for (const r of replaced.rows) {
+    if (!images.has(r.file)) images.set(r.file, new Map());
+    images.get(r.file)!.set(r.slot, { url: `/api/site-image/${r.id}`, width: r.width, height: r.height });
+  }
+  return { texts, gallery: galleryHtml(await listPhotos(db)), images };
 }

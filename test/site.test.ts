@@ -174,6 +174,31 @@ describe('website from the admin', () => {
     expect(await home()).toContain(heading.original);
   });
 
+  it('replaces the big photo at the top and a photo in the page, and puts them back', async () => {
+    const image = `data:image/jpeg;base64,${Buffer.from('a new photo').toString('base64')}`;
+    const about = async () => (await ctx.app.inject({ url: '/about' })).body;
+    const before = await about();
+    const listed = (await admin('GET', '/site/file?file=pages/about.html')).json().images;
+    expect(listed[0]).toMatchObject({ slot: 'hero', original: '/assets/img/nummer-1-game-feestje.webp', changed: false });
+    const photo = listed.find((i: { slot: string }) => i.slot === '/assets/img/img20240629160402.webp');
+
+    expect((await admin('PUT', '/site/image', { file: 'pages/about.html', slot: 'hero', image, width: 1600, height: 900 })).statusCode).toBe(200);
+    expect((await admin('PUT', '/site/image', { file: 'pages/about.html', slot: photo.slot, image, width: 800, height: 600 })).statusCode).toBe(200);
+    expect((await admin('PUT', '/site/image', { file: 'pages/about.html', slot: '/assets/img/nope.webp', image, width: 800, height: 600 })).statusCode).toBe(409);
+    const now = (await admin('GET', '/site/file?file=pages/about.html')).json().images;
+    const html = await about();
+    expect(html).toContain(`<section class="hero short" style="--hero-image: url('${now[0].current}');">`);
+    expect(html).toContain(`src="${now.find((i: { slot: string }) => i.slot === photo.slot).current}" alt="Kinderen gamen op een Gamer Xperience feestje" loading="lazy" width="800" height="600">`);
+    expect((await ctx.app.inject({ url: now[0].current })).body).toBe('a new photo');
+
+    // A page that already names its own photo at the top keeps the rest of its style.
+    await admin('PUT', '/site/image', { file: 'pages/lan-party-toernooien.html', slot: 'hero', image, width: 1600, height: 900 });
+    expect((await ctx.app.inject({ url: '/lan-party-toernooien' })).body).toMatch(/<section class="hero short" style="--hero-image: url\('\/api\/site-image\/\d+'\);">/);
+
+    for (const slot of ['hero', photo.slot]) await admin('PUT', '/site/image', { file: 'pages/about.html', slot, image: null });
+    expect(await about()).toBe(before);
+  });
+
   it('manages the photo strip: add, describe, reorder, hide and remove', async () => {
     const start = (await admin('GET', '/site/photos')).json();
     expect(start).toHaveLength(21);

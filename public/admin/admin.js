@@ -2651,8 +2651,8 @@ function who(actor) {
 
 // Website: the wording per page and the photos in the strip, without touching the files.
 const websiteTabs = (current) => h('div', { class: 'tabs page-tabs' },
-  h('button', { type: 'button', class: current === 'texts' ? 'on' : '', onclick: () => { location.hash = '#/website'; } }, 'Teksten'),
-  h('button', { type: 'button', class: current === 'photos' ? 'on' : '', onclick: () => { location.hash = '#/website/fotos'; } }, "Foto's"));
+  h('button', { type: 'button', class: current === 'texts' ? 'on' : '', onclick: () => { location.hash = '#/website'; } }, "Pagina's"),
+  h('button', { type: 'button', class: current === 'photos' ? 'on' : '', onclick: () => { location.hash = '#/website/fotos'; } }, 'Fotostrook'));
 
 const TEXT_KINDS = { h1: 'Grote kop', h2: 'Kop', h3: 'Tussenkop', h4: 'Tussenkop', h5: 'Tussenkop', h6: 'Tussenkop', p: 'Tekst', li: 'Punt in een lijst', summary: 'Vraag', a: 'Link of knop', button: 'Knop', label: 'Label', legend: 'Kopje in formulier', option: 'Keuze', figcaption: 'Onderschrift', th: 'Tabelkop', td: 'Tabelcel', blockquote: 'Citaat', span: 'Label', small: 'Kleine tekst', strong: 'Vette tekst', dt: 'Term', dd: 'Uitleg' };
 let websiteFile = 'pages/index.html';
@@ -2708,6 +2708,38 @@ async function websiteView(sub) {
     return wrap;
   };
 
+  // A photo on the page: the big one at the top, or one further down.
+  const shrink = async (file, longest) => {
+    const image = await createImageBitmap(file);
+    const scale = Math.min(1, longest / Math.max(image.width, image.height));
+    const width = Math.round(image.width * scale);
+    const height = Math.round(image.height * scale);
+    const canvas = Object.assign(document.createElement('canvas'), { width, height });
+    canvas.getContext('2d').drawImage(image, 0, 0, width, height);
+    return { image: canvas.toDataURL('image/jpeg', 0.8), width, height };
+  };
+  const pagePhoto = (p, i) => {
+    const hero = p.slot === 'hero';
+    const pick = h('input', { type: 'file', accept: 'image/*', hidden: true, onchange: action(async () => {
+      const file = pick.files[0];
+      pick.value = '';
+      if (!file) return false;
+      await put('/site/image', { file: page.file, slot: p.slot, ...(await shrink(file, hero ? 1600 : 1200)) });
+      flash('ok', 'De nieuwe foto staat op de website.');
+    }) });
+    return h('div', { class: 'site-photo' },
+      h('img', { src: p.current, alt: p.alt, loading: 'lazy' }),
+      h('strong', {}, hero ? 'Grote foto bovenaan' : (p.alt || `Foto ${i + 1}`)),
+      hero && h('small', { class: 'muted' }, 'Kies een liggende foto. Hij komt donkerder achter de tekst te staan.'),
+      h('div', { class: 'inline' },
+        h('button', { type: 'button', class: 'btn', onclick: () => pick.click() }, 'Vervangen'), pick,
+        p.changed && h('button', { type: 'button', class: 'btn', onclick: action(async () => {
+          if (!confirm('De oorspronkelijke foto terugzetten?')) return false;
+          await put('/site/image', { file: page.file, slot: p.slot, image: null });
+          flash('ok', 'De oorspronkelijke foto staat er weer.');
+        }) }, 'Terug naar origineel')));
+  };
+
   view.replaceChildren(...[
     websiteTabs('texts'),
     h('div', { class: 'card' },
@@ -2716,6 +2748,9 @@ async function websiteView(sub) {
       h('p', { class: 'muted' }, 'De titel en de omschrijving zoals ze in de zoekresultaten staan.'),
       block('Titel (liefst korter dan 60 tekens)', page.meta[0], '@title', false),
       block('Omschrijving (liefst korter dan 160 tekens)', page.meta[1], '@description', false)),
+    page.images.length > 0 && h('div', { class: 'card' }, h('h2', {}, "Foto's op deze pagina"),
+      h('p', { class: 'muted' }, 'Zet alleen foto\'s online waarop kinderen niet herkenbaar zijn, of waarvoor je toestemming hebt.'),
+      h('div', { class: 'site-photos' }, page.images.map(pagePhoto))),
     h('div', { class: 'card' }, h('h2', {}, 'Teksten op de pagina'),
       page.blocks.length ? page.blocks.map((b) => block(TEXT_KINDS[b.tag] ?? 'Tekst', b, b.original, true)) : h('p', { class: 'muted' }, 'Hier staat geen tekst die je kunt aanpassen.')),
     page.stale.length > 0 && h('div', { class: 'card' }, h('h2', {}, 'Vervallen wijzigingen'),

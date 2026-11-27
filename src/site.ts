@@ -2,7 +2,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
-import { applyTexts, loadSiteContent, type SiteContent } from './services/site-content.js';
+import { applyImages, applyTexts, loadSiteContent, type SiteContent } from './services/site-content.js';
 
 // Server-rendered website pages.
 //
@@ -113,7 +113,7 @@ function includePartials(html: string, partials: Map<string, string>, depth = 0)
 
 export async function loadSite(publicUrl: string, dir: string = SITE_DIR, hidden = false, content?: SiteContent): Promise<Site> {
   // Texts the owner changed in the admin go over the wording in the files.
-  const read = async (file: string) => applyTexts(await readFile(path.join(dir, file), 'utf8'), content?.texts.get(file));
+  const read = async (file: string) => applyImages(applyTexts(await readFile(path.join(dir, file), 'utf8'), content?.texts.get(file)), content?.images?.get(file));
   const layout = await read('layout.html');
   const partials = new Map<string, string>();
   for (const file of await listHtml(path.join(dir, 'partials'))) {

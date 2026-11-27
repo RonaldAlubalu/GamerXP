@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { HttpError } from '../../lib/errors.js';
-import { cleanText, listPhotos, META_KEYS, textBlocks, textKey } from '../../services/site-content.js';
+import { cleanText, listPhotos, META_KEYS, pageImages, textBlocks, textKey } from '../../services/site-content.js';
 import { listHtml, SITE_DIR } from '../../site.js';
 
 // The website from the admin: the wording per page, and the photos in the strip.
@@ -79,8 +79,11 @@ export const siteRoutes: FastifyPluginAsync = async (app) => {
     const blocks = textBlocks(source.replace(META_RE, ''));
     const known = new Set(blocks.map((b) => b.original));
     const meta = info.group === 'page' ? (JSON.parse(META_RE.exec(source)?.[1] ?? '{}') as { title?: string; description?: string }) : null;
+    const replaced = await app.db.query<{ id: number; slot: string }>('SELECT id::int, slot FROM site_images WHERE file = $1', [file]);
+    const newImage = new Map(replaced.rows.map((r) => [r.slot, `/api/site-image/${r.id}`]));
     return {
       ...info,
+      images: pageImages(source).map((i) => ({ ...i, current: newImage.get(i.slot) ?? i.original, changed: newImage.has(i.slot) })),
       meta: meta && [
         { key: '@title', original: meta.title ?? '', current: changes.get('@title') ?? meta.title ?? '', changed: changes.has('@title') },
         { key: '@description', original: meta.description ?? '', current: changes.get('@description') ?? meta.description ?? '', changed: changes.has('@description') },
@@ -113,6 +116,30 @@ export const siteRoutes: FastifyPluginAsync = async (app) => {
     );
     await reload(app);
     return { current: replacement };
+  });
+
+  // Puts a photo of your own in place of one on a page, or the original back (image: null).
+  app.put('/site/image', { bodyLimit: 1200 * 1024 }, async (req) => {
+    const body = z
+      .object({
+        file: z.string().max(300),
+        slot: z.string().min(1).max(300),
+        image: z.string().max(1_100_000).regex(/^data:image\/(jpeg|png);base64,[A-Za-z0-9+/=]+$/, 'Deze foto kan niet worden gebruikt.').nullable(),
+        width: z.number().int().min(100).max(4000).optional(),
+        height: z.number().int().min(100).max(4000).optional(),
+      })
+      .parse(req.body);
+    const { source } = await sourceOf(body.file);
+    // The old photo goes: a new one gets a new address, so no browser keeps showing the old one.
+    await app.db.query('DELETE FROM site_images WHERE file = $1 AND slot = $2', [body.file, body.slot]);
+    if (body.image !== null) {
+      if (!pageImages(source).some((i) => i.slot === body.slot)) throw new HttpError(409, 'Deze foto staat niet meer op de pagina. Ververs de pagina en probeer het opnieuw.', 'image_gone');
+      if (!body.width || !body.height) throw new HttpError(400, 'Deze foto kan niet worden gebruikt.', 'validation_error');
+      const [head, data] = body.image.split(',') as [string, string];
+      await app.db.query('INSERT INTO site_images (file, slot, mime, data, width, height) VALUES ($1, $2, $3, $4, $5, $6)', [body.file, body.slot, head.includes('png') ? 'image/png' : 'image/jpeg', Buffer.from(data, 'base64'), body.width, body.height]);
+    }
+    await reload(app);
+    return { ok: true };
   });
 
   app.get('/site/photos', async () => listPhotos(app.db));

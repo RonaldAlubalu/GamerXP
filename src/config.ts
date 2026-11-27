@@ -49,6 +49,12 @@ const schema = z.object({
 
   // API token of e-Boekhouden.nl (Beheer > API). Leave empty to switch invoicing off.
   EBOEKHOUDEN_TOKEN: z.string().default(''),
+  // Posting to the Facebook page and Instagram account: the id and secret of the owner's own
+  // Meta app (developers.facebook.com). Leave empty to switch it off.
+  META_APP_ID: z.string().regex(/^\d*$/, 'META_APP_ID is a number').default(''),
+  META_APP_SECRET: z.string().default(''),
+  META_GRAPH_URL: z.url().default('https://graph.facebook.com/v27.0'),
+  META_LOGIN_URL: z.url().default('https://www.facebook.com/v27.0/dialog/oauth'),
   // Folders with the database backups and the weekly maintenance reports, for the status page.
   BACKUP_DIR: z.string().default(''),
   REPORTS_DIR: z.string().default(''),

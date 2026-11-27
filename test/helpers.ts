@@ -9,6 +9,7 @@ import type { Mail } from '../src/lib/mailer.js';
 import type { NewInvoice } from '../src/services/bookkeeping.js';
 import type { IncomingMail, MailSource } from '../src/services/mail-import.js';
 import type { MollieClient, MolliePayment } from '../src/services/mollie.js';
+import type { SocialClient } from '../src/services/social.js';
 
 export interface TestContext {
   app: FastifyInstance;
@@ -28,7 +29,7 @@ export interface TestContext {
   received: Map<string, number>;
 }
 
-export async function setupApp(overrides: Partial<Config> = {}, mollie: MollieClient | null = null): Promise<TestContext> {
+export async function setupApp(overrides: Partial<Config> = {}, mollie: MollieClient | null = null, social: SocialClient | null = null): Promise<TestContext> {
   const config = { ...loadConfig(), OWNER_EMAIL: 'owner@gamerxp.nl', ...overrides };
   const db = createPool(config.DATABASE_URL);
   await db.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
@@ -58,6 +59,7 @@ export async function setupApp(overrides: Partial<Config> = {}, mollie: MollieCl
     // Never call the real address lookup in tests: every address is 30 km away.
     distance: { drivingKm: async () => 30 },
     mollie,
+    social,
     mailSource,
     bookkeeping: {
       ping: async () => 'Administratie: test.',

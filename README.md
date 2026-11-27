@@ -239,3 +239,18 @@ The system stores personal data of parents and, if they fill it in, the first na
 - finish the privacy statement,
 - sign a data processing agreement (verwerkersovereenkomst) with your VPS and email providers,
 - delete old bookings once the retention period has passed.
+
+## Social media (Facebook and Instagram)
+
+The admin page "Social media" places a post (text, with or without a photo) on the owner's
+Facebook page and the Instagram account linked to it, right away or at a planned moment.
+It talks to Meta's Graph API through the owner's own Meta app:
+
+- `META_APP_ID` and `META_APP_SECRET` (repository secrets, written to the server's `.env`)
+  switch it on. Without them the page explains what is needed.
+- In the Meta app, the valid OAuth redirect URI is `<PUBLIC_URL>/admin/`.
+- The owner connects once in the admin; the page key that comes back is stored encrypted
+  (`app_settings`, key `social_connection`) and does not run out.
+- Photos are handed to Meta at `/api/social-image/<key>.jpg`, so the site must be reachable
+  from the internet.
+- Planned posts go out within a minute of their time; when that fails the owner gets an email.

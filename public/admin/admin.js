@@ -2811,6 +2811,163 @@ async function websitePhotosView() {
   );
 }
 
+// Social media: posts for the Facebook page and the Instagram account, now or planned ahead.
+const socialDraft = { text: '', image: null, cropped: false, facebook: true, instagram: true, later: false, at: '' };
+const SOCIAL_MAX = 2200;
+
+// Facebook sends the owner back to the admin with a code in the address.
+async function socialReturn() {
+  const query = new URLSearchParams(location.search);
+  if (!query.has('state') || !(query.has('code') || query.has('error'))) return;
+  history.replaceState(null, '', `${location.pathname}#/social`);
+  if (!query.has('code')) return flash('error', 'Het verbinden met Facebook is afgebroken.');
+  try {
+    const { result } = await post('/social/callback', { code: query.get('code'), state: query.get('state') });
+    flash('ok', result === 'choose' ? 'Kies hieronder welke pagina je wilt gebruiken.' : 'Verbonden met Facebook.');
+  } catch (err) {
+    flash('error', err.message);
+  }
+}
+
+// Makes a photo fit: Instagram takes nothing taller than 4:5 or wider than 1.91:1, and only JPEG.
+async function socialPhoto(file) {
+  const image = await createImageBitmap(file);
+  const ratio = image.width / image.height;
+  const fit = Math.min(1.91, Math.max(0.8, ratio));
+  const cropW = ratio > fit ? Math.round(image.height * fit) : image.width;
+  const cropH = ratio < fit ? Math.round(image.width / fit) : image.height;
+  const scale = Math.min(1, 1440 / Math.max(cropW, cropH));
+  const width = Math.round(cropW * scale);
+  const height = Math.round(cropH * scale);
+  const canvas = Object.assign(document.createElement('canvas'), { width, height });
+  canvas.getContext('2d').drawImage(image, (image.width - cropW) / 2, (image.height - cropH) / 2, cropW, cropH, 0, 0, width, height);
+  let quality = 0.88;
+  let data = canvas.toDataURL('image/jpeg', quality);
+  while (data.length > 1_500_000 && quality > 0.5) data = canvas.toDataURL('image/jpeg', (quality -= 0.08));
+  return { data, cropped: Math.abs(ratio - fit) > 0.01 };
+}
+
+async function socialView() {
+  const s = await api('/social');
+  setPage('Social media');
+  const when = (d) => new Intl.DateTimeFormat('nl-NL', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(d));
+
+  if (!s.configured) {
+    view.replaceChildren(h('div', { class: 'card' }, h('h2', {}, 'Nog niet ingesteld'),
+      h('p', {}, 'Om vanuit het beheer op Facebook en Instagram te plaatsen is een eigen koppeling bij Meta nodig. Dat is eenmalig werk.'),
+      h('ol', { class: 'social-steps' },
+        h('li', {}, 'Maak op developers.facebook.com een app aan voor je bedrijf.'),
+        h('li', {}, 'Vul daar bij Facebook-login dit adres in als "geldige OAuth-omleidings-URI": ', h('code', {}, s.redirectUri)),
+        h('li', {}, 'Zet het app-ID en het app-geheim als geheimen META_APP_ID en META_APP_SECRET in GitHub. Plak ze nooit in een chat of mail.'),
+        h('li', {}, 'Na de eerstvolgende update van de site verschijnt hier de knop "Verbinden met Facebook".'))));
+    return;
+  }
+
+  const connect = action(async () => {
+    const { url } = await post('/social/connect');
+    location.href = url;
+    return false;
+  });
+  if (!s.connection) {
+    view.replaceChildren(h('div', { class: 'card' }, h('h2', {}, 'Verbinden'),
+      s.choose
+        ? [h('p', {}, 'Je beheert meer dan één Facebook-pagina. Welke wil je gebruiken?'),
+          h('div', { class: 'social-choose' }, s.choose.map((p) => h('button', { type: 'button', class: 'btn', onclick: action(() => post('/social/page', { id: p.id }), 'Verbonden.') },
+            p.name, p.instagram ? ` · Instagram @${p.instagram}` : ' · zonder Instagram')))]
+        : [h('p', {}, 'Verbind je Facebook-pagina. Je gaat even naar Facebook om toestemming te geven en komt daarna hier terug. Vink daar je pagina en je Instagram-account aan.'),
+          h('button', { type: 'button', class: 'btn primary', onclick: connect }, 'Verbinden met Facebook')]));
+    return;
+  }
+
+  // The composer. What is typed stays when the page redraws.
+  const d = socialDraft;
+  if (!s.connection.instagram) d.instagram = false;
+  const counter = h('small', { class: 'muted' }, `${d.text.length} / ${SOCIAL_MAX}`);
+  const text = h('textarea', { rows: 7, maxlength: SOCIAL_MAX, placeholder: 'Wat wil je vertellen?', 'aria-label': 'Tekst van de post',
+    oninput: () => { d.text = text.value; counter.textContent = `${d.text.length} / ${SOCIAL_MAX}`; } });
+  text.value = d.text;
+  const file = h('input', { type: 'file', accept: 'image/*', hidden: true, onchange: action(async () => {
+    const chosen = file.files[0];
+    file.value = '';
+    if (!chosen) return false;
+    const made = await socialPhoto(chosen);
+    d.image = made.data;
+    d.cropped = made.cropped;
+  }) });
+  const at = h('input', { type: 'datetime-local', 'aria-label': 'Moment van plaatsen', value: d.at, onchange: () => { d.at = at.value; } });
+  const check = (key, label, disabled) => h('label', { class: 'check' },
+    h('input', { type: 'checkbox', checked: d[key], disabled, onchange: (e) => { d[key] = e.target.checked; } }), ` ${label}`);
+  const send = action(async () => {
+    if (d.later && !d.at) throw new Error('Kies het moment waarop de post geplaatst moet worden.');
+    const made = await post('/social/posts', {
+      text: d.text, image: d.image, facebook: d.facebook, instagram: d.instagram,
+      scheduledAt: d.later ? new Date(d.at).toISOString() : null,
+    });
+    Object.assign(d, { text: '', image: null, cropped: false, later: false, at: '' });
+    flash(made.ok ? 'ok' : 'error', made.scheduled ? 'Ingepland.' : made.ok ? 'Geplaatst.' : 'Niet overal gelukt. Kijk hieronder wat er misging.');
+    render();
+    return false;
+  });
+  const composer = h('div', { class: 'card' }, h('h2', {}, 'Nieuwe post'),
+    text, counter,
+    h('div', { class: 'social-image' },
+      d.image && h('img', { src: d.image, alt: 'De gekozen foto' }),
+      h('div', { class: 'inline' },
+        h('button', { type: 'button', class: 'btn', onclick: () => file.click() }, d.image ? 'Andere foto' : '＋ Foto kiezen'),
+        d.image && h('button', { type: 'button', class: 'btn', onclick: () => { d.image = null; d.cropped = false; render(); } }, 'Foto weghalen'),
+        file),
+      d.cropped && h('small', { class: 'muted' }, 'De foto is aan de randen iets bijgesneden, zodat hij op Instagram past.')),
+    h('p', { class: 'muted social-warn' }, 'Zet alleen foto\'s online waarop kinderen niet herkenbaar zijn. Een foto wordt hier niet vanzelf vervaagd.'),
+    h('div', { class: 'social-where' },
+      check('facebook', `Facebook (${s.connection.page})`),
+      check('instagram', s.connection.instagram ? `Instagram (@${s.connection.instagram})` : 'Instagram (niet gekoppeld aan je pagina)', !s.connection.instagram)),
+    h('div', { class: 'segmented' },
+      h('button', { type: 'button', class: d.later ? '' : 'on', onclick: () => { d.later = false; render(); } }, 'Nu plaatsen'),
+      h('button', { type: 'button', class: d.later ? 'on' : '', onclick: () => { d.later = true; render(); } }, 'Inplannen')),
+    d.later && h('div', { class: 'social-at' }, at),
+    h('div', { class: 'inline social-send' }, h('button', { type: 'button', class: 'btn primary', onclick: send }, d.later ? 'Inplannen' : 'Nu plaatsen')));
+
+  const channel = (name, c) => c && h('div', { class: `social-channel ${c.placed ? 'ok' : c.error ? 'bad' : ''}` },
+    h('strong', {}, name), ' ',
+    c.placed ? ['geplaatst', c.url && [' · ', h('a', { href: c.url, target: '_blank', rel: 'noopener' }, 'Bekijk')]] : c.error ? `niet gelukt: ${c.error}` : 'wacht');
+  const state = (p) => p.status === 'scheduled' ? (p.scheduledAt ? `Ingepland voor ${when(p.scheduledAt)}` : 'Wacht op plaatsen')
+    : p.status === 'posting' ? 'Wordt geplaatst…'
+    : p.status === 'done' ? `Geplaatst op ${when(p.postedAt ?? p.createdAt)}`
+    : 'Niet (helemaal) gelukt';
+  const item = (p) => h('div', { class: `social-post ${p.status}` },
+    p.image ? h('img', { src: p.image, alt: '', loading: 'lazy' }) : h('div', { class: 'social-noimg' }, 'Tekst'),
+    h('div', {},
+      h('div', { class: 'social-state' }, state(p)),
+      h('p', { class: 'social-text' }, p.text || '(geen tekst)'),
+      channel('Facebook', p.facebook), channel('Instagram', p.instagram),
+      h('div', { class: 'inline' },
+        p.status === 'failed' && h('button', { type: 'button', class: 'btn', onclick: action(async () => {
+          const r = await post(`/social/posts/${p.id}/retry`);
+          flash(r.ok ? 'ok' : 'error', r.ok ? 'Geplaatst.' : 'Weer niet gelukt.');
+          render();
+          return false;
+        }) }, 'Opnieuw proberen'),
+        p.status !== 'posting' && h('button', { type: 'button', class: 'btn', onclick: action(async () => {
+          if (!confirm(p.status === 'scheduled' ? 'Deze ingeplande post annuleren?' : 'Deze post uit de lijst halen? Wat al online staat, blijft online.')) return false;
+          await del(`/social/posts/${p.id}`);
+        }) }, p.status === 'scheduled' ? 'Annuleren' : 'Uit de lijst halen'))));
+
+  view.replaceChildren(
+    composer,
+    h('div', { class: 'card' }, h('h2', {}, 'Posts'),
+      s.posts.length ? h('div', { class: 'social-posts' }, s.posts.map(item)) : h('p', { class: 'muted' }, 'Nog geen posts.')),
+    h('div', { class: 'card' }, h('h2', {}, 'Koppeling'),
+      h('p', {}, `Verbonden met de Facebook-pagina ${s.connection.page}`, s.connection.instagram ? ` en Instagram @${s.connection.instagram}.` : '.'),
+      !s.connection.instagram && h('p', { class: 'muted' }, 'Er hangt geen Instagram-account aan deze pagina. Koppel in Instagram je zakelijke account aan je Facebook-pagina en verbind daarna opnieuw.'),
+      h('div', { class: 'inline' },
+        h('button', { type: 'button', class: 'btn', onclick: connect }, 'Opnieuw verbinden'),
+        h('button', { type: 'button', class: 'btn danger', onclick: action(async () => {
+          if (!confirm('De koppeling met Facebook en Instagram verbreken? Ingeplande posts worden dan niet geplaatst.')) return false;
+          await del('/social/connection');
+        }, 'Koppeling verbroken.') }, 'Ontkoppelen'))),
+  );
+}
+
 // Bezoekers: how many people look at the website, what they look at and where they come from.
 let visitorDays = 30;
 const SOURCE_NAMES = { 'google.com': 'Google', 'google.nl': 'Google', 'bing.com': 'Bing', 'duckduckgo.com': 'DuckDuckGo', 'instagram.com': 'Instagram', 'l.instagram.com': 'Instagram', 'facebook.com': 'Facebook', 'm.facebook.com': 'Facebook', 'l.facebook.com': 'Facebook', 'lm.facebook.com': 'Facebook', 'tiktok.com': 'TikTok', 'youtube.com': 'YouTube', 'linkedin.com': 'LinkedIn', 'com.google.android.gm': 'Gmail', 'mail.google.com': 'Gmail' };
@@ -2897,9 +3054,10 @@ async function render() {
   if (!staff.size) await loadStaff().catch(() => {});
   if (!saved.signature) await loadSaved().catch(() => {});
   for (const el of document.querySelectorAll('[data-owner]')) el.hidden = assistant;
+  if (!assistant && location.search) await socialReturn();
   const [path] = location.hash.slice(1).split('?');
   const parts = (path || '/board').split('/').filter(Boolean);
-  const ownerOnly = ['messages', 'reviews', 'packages', 'users', 'system', 'templates', 'birthdays', 'customers', 'website', 'visitors'];
+  const ownerOnly = ['messages', 'reviews', 'packages', 'users', 'system', 'templates', 'birthdays', 'customers', 'website', 'visitors', 'social'];
   if (assistant && ownerOnly.includes(parts[0])) parts[0] = 'board';
   for (const a of document.querySelectorAll('.side-nav a')) {
     a.classList.toggle('active', a.dataset.route === parts[0] || (a.dataset.route === 'list' && parts[0] === 'bookings') || (a.dataset.route === 'messages' && parts[0] === 'mailing'));
@@ -2921,6 +3079,7 @@ async function render() {
     else if (parts[0] === 'birthdays') await birthdaysView();
     else if (parts[0] === 'website') await websiteView(parts[1]);
     else if (parts[0] === 'visitors') await visitorsView();
+    else if (parts[0] === 'social') await socialView();
     else if (parts[0] === 'users') await usersView();
     else if (parts[0] === 'system') await systemView();
     else if (parts[0] === 'account') await accountView();

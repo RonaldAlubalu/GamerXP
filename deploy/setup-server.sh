@@ -94,6 +94,10 @@ fi
 if [ -n "${EBOEKHOUDEN_TOKEN:-}" ]; then
   set_env EBOEKHOUDEN_TOKEN "$EBOEKHOUDEN_TOKEN"
 fi
+if [ -n "${META_APP_ID:-}" ] && [ -n "${META_APP_SECRET:-}" ]; then
+  set_env META_APP_ID "$META_APP_ID"
+  set_env META_APP_SECRET "$META_APP_SECRET"
+fi
 if [ -n "${GOOGLE_REVIEW_URL:-}" ]; then
   set_env GOOGLE_REVIEW_URL "$GOOGLE_REVIEW_URL"
 fi

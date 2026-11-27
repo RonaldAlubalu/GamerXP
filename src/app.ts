@@ -17,6 +17,7 @@ import { paymentRoutes } from './routes/payments.js';
 import { publicRoutes } from './routes/public.js';
 import { adminRoutes } from './routes/admin/index.js';
 import { createBookkeeping, type Bookkeeping } from './services/bookkeeping.js';
+import { createSocialClient, publishDue, type SocialClient } from './services/social.js';
 import { syncInvoicePayments } from './services/invoices.js';
 import { resumeMailings } from './routes/admin/mailings.js';
 import { loadSignature } from './routes/admin/templates.js';
@@ -38,6 +39,8 @@ declare module 'fastify' {
     // The most recent emails the site tried to send, newest first, for the status page.
     // The bookkeeping (e-Boekhouden.nl), or null when it is not connected.
     bookkeeping: Bookkeeping | null;
+    // Posting to Facebook and Instagram, or null when the Meta app is not set up.
+    social: SocialClient | null;
     // Delivers a notification to one device.
     push: PushSender;
     mailLog: { at: string; to: string; subject: string; error?: string }[];
@@ -58,10 +61,12 @@ export interface AppOptions {
   // A fake in tests.
   push?: PushSender;
   bookkeeping?: Bookkeeping | null;
+  // A fake in tests.
+  social?: SocialClient | null;
   logger?: boolean;
 }
 
-export async function buildApp({ config, db, mailer, distance, mollie, mailSource, push, bookkeeping, logger = true }: AppOptions): Promise<FastifyInstance> {
+export async function buildApp({ config, db, mailer, distance, mollie, mailSource, push, bookkeeping, social, logger = true }: AppOptions): Promise<FastifyInstance> {
   const app = Fastify({
     logger: logger && {
       level: config.NODE_ENV === 'production' ? 'info' : 'debug',
@@ -109,6 +114,12 @@ export async function buildApp({ config, db, mailer, distance, mollie, mailSourc
   // Test the outside connections every ten minutes, so the dashboard can warn without waiting.
   app.decorate('push', push ?? createPushSender(app));
   app.decorate('bookkeeping', bookkeeping === undefined ? createBookkeeping(config) : bookkeeping);
+  app.decorate('social', social === undefined ? createSocialClient(config) : social);
+  // Posts for social media that were planned ahead go out when their minute comes.
+  if (app.social && config.NODE_ENV !== 'test') {
+    const timer = setInterval(() => void publishDue(app).catch((err) => app.log.error({ err }, 'Planned social posts failed')), 60_000);
+    app.addHook('onClose', async () => clearInterval(timer));
+  }
   app.decorate('systemStatus', { current: null });
   if (config.NODE_ENV !== 'test') {
     const refresh = () =>

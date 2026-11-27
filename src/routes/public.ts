@@ -188,6 +188,14 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
     return reply.header('Content-Type', rows[0].mime).header('Cache-Control', 'public, max-age=31536000, immutable').send(rows[0].data);
   });
 
+  // The photo of a social media post: Facebook and Instagram fetch it from here.
+  app.get('/social-image/:key', async (req, reply) => {
+    const { key } = z.object({ key: z.string().regex(/^[\w-]{10,60}\.jpg$/) }).parse(req.params);
+    const { rows } = await app.db.query<{ image: Buffer }>('SELECT image FROM social_posts WHERE image_key = $1 AND image IS NOT NULL', [key.slice(0, -4)]);
+    if (!rows[0]) throw new HttpError(404, 'Niet gevonden.', 'not_found');
+    return reply.header('Content-Type', 'image/jpeg').header('Cache-Control', 'public, max-age=31536000, immutable').header('Cross-Origin-Resource-Policy', 'cross-origin').send(rows[0].image);
+  });
+
   // A photo the owner put in place of one on a page.
   app.get('/site-image/:id', async (req, reply) => {
     const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(req.params);

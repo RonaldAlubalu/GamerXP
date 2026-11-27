@@ -607,7 +607,10 @@ tr.picked > td { background: color-mix(in srgb, var(--primary, #2563eb) 9%, tran
 .social-steps code { word-break: break-all; }
 .social-choose { display: grid; gap: 8px; justify-items: start; }
 .social-image { display: grid; gap: 8px; margin: 12px 0 4px; justify-items: start; }
-.social-image img { max-width: min(100%, 320px); max-height: 360px; border-radius: 8px; border: 1px solid var(--border); }
+.social-thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; width: 100%; }
+.social-thumb { position: relative; }
+.social-thumb img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); display: block; }
+.social-thumb button { position: absolute; top: 4px; right: 4px; width: 32px; height: 32px; border-radius: 50%; border: 0; background: rgba(0,0,0,.65); color: #fff; cursor: pointer; font-size: .9rem; }
 .social-warn { font-size: .85rem; margin: 6px 0 12px; }
 .social-where { display: grid; gap: 8px; margin-bottom: 14px; }
 .social-where .check { display: flex; align-items: center; gap: 8px; min-height: 32px; }
@@ -617,7 +620,9 @@ tr.picked > td { background: color-mix(in srgb, var(--primary, #2563eb) 9%, tran
 .social-posts { display: grid; gap: 14px; }
 .social-post { display: grid; grid-template-columns: 84px 1fr; gap: 12px; padding-top: 14px; border-top: 1px solid var(--border); }
 .social-post:first-child { border-top: 0; padding-top: 0; }
-.social-post > img, .social-noimg { width: 84px; height: 84px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); }
+.social-pic { position: relative; width: 84px; height: 84px; }
+.social-pic span { position: absolute; left: 4px; bottom: 4px; background: rgba(0,0,0,.7); color: #fff; font-size: .7rem; padding: 1px 6px; border-radius: 999px; }
+.social-pic img, .social-noimg { width: 84px; height: 84px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); }
 .social-noimg { display: grid; place-items: center; color: var(--muted); font-size: .8rem; }
 .social-state { font-weight: 600; }
 .social-post.failed .social-state { color: var(--danger, #c0392b); }

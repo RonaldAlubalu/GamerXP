@@ -8,8 +8,9 @@ import {
 // Social media from the admin: connect the Facebook page, write a post, place it now or later.
 
 const idParam = z.object({ id: z.coerce.number().int().positive() });
-// Instagram takes 2200 characters at most.
+// Instagram takes 2200 characters and ten photos at most.
 const MAX_TEXT = 2200;
+const MAX_PHOTOS = 10;
 
 function requireOwner(req: FastifyRequest) {
   if (req.admin?.role !== 'owner') throw new HttpError(403, 'Alleen een eigenaar kan op social media plaatsen.', 'forbidden');
@@ -50,11 +51,12 @@ export const socialRoutes: FastifyPluginAsync = async (app) => {
   });
 
   // A new post. Without a moment it goes out right away, and the answer says how that went.
-  app.post('/social/posts', { bodyLimit: 1700 * 1024 }, async (req, reply) => {
+  app.post('/social/posts', { bodyLimit: 9 * 1024 * 1024 }, async (req, reply) => {
     const body = z
       .object({
         text: z.string().trim().max(MAX_TEXT, `De tekst mag ${MAX_TEXT} tekens lang zijn.`).default(''),
-        image: z.string().max(1_600_000, 'Deze foto is te groot.').regex(/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/, 'Deze foto kan niet worden gebruikt.').nullable().default(null),
+        images: z.array(z.string().max(850_000, 'Deze foto is te groot.').regex(/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/, 'Deze foto kan niet worden gebruikt.'))
+          .max(MAX_PHOTOS, `Een post kan hooguit ${MAX_PHOTOS} foto's hebben.`).default([]),
         facebook: z.boolean().default(false),
         instagram: z.boolean().default(false),
         scheduledAt: z.iso.datetime({ offset: true }).nullable().default(null),
@@ -62,14 +64,14 @@ export const socialRoutes: FastifyPluginAsync = async (app) => {
       .parse(req.body);
     if (!app.social || !(await getConnection(app))) throw new HttpError(409, 'Verbind eerst je Facebook-pagina.', 'not_connected');
     if (!body.facebook && !body.instagram) throw new HttpError(400, 'Kies waar de post heen moet: Facebook, Instagram of allebei.', 'no_channel');
-    if (!body.text && !body.image) throw new HttpError(400, 'Schrijf een tekst of kies een foto.', 'empty');
-    if (body.instagram && !body.image) throw new HttpError(400, 'Instagram heeft een foto nodig.', 'image_needed');
+    if (!body.text && !body.images.length) throw new HttpError(400, 'Schrijf een tekst of kies een foto.', 'empty');
+    if (body.instagram && !body.images.length) throw new HttpError(400, 'Instagram heeft een foto nodig.', 'image_needed');
     const scheduledAt = body.scheduledAt ? new Date(body.scheduledAt) : null;
     if (scheduledAt && scheduledAt.getTime() < Date.now() + 60_000) throw new HttpError(400, 'Kies een moment in de toekomst.', 'in_the_past');
     if (scheduledAt && scheduledAt.getTime() > Date.now() + 366 * 86_400_000) throw new HttpError(400, 'Plan een post hooguit een jaar vooruit.', 'too_far');
     const id = await createPost(
       app,
-      { text: body.text, image: body.image ? Buffer.from(body.image.split(',')[1]!, 'base64') : null, facebook: body.facebook, instagram: body.instagram, scheduledAt },
+      { text: body.text, images: body.images.map((image) => Buffer.from(image.split(',')[1]!, 'base64')), facebook: body.facebook, instagram: body.instagram, scheduledAt },
       req.admin!.name || req.admin!.email,
     );
     const placed = scheduledAt ? null : await publishPost(app, id);

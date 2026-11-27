@@ -2812,8 +2812,9 @@ async function websitePhotosView() {
 }
 
 // Social media: posts for the Facebook page and the Instagram account, now or planned ahead.
-const socialDraft = { text: '', image: null, cropped: false, facebook: true, instagram: true, later: false, at: '' };
+const socialDraft = { text: '', images: [], ratio: null, cropped: false, facebook: true, instagram: true, later: false, at: '' };
 const SOCIAL_MAX = 2200;
+const SOCIAL_PHOTOS = 10;
 
 // Facebook sends the owner back to the admin with a code in the address.
 async function socialReturn() {
@@ -2830,10 +2831,11 @@ async function socialReturn() {
 }
 
 // Makes a photo fit: Instagram takes nothing taller than 4:5 or wider than 1.91:1, and only JPEG.
-async function socialPhoto(file) {
+// With several photos Instagram shows them all in the shape of the first.
+async function socialPhoto(file, shape) {
   const image = await createImageBitmap(file);
   const ratio = image.width / image.height;
-  const fit = Math.min(1.91, Math.max(0.8, ratio));
+  const fit = shape ?? Math.min(1.91, Math.max(0.8, ratio));
   const cropW = ratio > fit ? Math.round(image.height * fit) : image.width;
   const cropH = ratio < fit ? Math.round(image.width / fit) : image.height;
   const scale = Math.min(1, 1440 / Math.max(cropW, cropH));
@@ -2843,8 +2845,8 @@ async function socialPhoto(file) {
   canvas.getContext('2d').drawImage(image, (image.width - cropW) / 2, (image.height - cropH) / 2, cropW, cropH, 0, 0, width, height);
   let quality = 0.88;
   let data = canvas.toDataURL('image/jpeg', quality);
-  while (data.length > 1_500_000 && quality > 0.5) data = canvas.toDataURL('image/jpeg', (quality -= 0.08));
-  return { data, cropped: Math.abs(ratio - fit) > 0.01 };
+  while (data.length > 800_000 && quality > 0.4) data = canvas.toDataURL('image/jpeg', (quality -= 0.08));
+  return { data, ratio: fit, cropped: Math.abs(ratio - fit) > 0.01 };
 }
 
 async function socialView() {
@@ -2886,24 +2888,33 @@ async function socialView() {
   const text = h('textarea', { rows: 7, maxlength: SOCIAL_MAX, placeholder: 'Wat wil je vertellen?', 'aria-label': 'Tekst van de post',
     oninput: () => { d.text = text.value; counter.textContent = `${d.text.length} / ${SOCIAL_MAX}`; } });
   text.value = d.text;
-  const file = h('input', { type: 'file', accept: 'image/*', hidden: true, onchange: action(async () => {
-    const chosen = file.files[0];
+  const file = h('input', { type: 'file', accept: 'image/*', multiple: true, hidden: true, onchange: action(async () => {
+    const chosen = [...file.files];
     file.value = '';
-    if (!chosen) return false;
-    const made = await socialPhoto(chosen);
-    d.image = made.data;
-    d.cropped = made.cropped;
+    if (!chosen.length) return false;
+    if (d.images.length + chosen.length > SOCIAL_PHOTOS) throw new Error(`Een post kan hooguit ${SOCIAL_PHOTOS} foto's hebben.`);
+    for (const one of chosen) {
+      const made = await socialPhoto(one, d.images.length ? d.ratio : null);
+      d.ratio = made.ratio;
+      d.cropped = d.cropped || made.cropped;
+      d.images.push(made.data);
+    }
   }) });
+  const dropPhoto = (i) => () => {
+    d.images.splice(i, 1);
+    if (!d.images.length) Object.assign(d, { ratio: null, cropped: false });
+    render();
+  };
   const at = h('input', { type: 'datetime-local', 'aria-label': 'Moment van plaatsen', value: d.at, onchange: () => { d.at = at.value; } });
   const check = (key, label, disabled) => h('label', { class: 'check' },
     h('input', { type: 'checkbox', checked: d[key], disabled, onchange: (e) => { d[key] = e.target.checked; } }), ` ${label}`);
   const send = action(async () => {
     if (d.later && !d.at) throw new Error('Kies het moment waarop de post geplaatst moet worden.');
     const made = await post('/social/posts', {
-      text: d.text, image: d.image, facebook: d.facebook, instagram: d.instagram,
+      text: d.text, images: d.images, facebook: d.facebook, instagram: d.instagram,
       scheduledAt: d.later ? new Date(d.at).toISOString() : null,
     });
-    Object.assign(d, { text: '', image: null, cropped: false, later: false, at: '' });
+    Object.assign(d, { text: '', images: [], ratio: null, cropped: false, later: false, at: '' });
     flash(made.ok ? 'ok' : 'error', made.scheduled ? 'Ingepland.' : made.ok ? 'Geplaatst.' : 'Niet overal gelukt. Kijk hieronder wat er misging.');
     render();
     return false;
@@ -2911,12 +2922,14 @@ async function socialView() {
   const composer = h('div', { class: 'card' }, h('h2', {}, 'Nieuwe post'),
     text, counter,
     h('div', { class: 'social-image' },
-      d.image && h('img', { src: d.image, alt: 'De gekozen foto' }),
+      d.images.length > 0 && h('div', { class: 'social-thumbs' }, d.images.map((src, i) => h('div', { class: 'social-thumb' },
+        h('img', { src, alt: `Foto ${i + 1}` }),
+        h('button', { type: 'button', title: 'Foto weghalen', 'aria-label': `Foto ${i + 1} weghalen`, onclick: dropPhoto(i) }, '✕')))),
       h('div', { class: 'inline' },
-        h('button', { type: 'button', class: 'btn', onclick: () => file.click() }, d.image ? 'Andere foto' : '＋ Foto kiezen'),
-        d.image && h('button', { type: 'button', class: 'btn', onclick: () => { d.image = null; d.cropped = false; render(); } }, 'Foto weghalen'),
+        d.images.length < SOCIAL_PHOTOS && h('button', { type: 'button', class: 'btn', onclick: () => file.click() }, d.images.length ? '＋ Nog een foto' : "＋ Foto's kiezen"),
         file),
-      d.cropped && h('small', { class: 'muted' }, 'De foto is aan de randen iets bijgesneden, zodat hij op Instagram past.')),
+      d.images.length > 1 && h('small', { class: 'muted' }, `${d.images.length} foto's: bezoekers vegen erdoorheen, de eerste staat vooraan.`),
+      d.cropped && h('small', { class: 'muted' }, d.images.length > 1 ? "Foto's zijn aan de randen bijgesneden, zodat ze op Instagram passen en allemaal dezelfde vorm hebben." : 'De foto is aan de randen iets bijgesneden, zodat hij op Instagram past.')),
     h('p', { class: 'muted social-warn' }, 'Zet alleen foto\'s online waarop kinderen niet herkenbaar zijn. Een foto wordt hier niet vanzelf vervaagd.'),
     h('div', { class: 'social-where' },
       check('facebook', `Facebook (${s.connection.page})`),
@@ -2935,7 +2948,7 @@ async function socialView() {
     : p.status === 'done' ? `Geplaatst op ${when(p.postedAt ?? p.createdAt)}`
     : 'Niet (helemaal) gelukt';
   const item = (p) => h('div', { class: `social-post ${p.status}` },
-    p.image ? h('img', { src: p.image, alt: '', loading: 'lazy' }) : h('div', { class: 'social-noimg' }, 'Tekst'),
+    p.images.length ? h('div', { class: 'social-pic' }, h('img', { src: p.images[0], alt: '', loading: 'lazy' }), p.images.length > 1 && h('span', {}, `${p.images.length} foto's`)) : h('div', { class: 'social-noimg' }, 'Tekst'),
     h('div', {},
       h('div', { class: 'social-state' }, state(p)),
       h('p', { class: 'social-text' }, p.text || '(geen tekst)'),

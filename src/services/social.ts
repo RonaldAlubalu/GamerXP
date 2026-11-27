@@ -16,8 +16,8 @@ export interface SocialPage {
 }
 export interface PostContent {
   text: string;
-  // A public address of the photo; Meta fetches it from there.
-  imageUrl: string | null;
+  // Public addresses of the photos; Meta fetches them from there.
+  imageUrls: string[];
 }
 export interface Placed {
   id: string;
@@ -88,26 +88,47 @@ export function createSocialClient(config: Config, pause = 3000): SocialClient |
     },
 
     async postToFacebook(page, post) {
-      if (post.imageUrl) {
-        const made = await call<{ id: string; post_id?: string }>('POST', `/${page.id}/photos`, { url: post.imageUrl, caption: post.text, access_token: page.token });
+      if (!post.imageUrls.length) {
+        const made = await call<{ id: string }>('POST', `/${page.id}/feed`, { message: post.text, access_token: page.token });
+        return { id: made.id, url: `https://www.facebook.com/${made.id}` };
+      }
+      if (post.imageUrls.length === 1) {
+        const made = await call<{ id: string; post_id?: string }>('POST', `/${page.id}/photos`, { url: post.imageUrls[0]!, caption: post.text, access_token: page.token });
         return { id: made.post_id ?? made.id, url: `https://www.facebook.com/${made.post_id ?? made.id}` };
       }
-      const made = await call<{ id: string }>('POST', `/${page.id}/feed`, { message: post.text, access_token: page.token });
+      // Several photos: each is handed over unseen first, then one post shows them together.
+      const attached: Record<string, string> = {};
+      for (const [i, url] of post.imageUrls.entries()) {
+        const photo = await call<{ id: string }>('POST', `/${page.id}/photos`, { url, published: 'false', access_token: page.token });
+        attached[`attached_media[${i}]`] = JSON.stringify({ media_fbid: photo.id });
+      }
+      const made = await call<{ id: string }>('POST', `/${page.id}/feed`, { message: post.text, ...attached, access_token: page.token });
       return { id: made.id, url: `https://www.facebook.com/${made.id}` };
     },
 
     async postToInstagram(account, post) {
-      if (!post.imageUrl) throw new SocialError('Instagram heeft een foto nodig.');
-      const container = await call<{ id: string }>('POST', `/${account.id}/media`, { image_url: post.imageUrl, caption: post.text, access_token: account.token });
-      // Instagram fetches the photo first; that takes a moment.
-      for (let attempt = 0; ; attempt++) {
-        const state = await call<{ status_code?: string }>('GET', `/${container.id}`, { fields: 'status_code', access_token: account.token });
-        if (!state.status_code || state.status_code === 'FINISHED') break;
-        if (state.status_code === 'ERROR' || state.status_code === 'EXPIRED') throw new SocialError('Instagram kon de foto niet verwerken.');
-        if (attempt >= 20) throw new SocialError('Instagram deed te lang over de foto. Probeer het opnieuw.');
-        await new Promise((resolve) => setTimeout(resolve, pause));
+      if (!post.imageUrls.length) throw new SocialError('Instagram heeft een foto nodig.');
+      // Instagram fetches a photo first; that takes a moment.
+      const ready = async (id: string) => {
+        for (let attempt = 0; ; attempt++) {
+          const state = await call<{ status_code?: string }>('GET', `/${id}`, { fields: 'status_code', access_token: account.token });
+          if (!state.status_code || state.status_code === 'FINISHED') return id;
+          if (state.status_code === 'ERROR' || state.status_code === 'EXPIRED') throw new SocialError('Instagram kon de foto niet verwerken.');
+          if (attempt >= 20) throw new SocialError('Instagram deed te lang over de foto. Probeer het opnieuw.');
+          await new Promise((resolve) => setTimeout(resolve, pause));
+        }
+      };
+      const media = (params: Record<string, string>) => call<{ id: string }>('POST', `/${account.id}/media`, { ...params, access_token: account.token }).then((made) => ready(made.id));
+      let container: string;
+      if (post.imageUrls.length === 1) {
+        container = await media({ image_url: post.imageUrls[0]!, caption: post.text });
+      } else {
+        // A carousel: every photo apart, then the whole.
+        const children: string[] = [];
+        for (const url of post.imageUrls) children.push(await media({ image_url: url, is_carousel_item: 'true' }));
+        container = await media({ media_type: 'CAROUSEL', children: children.join(','), caption: post.text });
       }
-      const made = await call<{ id: string }>('POST', `/${account.id}/media_publish`, { creation_id: container.id, access_token: account.token });
+      const made = await call<{ id: string }>('POST', `/${account.id}/media_publish`, { creation_id: container, access_token: account.token });
       const link = await call<{ permalink?: string }>('GET', `/${made.id}`, { fields: 'permalink', access_token: account.token }).catch(() => ({ permalink: '' }));
       return { id: made.id, url: link.permalink ?? '' };
     },
@@ -227,38 +248,51 @@ export async function disconnect(app: FastifyInstance): Promise<void> {
 
 export interface NewPost {
   text: string;
-  image: Buffer | null;
+  images: Buffer[];
   facebook: boolean;
   instagram: boolean;
   scheduledAt: Date | null;
 }
 interface PostRow {
-  id: string; body: string; image_key: string | null; to_facebook: boolean; to_instagram: boolean; scheduled_at: Date | null;
+  id: string; body: string; to_facebook: boolean; to_instagram: boolean; scheduled_at: Date | null;
   facebook_id: string; instagram_id: string;
 }
 
 export const imageUrl = (config: Config, key: string) => `${config.PUBLIC_URL.replace(/\/$/, '')}/api/social-image/${key}.jpg`;
 
 export async function createPost(app: FastifyInstance, post: NewPost, actor: string): Promise<number> {
-  const { rows } = await app.db.query<{ id: number }>(
-    `INSERT INTO social_posts (body, image, image_key, to_facebook, to_instagram, scheduled_at, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id::int`,
-    [post.text, post.image, post.image ? randomBytes(18).toString('base64url') : null, post.facebook, post.instagram, post.scheduledAt, actor],
-  );
-  return rows[0]!.id;
+  const client = await app.db.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query<{ id: number }>(
+      `INSERT INTO social_posts (body, to_facebook, to_instagram, scheduled_at, created_by) VALUES ($1, $2, $3, $4, $5) RETURNING id::int`,
+      [post.text, post.facebook, post.instagram, post.scheduledAt, actor],
+    );
+    for (const [i, image] of post.images.entries()) {
+      await client.query('INSERT INTO social_post_images (post_id, position, image, image_key) VALUES ($1, $2, $3, $4)', [rows[0]!.id, i + 1, image, randomBytes(18).toString('base64url')]);
+    }
+    await client.query('COMMIT');
+    return rows[0]!.id;
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 // Places a post on every channel it has not reached yet. Never throws: what went wrong is kept with the post.
 export async function publishPost(app: FastifyInstance, id: number): Promise<{ ok: boolean }> {
   const claimed = await app.db.query<PostRow>(
     `UPDATE social_posts SET status = 'posting', updated_at = now() WHERE id = $1 AND status IN ('scheduled', 'failed')
-     RETURNING id, body, image_key, to_facebook, to_instagram, scheduled_at, facebook_id, instagram_id`,
+     RETURNING id, body, to_facebook, to_instagram, scheduled_at, facebook_id, instagram_id`,
     [id],
   );
   const post = claimed.rows[0];
   if (!post) return { ok: false };
   const connection = app.social ? await getConnection(app) : null;
-  const content: PostContent = { text: post.body, imageUrl: post.image_key ? imageUrl(app.config, post.image_key) : null };
+  const photos = await app.db.query<{ image_key: string }>('SELECT image_key FROM social_post_images WHERE post_id = $1 ORDER BY position', [id]);
+  const content: PostContent = { text: post.body, imageUrls: photos.rows.map((p) => imageUrl(app.config, p.image_key)) };
   const attempt = async (wanted: boolean, done: string, run: () => Promise<Placed>): Promise<{ placed?: Placed; error: string }> => {
     if (!wanted || done) return { error: '' };
     try {
@@ -326,19 +360,20 @@ export async function publishDue(app: FastifyInstance): Promise<number> {
 
 export async function listPosts(app: FastifyInstance) {
   const { rows } = await app.db.query<{
-    id: number; body: string; image_key: string | null; to_facebook: boolean; to_instagram: boolean; scheduled_at: Date | null; status: string;
+    id: number; body: string; images: string[]; to_facebook: boolean; to_instagram: boolean; scheduled_at: Date | null; status: string;
     facebook_id: string; facebook_url: string; facebook_error: string; instagram_id: string; instagram_url: string; instagram_error: string;
     created_at: Date; posted_at: Date | null;
   }>(
-    `SELECT id::int, body, image_key, to_facebook, to_instagram, scheduled_at, status, facebook_id, facebook_url, facebook_error,
-            instagram_id, instagram_url, instagram_error, created_at, posted_at
-       FROM social_posts ORDER BY (status = 'scheduled') DESC, coalesce(scheduled_at, created_at) DESC LIMIT 60`,
+    `SELECT p.id::int, p.body, p.to_facebook, p.to_instagram, p.scheduled_at, p.status, p.facebook_id, p.facebook_url, p.facebook_error,
+            p.instagram_id, p.instagram_url, p.instagram_error, p.created_at, p.posted_at,
+            ARRAY(SELECT i.image_key FROM social_post_images i WHERE i.post_id = p.id ORDER BY i.position) AS images
+       FROM social_posts p ORDER BY (status = 'scheduled') DESC, coalesce(scheduled_at, created_at) DESC LIMIT 60`,
   );
   const channel = (wanted: boolean, id: string, url: string, error: string) => (wanted ? { placed: Boolean(id), url, error } : null);
   return rows.map((p) => ({
     id: p.id,
     text: p.body,
-    image: p.image_key ? `/api/social-image/${p.image_key}.jpg` : null,
+    images: p.images.map((key) => `/api/social-image/${key}.jpg`),
     status: p.status,
     scheduledAt: p.scheduled_at,
     createdAt: p.created_at,

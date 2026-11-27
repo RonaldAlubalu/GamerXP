@@ -191,7 +191,7 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
   // The photo of a social media post: Facebook and Instagram fetch it from here.
   app.get('/social-image/:key', async (req, reply) => {
     const { key } = z.object({ key: z.string().regex(/^[\w-]{10,60}\.jpg$/) }).parse(req.params);
-    const { rows } = await app.db.query<{ image: Buffer }>('SELECT image FROM social_posts WHERE image_key = $1 AND image IS NOT NULL', [key.slice(0, -4)]);
+    const { rows } = await app.db.query<{ image: Buffer }>('SELECT image FROM social_post_images WHERE image_key = $1', [key.slice(0, -4)]);
     if (!rows[0]) throw new HttpError(404, 'Niet gevonden.', 'not_found');
     return reply.header('Content-Type', 'image/jpeg').header('Cache-Control', 'public, max-age=31536000, immutable').header('Cross-Origin-Resource-Policy', 'cross-origin').send(rows[0].image);
   });

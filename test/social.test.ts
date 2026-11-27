@@ -103,12 +103,12 @@ describe('social media', () => {
   });
 
   it('places a post with a photo on both, and hands out the photo at a public address', async () => {
-    const made = await call('POST', '/social/posts', { text: 'De website is vernieuwd!', image: PHOTO, facebook: true, instagram: true });
+    const made = await call('POST', '/social/posts', { text: 'De website is vernieuwd!', images: [PHOTO], facebook: true, instagram: true });
     expect(made.statusCode).toBe(201);
     expect(made.json()).toMatchObject({ ok: true, scheduled: false });
     expect(fake.state.facebook).toHaveLength(1);
     expect(fake.state.instagram).toHaveLength(1);
-    const { imageUrl } = fake.state.instagram[0]!;
+    const [imageUrl] = fake.state.instagram[0]!.imageUrls;
     expect(imageUrl).toMatch(/^https:\/\/gamerxp\.test\/api\/social-image\/[\w-]+\.jpg$/);
     const photo = await ctx.app.inject({ url: new URL(imageUrl!).pathname });
     expect(photo.statusCode).toBe(200);
@@ -123,20 +123,37 @@ describe('social media', () => {
     });
   });
 
+  it('places several photos as one post, in the order they were chosen', async () => {
+    const made = (await call('POST', '/social/posts', { text: 'Drie foto\'s', images: [PHOTO, PHOTO, PHOTO], facebook: true, instagram: true })).json();
+    expect(made.ok).toBe(true);
+    const urls = fake.state.instagram.at(-1)!.imageUrls;
+    expect(urls).toHaveLength(3);
+    expect(new Set(urls).size).toBe(3);
+    expect(fake.state.facebook.at(-1)!.imageUrls).toEqual(urls);
+    const post = (await call('GET', '/social')).json().posts.find((p: { id: number }) => p.id === made.id);
+    expect(post.images.map((path: string) => `https://gamerxp.test${path}`)).toEqual(urls);
+    expect((await call('POST', '/social/posts', { text: 'Te veel', images: Array(11).fill(PHOTO), facebook: true })).statusCode).toBe(400);
+    // Off the list: its photos go too.
+    expect((await call('DELETE', `/social/posts/${made.id}`)).statusCode).toBe(204);
+    expect((await ctx.app.inject({ url: new URL(urls[0]!).pathname })).statusCode).toBe(404);
+    fake.state.facebook.pop();
+    fake.state.instagram.pop();
+  });
+
   it('refuses a post that cannot be placed', async () => {
     const bad = async (payload: object) => (await call('POST', '/social/posts', payload)).statusCode;
     expect(await bad({ text: 'Zonder kanaal' })).toBe(400);
     expect(await bad({ facebook: true })).toBe(400);
     expect(await bad({ text: 'Instagram zonder foto', instagram: true })).toBe(400);
     expect(await bad({ text: 'x'.repeat(2201), facebook: true })).toBe(400);
-    expect(await bad({ text: 'Geen jpeg', image: 'data:image/png;base64,AAAA', facebook: true })).toBe(400);
+    expect(await bad({ text: 'Geen jpeg', images: ['data:image/png;base64,AAAA'], facebook: true })).toBe(400);
     expect(await bad({ text: 'Gisteren', facebook: true, scheduledAt: new Date(Date.now() - 86_400_000).toISOString() })).toBe(400);
     expect(fake.state.facebook).toHaveLength(1);
   });
 
   it('keeps what went wrong, and tries again only where it failed', async () => {
     fake.state.instagramFails = 'Instagram kon de foto niet verwerken.';
-    const made = (await call('POST', '/social/posts', { text: 'Tweede post', image: PHOTO, facebook: true, instagram: true })).json();
+    const made = (await call('POST', '/social/posts', { text: 'Tweede post', images: [PHOTO], facebook: true, instagram: true })).json();
     expect(made.ok).toBe(false);
     let post = (await call('GET', '/social')).json().posts.find((p: { id: number }) => p.id === made.id);
     expect(post).toMatchObject({ status: 'failed', facebook: { placed: true }, instagram: { placed: false, error: 'Instagram kon de foto niet verwerken.' } });
@@ -161,7 +178,7 @@ describe('social media', () => {
 
     await ctx.db.query("UPDATE social_posts SET scheduled_at = now() - interval '1 minute' WHERE id = $1", [made.id]);
     expect(await publishDue(ctx.app)).toBe(1);
-    expect(fake.state.facebook.at(-1)).toEqual({ text: 'Voor later', imageUrl: null });
+    expect(fake.state.facebook.at(-1)).toEqual({ text: 'Voor later', imageUrls: [] });
     expect(await publishDue(ctx.app)).toBe(0);
 
     // Planned, but by then the connection is gone.
@@ -246,22 +263,41 @@ describe('social media: talking to Meta', () => {
 
   it('places on Facebook, with and without a photo', async () => {
     seen.length = 0;
-    expect(await client.postToFacebook({ id: '111', token: 'PAGE' }, { text: 'Met foto', imageUrl: 'https://gamerxp.test/a.jpg' })).toEqual({ id: '111_5', url: 'https://www.facebook.com/111_5' });
+    expect(await client.postToFacebook({ id: '111', token: 'PAGE' }, { text: 'Met foto', imageUrls: ['https://gamerxp.test/a.jpg'] })).toEqual({ id: '111_5', url: 'https://www.facebook.com/111_5' });
     expect(seen[0]).toEqual({ method: 'POST', path: '/111/photos', params: { url: 'https://gamerxp.test/a.jpg', caption: 'Met foto', access_token: 'PAGE' } });
-    expect(await client.postToFacebook({ id: '111', token: 'PAGE' }, { text: 'Alleen tekst', imageUrl: null })).toEqual({ id: '111_6', url: 'https://www.facebook.com/111_6' });
+    expect(await client.postToFacebook({ id: '111', token: 'PAGE' }, { text: 'Alleen tekst', imageUrls: [] })).toEqual({ id: '111_6', url: 'https://www.facebook.com/111_6' });
     expect(seen[1]).toEqual({ method: 'POST', path: '/111/feed', params: { message: 'Alleen tekst', access_token: 'PAGE' } });
   });
 
   it('places on Instagram once the photo has been taken in', async () => {
     seen.length = 0;
-    expect(await client.postToInstagram({ id: '999', token: 'PAGE' }, { text: 'Hallo', imageUrl: 'https://gamerxp.test/a.jpg' })).toEqual({ id: 'media1', url: 'https://www.instagram.com/p/abc/' });
+    expect(await client.postToInstagram({ id: '999', token: 'PAGE' }, { text: 'Hallo', imageUrls: ['https://gamerxp.test/a.jpg'] })).toEqual({ id: 'media1', url: 'https://www.instagram.com/p/abc/' });
     expect(seen.map((s) => s.path)).toEqual(['/999/media', '/container1', '/container1', '/container1', '/999/media_publish', '/media1']);
     expect(seen[0]!.params).toEqual({ image_url: 'https://gamerxp.test/a.jpg', caption: 'Hallo', access_token: 'PAGE' });
     expect(seen[4]!.params).toEqual({ creation_id: 'container1', access_token: 'PAGE' });
   });
 
+  it('places several photos as an album on Facebook and a carousel on Instagram', async () => {
+    seen.length = 0;
+    const post = { text: 'Twee', imageUrls: ['https://gamerxp.test/a.jpg', 'https://gamerxp.test/b.jpg'] };
+    expect(await client.postToFacebook({ id: '111', token: 'PAGE' }, post)).toEqual({ id: '111_6', url: 'https://www.facebook.com/111_6' });
+    expect(seen.map((s) => s.path)).toEqual(['/111/photos', '/111/photos', '/111/feed']);
+    expect(seen[1]!.params).toEqual({ url: 'https://gamerxp.test/b.jpg', published: 'false', access_token: 'PAGE' });
+    expect(seen[2]!.params).toEqual({ message: 'Twee', 'attached_media[0]': '{"media_fbid":"5"}', 'attached_media[1]': '{"media_fbid":"5"}', access_token: 'PAGE' });
+
+    seen.length = 0;
+    await client.postToInstagram({ id: '999', token: 'PAGE' }, post);
+    const media = seen.filter((s) => s.path === '/999/media').map((s) => s.params);
+    expect(media).toEqual([
+      { image_url: 'https://gamerxp.test/a.jpg', is_carousel_item: 'true', access_token: 'PAGE' },
+      { image_url: 'https://gamerxp.test/b.jpg', is_carousel_item: 'true', access_token: 'PAGE' },
+      { media_type: 'CAROUSEL', children: 'container1,container1', caption: 'Twee', access_token: 'PAGE' },
+    ]);
+    expect(seen.at(-2)!.path).toBe('/999/media_publish');
+  });
+
   it('says so when the connection has run out', async () => {
-    const error = await client.postToFacebook({ id: '111', token: 'DEAD' }, { text: 'x', imageUrl: null }).catch((err) => err);
+    const error = await client.postToFacebook({ id: '111', token: 'DEAD' }, { text: 'x', imageUrls: [] }).catch((err) => err);
     expect(error).toBeInstanceOf(SocialError);
     expect(error.expired).toBe(true);
     expect(error.message).toBe('De koppeling met Facebook is verlopen. Verbind opnieuw.');

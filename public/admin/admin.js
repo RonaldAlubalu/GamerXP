@@ -2652,13 +2652,15 @@ function who(actor) {
 // Website: the wording per page and the photos in the strip, without touching the files.
 const websiteTabs = (current) => h('div', { class: 'tabs page-tabs' },
   h('button', { type: 'button', class: current === 'texts' ? 'on' : '', onclick: () => { location.hash = '#/website'; } }, "Pagina's"),
-  h('button', { type: 'button', class: current === 'photos' ? 'on' : '', onclick: () => { location.hash = '#/website/fotos'; } }, 'Fotostrook'));
+  h('button', { type: 'button', class: current === 'photos' ? 'on' : '', onclick: () => { location.hash = '#/website/fotos'; } }, 'Fotostrook'),
+  h('button', { type: 'button', class: current === 'stories' ? 'on' : '', onclick: () => { location.hash = '#/website/verhalen'; } }, 'Verhalen'));
 
 const TEXT_KINDS = { h1: 'Grote kop', h2: 'Kop', h3: 'Tussenkop', h4: 'Tussenkop', h5: 'Tussenkop', h6: 'Tussenkop', p: 'Tekst', li: 'Punt in een lijst', summary: 'Vraag', a: 'Link of knop', button: 'Knop', label: 'Label', legend: 'Kopje in formulier', option: 'Keuze', figcaption: 'Onderschrift', th: 'Tabelkop', td: 'Tabelcel', blockquote: 'Citaat', span: 'Label', small: 'Kleine tekst', strong: 'Vette tekst', dt: 'Term', dd: 'Uitleg' };
 let websiteFile = 'pages/index.html';
 
-async function websiteView(sub) {
+async function websiteView(sub, id) {
   if (sub === 'fotos') return websitePhotosView();
+  if (sub === 'verhalen') return storiesView(id);
   const files = await api('/site/files');
   if (!files.some((f) => f.file === websiteFile)) websiteFile = files[0].file;
   const page = await api(`/site/file?file=${encodeURIComponent(websiteFile)}`);
@@ -2808,6 +2810,190 @@ async function websitePhotosView() {
       h('p', { class: 'muted' }, 'De strook waar bezoekers doorheen vegen, op de homepage en zeven andere pagina\'s. De volgorde hier is de volgorde op de website. Zet alleen foto\'s online waarop kinderen niet herkenbaar zijn, of waarvoor je toestemming hebt.'),
       h('div', { class: 'inline' }, h('button', { type: 'button', class: 'btn primary', onclick: () => upload.click() }, "＋ Foto's toevoegen"), upload),
       h('div', { class: 'site-photos' }, photos.map(tile))),
+  );
+}
+
+// Verhalen: blog posts the owner writes here. The older ones are pages under "Pagina's".
+async function storyPhoto(file, max) {
+  const image = await createImageBitmap(file);
+  const scale = Math.min(1, max / Math.max(image.width, image.height));
+  const width = Math.round(image.width * scale);
+  const height = Math.round(image.height * scale);
+  const canvas = Object.assign(document.createElement('canvas'), { width, height });
+  canvas.getContext('2d').drawImage(image, 0, 0, width, height);
+  let quality = 0.84;
+  let data = canvas.toDataURL('image/jpeg', quality);
+  while (data.length > 1_100_000 && quality > 0.4) data = canvas.toDataURL('image/jpeg', (quality -= 0.08));
+  return { image: data, width, height };
+}
+
+async function storiesView(id) {
+  if (id) return storyEditView(Number(id));
+  const stories = await api('/stories');
+  setPage('Website', h('a', { class: 'btn', href: '/verhalen', target: '_blank', rel: 'noopener' }, '↗ Bekijk verhalen'));
+  const day = (d) => new Intl.DateTimeFormat('nl-NL', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${d}T00:00:00Z`));
+  view.replaceChildren(
+    websiteTabs('stories'),
+    h('div', { class: 'card' }, h('h2', {}, 'Verhalen'),
+      h('p', { class: 'muted' }, 'Schrijf hier een nieuw verhaal voor de pagina Verhalen. Het blijft een concept tot je het publiceert. De verhalen die al op de site stonden pas je aan onder "Pagina\'s".'),
+      h('div', { class: 'inline' }, h('button', { type: 'button', class: 'btn primary', onclick: action(async () => {
+        const made = await post('/stories');
+        location.hash = `#/website/verhalen/${made.id}`;
+        return false;
+      }) }, '＋ Nieuw verhaal')),
+      stories.length
+        ? h('div', { class: 'story-list' }, stories.map((s) => h('a', { class: 'story-row', href: `#/website/verhalen/${s.id}` },
+          s.cover ? h('img', { src: s.cover, alt: '', loading: 'lazy' }) : h('div', { class: 'social-noimg' }, 'Geen foto'),
+          h('div', {},
+            h('strong', {}, s.title || 'Zonder titel'),
+            h('div', { class: 'muted' }, s.published ? `Online · ${day(s.publishedOn)}` : 'Concept')))))
+        : h('p', { class: 'muted' }, 'Nog geen verhalen geschreven.')));
+}
+
+async function storyEditView(id) {
+  const s = await api(`/stories/${id}`);
+  setPage('Website', s.published && h('a', { class: 'btn', href: `/verhalen/${s.slug}`, target: '_blank', rel: 'noopener' }, '↗ Bekijk verhaal'));
+  const title = h('input', { value: s.title, maxlength: 150, placeholder: 'Bijvoorbeeld: Zo vier je een Roblox-feestje thuis' });
+  const introCount = h('small', { class: 'muted' }, `${s.intro.length} / 400`);
+  const intro = h('textarea', { rows: 3, maxlength: 400, placeholder: 'Twee of drie zinnen. Dit staat op de overzichtspagina en in Google.', oninput: () => { introCount.textContent = `${intro.value.length} / 400`; } });
+  intro.value = s.intro;
+  const date = h('input', { type: 'date', value: s.publishedOn });
+  const body = h('textarea', { rows: 16, class: 'story-body', placeholder: 'Schrijf hier je verhaal. Een lege regel begint een nieuwe alinea.' });
+  body.value = s.body;
+  const fields = () => ({ title: title.value, intro: intro.value, body: body.value, publishedOn: date.value });
+  const save = async () => { await put(`/stories/${id}`, fields()); };
+
+  // Puts marks around the selected text, or at the start of its line.
+  const wrap = (before, after, sample) => () => {
+    const { selectionStart: a, selectionEnd: b, value } = body;
+    const chosen = value.slice(a, b) || sample;
+    body.value = value.slice(0, a) + before + chosen + after + value.slice(b);
+    body.focus();
+    body.setSelectionRange(a + before.length, a + before.length + chosen.length);
+  };
+  const line = (mark, sample) => () => {
+    const { selectionStart: a, value } = body;
+    const start = value.lastIndexOf('\n', a - 1) + 1;
+    const empty = value.slice(start).trim() === '' || value.slice(start, value.indexOf('\n', start) < 0 ? value.length : value.indexOf('\n', start)).trim() === '';
+    body.value = value.slice(0, start) + mark + (empty ? sample : '') + value.slice(start);
+    body.focus();
+    body.setSelectionRange(start + mark.length, start + mark.length + (empty ? sample.length : 0));
+  };
+  const link = () => {
+    const url = prompt('Waar moet de link heen? Bijvoorbeeld /reserveer of https://…', '/reserveer');
+    if (url) wrap('[', `](${url.trim()})`, 'tekst van de link')();
+  };
+
+  const photos = h('div', { class: 'story-photos' });
+  const drawPhotos = (list) => photos.replaceChildren(...list.filter((p) => p.id !== s.coverId).map((p) => h('div', { class: 'social-thumb' },
+    h('img', { src: p.url, alt: p.alt }),
+    h('span', {}, `foto ${p.id}`),
+    h('button', { type: 'button', title: 'Foto verwijderen', 'aria-label': `Foto ${p.id} verwijderen`, onclick: action(async () => {
+      if (!confirm('Deze foto verwijderen? Hij verdwijnt dan ook uit de tekst.')) return false;
+      await del(`/stories/${id}/photos/${p.id}`);
+      body.value = body.value.replace(new RegExp(`\\n?\\[foto ${p.id}\\]\\n?`, 'gi'), '\n');
+      s.photos = s.photos.filter((x) => x.id !== p.id);
+      drawPhotos(s.photos);
+      return false;
+    }) }, '✕'))));
+  drawPhotos(s.photos);
+  const textPhoto = h('input', { type: 'file', accept: 'image/*', hidden: true, onchange: action(async () => {
+    const chosen = textPhoto.files[0];
+    textPhoto.value = '';
+    if (!chosen) return false;
+    const made = await post(`/stories/${id}/photos`, { ...(await storyPhoto(chosen, 1400)), alt: '' });
+    const at = body.selectionStart;
+    const mark = `\n\n[foto ${made.id}]\n\n`;
+    body.value = body.value.slice(0, at) + mark + body.value.slice(at);
+    s.photos.push({ id: made.id, url: made.url, alt: '' });
+    drawPhotos(s.photos);
+    flash('ok', 'Foto in de tekst gezet.');
+    return false;
+  }) });
+
+  const coverBox = h('div', { class: 'social-image' });
+  const coverFile = h('input', { type: 'file', accept: 'image/*', hidden: true, onchange: action(async () => {
+    const chosen = coverFile.files[0];
+    coverFile.value = '';
+    if (!chosen) return false;
+    const made = await post(`/stories/${id}/photos`, { ...(await storyPhoto(chosen, 1600)), alt: '', cover: true });
+    s.photos = s.photos.filter((p) => p.id !== s.coverId || new RegExp(`\\[foto ${p.id}\\]`, 'i').test(body.value));
+    s.coverId = made.id;
+    s.photos.push({ id: made.id, url: made.url, alt: '' });
+    drawCover();
+    drawPhotos(s.photos);
+    return false;
+  }) });
+  const drawCover = () => {
+    const cover = s.photos.find((p) => p.id === s.coverId);
+    coverBox.replaceChildren(...[
+      cover && h('img', { class: 'story-cover', src: cover.url, alt: 'De foto bovenaan het verhaal' }),
+      h('div', { class: 'inline' },
+        h('button', { type: 'button', class: 'btn', onclick: () => coverFile.click() }, cover ? 'Andere foto' : '＋ Foto kiezen'),
+        cover && h('button', { type: 'button', class: 'btn', onclick: action(async () => {
+          await del(`/stories/${id}/photos/${cover.id}`);
+          s.photos = s.photos.filter((p) => p.id !== cover.id);
+          s.coverId = null;
+          drawCover();
+          return false;
+        }) }, 'Foto weghalen'),
+        coverFile),
+    ].filter(Boolean));
+  };
+  drawCover();
+
+  const preview = h('div', { class: 'story-preview', hidden: true });
+  const showPreview = action(async () => {
+    const { html } = await post(`/stories/${id}/preview`, fields());
+    const frame = h('iframe', { title: 'Voorbeeld van het verhaal', sandbox: 'allow-same-origin' });
+    frame.srcdoc = html.replace('<head>', '<head><base href="/">');
+    preview.replaceChildren(h('h2', {}, 'Voorbeeld'), frame);
+    preview.hidden = false;
+    preview.scrollIntoView({ behavior: 'smooth' });
+    return false;
+  });
+
+  view.replaceChildren(
+    websiteTabs('stories'),
+    h('div', { class: 'card story-edit' },
+      h('a', { class: 'back', href: '#/website/verhalen' }, '← Alle verhalen'),
+      h('p', { class: s.published ? 'story-state on' : 'story-state' }, s.published ? `Online op gamerxp.nl/verhalen/${s.slug}` : 'Concept: nog niet op de website'),
+      h('label', { class: 'field' }, h('span', {}, 'Titel'), title),
+      h('label', { class: 'field' }, h('span', {}, 'Samenvatting'), intro, introCount),
+      h('label', { class: 'field' }, h('span', {}, 'Datum'), date),
+      h('div', { class: 'field' }, h('span', {}, 'Foto bovenaan'), coverBox),
+      h('div', { class: 'field' }, h('span', {}, 'Tekst'),
+        h('div', { class: 'story-tools' },
+          h('button', { type: 'button', class: 'btn small', onclick: line('## ', 'Tussenkop') }, 'Tussenkop'),
+          h('button', { type: 'button', class: 'btn small', onclick: wrap('**', '**', 'vette tekst') }, 'Vet'),
+          h('button', { type: 'button', class: 'btn small', onclick: line('- ', 'punt') }, 'Lijst'),
+          h('button', { type: 'button', class: 'btn small', onclick: link }, 'Link'),
+          h('button', { type: 'button', class: 'btn small', onclick: () => textPhoto.click() }, 'Foto'),
+          textPhoto),
+        body,
+        h('small', { class: 'muted' }, 'Een lege regel begint een nieuwe alinea. Een regel met ## ervoor wordt een tussenkop, met - ervoor een punt in een lijst. Tekst tussen ** en ** wordt vet.'),
+        photos),
+      h('p', { class: 'muted social-warn' }, 'Zet alleen foto\'s online waarop kinderen niet herkenbaar zijn. Een foto wordt hier niet vanzelf vervaagd.'),
+      h('div', { class: 'inline story-actions' },
+        h('button', { type: 'button', class: 'btn primary', onclick: action(async () => { await save(); flash('ok', s.published ? 'Opgeslagen. De website is bijgewerkt.' : 'Concept opgeslagen.'); return false; }) }, 'Opslaan'),
+        h('button', { type: 'button', class: 'btn', onclick: showPreview }, 'Voorbeeld'),
+        s.published
+          ? h('button', { type: 'button', class: 'btn', onclick: action(async () => {
+            if (!confirm('Dit verhaal van de website halen? Het blijft hier als concept staan.')) return false;
+            await save();
+            await post(`/stories/${id}/publish`, { published: false });
+          }, 'Het verhaal staat niet meer op de website.') }, 'Offline halen')
+          : h('button', { type: 'button', class: 'btn primary', onclick: action(async () => {
+            await save();
+            await post(`/stories/${id}/publish`, { published: true });
+          }, 'Gepubliceerd. Het verhaal staat op de website.') }, 'Publiceren'),
+        h('button', { type: 'button', class: 'btn danger', onclick: action(async () => {
+          if (!confirm('Dit verhaal voorgoed verwijderen?')) return false;
+          await del(`/stories/${id}`);
+          location.hash = '#/website/verhalen';
+          return false;
+        }) }, 'Verwijderen'))),
+    preview,
   );
 }
 
@@ -3090,7 +3276,7 @@ async function render() {
     else if (parts[0] === 'customers') await (parts[1] ? customerView(decodeURIComponent(parts[1])) : customersView());
     else if (parts[0] === 'templates') await templatesView(parts[1], parts[2]);
     else if (parts[0] === 'birthdays') await birthdaysView();
-    else if (parts[0] === 'website') await websiteView(parts[1]);
+    else if (parts[0] === 'website') await websiteView(parts[1], parts[2]);
     else if (parts[0] === 'visitors') await visitorsView();
     else if (parts[0] === 'social') await socialView();
     else if (parts[0] === 'users') await usersView();

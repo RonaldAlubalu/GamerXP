@@ -196,6 +196,14 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
     return reply.header('Content-Type', 'image/jpeg').header('Cache-Control', 'public, max-age=31536000, immutable').header('Cross-Origin-Resource-Policy', 'cross-origin').send(rows[0].image);
   });
 
+  // A photo of a story written in the admin.
+  app.get('/story-image/:id', async (req, reply) => {
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(req.params);
+    const { rows } = await app.db.query<{ data: Buffer }>('SELECT data FROM story_images WHERE id = $1', [id]);
+    if (!rows[0]) throw new HttpError(404, 'Niet gevonden.', 'not_found');
+    return reply.header('Content-Type', 'image/jpeg').header('Cache-Control', 'public, max-age=31536000, immutable').header('Cross-Origin-Resource-Policy', 'cross-origin').send(rows[0].data);
+  });
+
   // A photo the owner put in place of one on a page.
   app.get('/site-image/:id', async (req, reply) => {
     const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(req.params);

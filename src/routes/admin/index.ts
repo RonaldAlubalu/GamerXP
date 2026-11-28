@@ -17,6 +17,7 @@ import { customerRoutes } from './customers.js';
 import { templateRoutes } from './templates.js';
 import { siteRoutes } from './site.js';
 import { socialRoutes } from './social.js';
+import { storyRoutes } from './stories.js';
 import { assistantMayCall, userRoutes, type Role } from './users.js';
 
 declare module 'fastify' {
@@ -256,5 +257,6 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     await secured.register(customerRoutes);
     await secured.register(siteRoutes);
     await secured.register(socialRoutes);
+    await secured.register(storyRoutes);
   });
 };

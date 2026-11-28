@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
 import { applyImages, applyTexts, loadSiteContent, type SiteContent } from './services/site-content.js';
+import { addStoryCards, storyPage } from './services/stories.js';
 
 // Server-rendered website pages.
 //
@@ -21,6 +22,8 @@ export interface PageMeta {
   scripts?: string[];
   // Social media preview image, relative to /assets/img.
   image?: string;
+  // Or its address on the site itself, for a photo that is not a file.
+  imageUrl?: string;
   noindex?: boolean;
   lang?: string;
 }
@@ -30,6 +33,8 @@ export interface Site {
   sitemap: string[];
   notFound: string;
   redirects: Record<string, string>;
+  // Wraps a page body in the layout, as every page of the site is.
+  render: (meta: PageMeta, body: string, route: string) => string;
 }
 
 const META_RE = /^\s*<!--\s*(\{[\s\S]*?\})\s*-->/;
@@ -126,7 +131,7 @@ export async function loadSite(publicUrl: string, dir: string = SITE_DIR, hidden
       title: escapeAttr(meta.title),
       description: escapeAttr(meta.description),
       canonical: `${publicUrl}${route}`,
-      image: `${publicUrl}/assets/img/${meta.image ?? 'nummer-1-game-feestje.webp'}`,
+      image: meta.imageUrl ? `${publicUrl}${meta.imageUrl}` : `${publicUrl}/assets/img/${meta.image ?? 'nummer-1-game-feestje.webp'}`,
       robots: meta.noindex || hidden ? 'noindex' : 'index, follow',
       lang: meta.lang ?? 'nl',
       scripts: (meta.scripts ?? []).map((s) => `<script type="module" src="${escapeAttr(s)}"></script>`).join('\n  '),
@@ -141,7 +146,8 @@ export async function loadSite(publicUrl: string, dir: string = SITE_DIR, hidden
   const sitemap: string[] = [];
   let notFound = '';
   for (const file of await listHtml(path.join(dir, 'pages'))) {
-    const source = await read(`pages/${file}`);
+    let source = await read(`pages/${file}`);
+    if (file === 'verhalen.html') source = addStoryCards(source, content?.stories ?? []);
     const match = META_RE.exec(source);
     if (!match) throw new Error(`site/pages/${file} must start with a <!--{...}--> metadata comment`);
     const meta = JSON.parse(match[1]!) as PageMeta;
@@ -158,8 +164,17 @@ export async function loadSite(publicUrl: string, dir: string = SITE_DIR, hidden
     if (!meta.noindex) sitemap.push(route);
   }
 
+  // Stories from the admin. One that takes the address of a page that is already there is left out.
+  for (const story of content?.stories ?? []) {
+    const route = `/verhalen/${story.slug}`;
+    if (pages.has(route)) continue;
+    const page = storyPage(story);
+    pages.set(route, render(page.meta, page.body, route));
+    sitemap.push(route);
+  }
+
   const redirects = JSON.parse(await readFile(path.join(dir, 'redirects.json'), 'utf8')) as Record<string, string>;
-  return { pages, sitemap, notFound, redirects };
+  return { pages, sitemap, notFound, redirects, render };
 }
 
 export async function registerSite(app: FastifyInstance): Promise<void> {
@@ -183,6 +198,13 @@ export async function registerSite(app: FastifyInstance): Promise<void> {
     });
   }
 
+  // Stories written in the admin come and go while the site runs.
+  app.get('/verhalen/:slug', async (req, reply) => {
+    const html = (await current()).pages.get(`/verhalen/${(req.params as { slug: string }).slug}`);
+    if (!html) return reply.callNotFound();
+    return reply.type('text/html; charset=utf-8').send(html);
+  });
+
   for (const [from, to] of Object.entries(site.redirects)) {
     app.get(from, async (_req, reply) => reply.redirect(to, 301));
   }
@@ -199,10 +221,12 @@ export async function registerSite(app: FastifyInstance): Promise<void> {
   );
 
   // After a change in the admin the pages are put together again.
+  app.decorate('sitePaths', new Set(site.pages.keys()));
   app.decorate('reloadSite', async () => {
     site = await load();
+    for (const route of site.pages.keys()) app.sitePaths.add(route);
   });
-  app.decorate('sitePaths', new Set(site.pages.keys()));
+  app.decorate('renderSitePage', async (meta: PageMeta, body: string, route: string) => (await current()).render(meta, body, route));
   app.decorate('notFoundPage', async () => (await current()).notFound);
 }
 
@@ -210,6 +234,7 @@ declare module 'fastify' {
   interface FastifyInstance {
     notFoundPage: () => Promise<string>;
     reloadSite: () => Promise<void>;
+    renderSitePage: (meta: PageMeta, body: string, route: string) => Promise<string>;
     sitePaths: Set<string>;
   }
 }

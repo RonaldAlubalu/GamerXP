@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { Db } from '../db/pool.js';
+import { publishedStories, type Story } from './stories.js';
 
 // What the owner changed on the website from the admin: pieces of text, and the photo strip.
 //
@@ -14,6 +15,8 @@ export interface SiteContent {
   gallery?: string;
   // file -> which photo ("hero", or the address of the original) -> the photo put in its place.
   images?: Map<string, Map<string, NewImage>>;
+  // Stories written in the admin, on top of the ones in site/pages/verhalen.
+  stories?: Story[];
 }
 
 export interface TextBlock {
@@ -195,5 +198,5 @@ export async function loadSiteContent(db: Db): Promise<SiteContent> {
     if (!images.has(r.file)) images.set(r.file, new Map());
     images.get(r.file)!.set(r.slot, { url: `/api/site-image/${r.id}`, width: r.width, height: r.height });
   }
-  return { texts, gallery: galleryHtml(await listPhotos(db)), images };
+  return { texts, gallery: galleryHtml(await listPhotos(db)), images, stories: await publishedStories(db) };
 }
